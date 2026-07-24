@@ -33,7 +33,39 @@ jobs:
     - name: Generate debug.keystore and dummy google-services.json
       run: |
         keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
-        touch app/google-services.json
+        if [ ! -s app/google-services.json ]; then
+          cat << 'EOF' > app/google-services.json
+        {
+          "project_info": {
+            "project_number": "123456789012",
+            "project_id": "dummy-project",
+            "storage_bucket": "dummy-project.appspot.com"
+          },
+          "client": [
+            {
+              "client_info": {
+                "mobilesdk_app_id": "1:123456789012:android:1234567890123456",
+                "android_client_info": {
+                  "package_name": "com.aistudio.novanotes.fcbecc"
+                }
+              },
+              "oauth_client": [],
+              "api_key": [
+                {
+                  "current_key": "dummy_api_key"
+                }
+              ],
+              "services": {
+                "appinvite_service": {
+                  "other_platform_oauth_client": []
+                }
+              }
+            }
+          ],
+          "configuration_version": "1"
+        }
+        EOF
+        fi
 
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
