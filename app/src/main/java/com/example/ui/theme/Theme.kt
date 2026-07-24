@@ -96,22 +96,10 @@ fun Modifier.glassmorphism(
     this.then(
         Modifier
             .clip(shape)
-            .background(
-                Brush.linearGradient(
-                    colors = listOf(
-                        finalContainer,
-                        finalContainer.copy(alpha = finalContainer.alpha * 0.4f)
-                    )
-                )
-            )
+            .background(finalContainer)
             .border(
                 width = 1.dp,
-                brush = Brush.linearGradient(
-                    colors = listOf(
-                        finalBorder,
-                        finalBorder.copy(alpha = finalBorder.alpha * 0.15f)
-                    )
-                ),
+                color = finalBorder,
                 shape = shape
             )
     )

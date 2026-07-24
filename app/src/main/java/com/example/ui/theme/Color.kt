@@ -2,34 +2,34 @@ package com.example.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// Premium Core Colors (Dynamic, vibrant Indigo & Slate palette)
-val BluePrimary = Color(0xFF2563EB)
-val BluePrimaryContainer = Color(0xFFEFF6FF)
-val BlueOnPrimaryContainer = Color(0xFF1E40AF)
+// Minimal Modern Palette (Clean, monochrome with subtle accents)
+val BluePrimary = Color(0xFF111111) // Almost black for primary actions
+val BluePrimaryContainer = Color(0xFFF0F0F0)
+val BlueOnPrimaryContainer = Color(0xFF111111)
 
-val SlateSecondary = Color(0xFF475569)
-val SlateSecondaryContainer = Color(0xFFF1F5F9)
+val SlateSecondary = Color(0xFF666666)
+val SlateSecondaryContainer = Color(0xFFF9F9F9)
 
 // Light Theme Elements (Clean, crisp background with soft off-white canvas)
-val MinimalBackground = Color(0xFFF8FAFC)
+val MinimalBackground = Color(0xFFFFFFFF)
 val MinimalSurface = Color(0xFFFFFFFF)
-val MinimalSurfaceVariant = Color(0xFFF1F5F9)
-val MinimalOnSurface = Color(0xFF0F172A)
+val MinimalSurfaceVariant = Color(0xFFF5F5F5)
+val MinimalOnSurface = Color(0xFF111111)
 
-val OutlineGrey = Color(0xFF64748B)
-val OutlineVariantLight = Color(0xFFE2E8F0)
+val OutlineGrey = Color(0xFFE5E5E5)
+val OutlineVariantLight = Color(0xFFF0F0F0)
 
-// Dark/Slate Theme Elements (Deep indigo dark slate)
-val AIInsightDarkNavy = Color(0xFF0F172A)
-val DarkSurface = Color(0xFF1E293B)
-val DarkSurfaceVariant = Color(0xFF334155)
-val DarkOnSurface = Color(0xFFF8FAFC)
+// Dark/Slate Theme Elements (Deep dark slate)
+val AIInsightDarkNavy = Color(0xFF000000)
+val DarkSurface = Color(0xFF121212)
+val DarkSurfaceVariant = Color(0xFF1E1E1E)
+val DarkOnSurface = Color(0xFFFAFAFA)
 
 // Glassmorphism and Accent gradients
 val GlassContainerLight = Color(0x66FFFFFF)
-val GlassBorderLight = Color(0x80FFFFFF)
-val GlassContainerDark = Color(0x331E293B)
-val GlassBorderDark = Color(0x33FFFFFF)
+val GlassBorderLight = Color(0x40E5E5E5)
+val GlassContainerDark = Color(0x33121212)
+val GlassBorderDark = Color(0x33333333)
 
 val GoldAccent = Color(0xFFF59E0B)
 val EmeraldGreen = Color(0xFF10B981)
