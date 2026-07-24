@@ -1,0 +1,1 @@
+sed -i 's/val isScrollablePdf = templateType == "pdf" || templateType == "docx"/val isScrollablePdf = templateType == "pdf" || templateType == "docx" || pdfPageCount > 1/g' app/src/main/java/com/example/ui/components/DrawingCanvas.kt

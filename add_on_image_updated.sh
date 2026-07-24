@@ -1,0 +1,1 @@
+sed -i 's/onStrokeEnded: () -> Unit,/onStrokeEnded: () -> Unit,\n    onImageUpdated: (Int, com.example.data.ImageElement) -> Unit = {_,_->},/g' app/src/main/java/com/example/ui/components/DrawingCanvas.kt

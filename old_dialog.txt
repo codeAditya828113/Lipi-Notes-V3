@@ -1,0 +1,363 @@
+    if (showToolSettings != null) {
+        Dialog(onDismissRequest = { showToolSettings = null }) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surface,
+                modifier = Modifier.padding(16.dp).fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text("Tool Settings", fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.padding(bottom = 16.dp))
+                    
+                    Text("Thickness", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        listOf(4f, 8f, 12f, 16f, 22f).forEach { width ->
+                            val isSelected = viewModel.activeWidth == width
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
+                                    .clickable { viewModel.activeWidth = width }
+                                    .border(1.dp, if (isSelected) MaterialTheme.colorScheme.primary else Color.Gray, CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                val dotSize = when (width) {
+                                    4f -> 4.dp
+                                    8f -> 7.dp
+                                    12f -> 10.dp
+                                    16f -> 13.dp
+                                    else -> 16.dp
+                                }
+                                Box(modifier = Modifier.size(dotSize).background(Color.Black, CircleShape))
+                            }
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                                        if (showToolSettings in listOf("pen", "fountain_pen", "ballpoint", "highlighter", "pencil")) {
+                        var magicSettingsExpanded by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+
+                        if (showToolSettings == "pencil") {
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                androidx.compose.material3.Switch(
+                                    checked = viewModel.pencilRainbowEnabled,
+                                    onCheckedChange = { viewModel.pencilRainbowEnabled = it },
+                                    modifier = Modifier.scale(0.8f)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Rainbow", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth().clickable { magicSettingsExpanded = !magicSettingsExpanded }.padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Magic Settings", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                            Icon(
+                                imageVector = if (magicSettingsExpanded) androidx.compose.material.icons.Icons.Default.KeyboardArrowUp else androidx.compose.material.icons.Icons.Default.KeyboardArrowDown,
+                                contentDescription = "Expand Magic Settings",
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+
+                        if (magicSettingsExpanded) {
+                            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                androidx.compose.material3.Switch(
+                                    checked = viewModel.drawStraightLines,
+                                    onCheckedChange = { viewModel.drawStraightLines = it },
+                                    modifier = Modifier.scale(0.8f)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Draw Straight Lines", fontSize = 14.sp)
+                            }
+                            
+                            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                androidx.compose.material3.Switch(
+                                    checked = viewModel.smartShapesEnabled,
+                                    onCheckedChange = { viewModel.smartShapesEnabled = it },
+                                    modifier = Modifier.scale(0.8f)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Auto Shape Recognition", fontSize = 14.sp)
+                            }
+                            
+                            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                androidx.compose.material3.Switch(
+                                    checked = viewModel.fillShapeEnabled,
+                                    onCheckedChange = { viewModel.fillShapeEnabled = it },
+                                    modifier = Modifier.scale(0.8f)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Fill Shape With Color", fontSize = 14.sp)
+                            }
+
+                            if (viewModel.fillShapeEnabled) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text("Shape fill color opacity: ${(viewModel.fillShapeOpacity * 100).toInt()}%", fontSize = 12.sp)
+                                androidx.compose.material3.Slider(
+                                    value = viewModel.fillShapeOpacity,
+                                    onValueChange = { viewModel.fillShapeOpacity = it },
+                                    valueRange = 0.05f..1f,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                        }
+                    }
+
+                    if (showToolSettings == "shapes") {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text("Select Shape", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        
+                        val shapes = listOf("rectangle", "square", "circle", "ellipse", "cube", "keyboard")
+                        var rIdx = 0
+                        while(rIdx < shapes.size) {
+                            Row(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+                                for(c in 0 until 3) {
+                                    if (rIdx < shapes.size) {
+                                        val s = shapes[rIdx]
+                                        val isSel = viewModel.activeShapeType == s
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(if (isSel) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
+                                                .border(1.dp, if (isSel) MaterialTheme.colorScheme.primary else Color.Gray, RoundedCornerShape(8.dp))
+                                                .clickable { viewModel.activeShapeType = s }
+                                                .padding(horizontal = 12.dp, vertical = 6.dp)
+                                        ) {
+                                            Text(s.replaceFirstChar { it.uppercase() }, fontSize = 12.sp, fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal)
+                                        }
+                                        rIdx++
+                                    }
+                                }
+                            }
+                        }
+                        
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Switch(
+                                checked = viewModel.fillShapeEnabled,
+                                onCheckedChange = { viewModel.fillShapeEnabled = it },
+                                modifier = Modifier.scale(0.8f)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Fill Shape With Color", fontSize = 14.sp)
+                        }
+
+                        if (viewModel.fillShapeEnabled) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text("Shape fill color opacity: ${(viewModel.fillShapeOpacity * 100).toInt()}%", fontSize = 12.sp)
+                            Slider(
+                                value = viewModel.fillShapeOpacity,
+                                onValueChange = { viewModel.fillShapeOpacity = it },
+                                valueRange = 0.05f..1f,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+
+                    if (showToolSettings == "lasso") {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                androidx.compose.material3.Checkbox(
+                                    checked = viewModel.lassoSelectPen,
+                                    onCheckedChange = { viewModel.lassoSelectPen = it }
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Pen", fontSize = 14.sp)
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                androidx.compose.material3.Checkbox(
+                                    checked = viewModel.lassoSelectShape,
+                                    onCheckedChange = { viewModel.lassoSelectShape = it }
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Shape", fontSize = 14.sp)
+                            }
+                        }
+                        
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                androidx.compose.material3.Checkbox(
+                                    checked = viewModel.lassoSelectHighlighter,
+                                    onCheckedChange = { viewModel.lassoSelectHighlighter = it }
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Highlighter", fontSize = 14.sp)
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                androidx.compose.material3.Checkbox(
+                                    checked = viewModel.lassoSelectText,
+                                    onCheckedChange = { viewModel.lassoSelectText = it }
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Text", fontSize = 14.sp)
+                            }
+                        }
+                        
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                androidx.compose.material3.Checkbox(
+                                    checked = viewModel.lassoSelectImage,
+                                    onCheckedChange = { viewModel.lassoSelectImage = it }
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Image", fontSize = 14.sp)
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+                        androidx.compose.material3.Divider()
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            androidx.compose.material3.Switch(
+                                checked = viewModel.lassoSolidLine,
+                                onCheckedChange = { viewModel.lassoSolidLine = it },
+                                modifier = Modifier.scale(0.8f)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Show Solid Lasso Line", fontSize = 14.sp)
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text("Lasso Color", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        val swatches = listOf(
+                            0xFF1E1B4B.toInt() to "Dark Navy",
+                            0xFFDC2626.toInt() to "Red",
+                            0xFF78350F.toInt() to "Brown",
+                            0xFF6B21A8.toInt() to "Purple",
+                            0xFF0284C7.toInt() to "Sky Blue",
+                            0xFF3B82F6.toInt() to "Blue",
+                            0xFF059669.toInt() to "Green",
+                            0xFFF59E0B.toInt() to "Yellow"
+                        )
+
+                        Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            swatches.forEach { (colorVal, _) ->
+                                val isSelected = viewModel.activeColor == colorVal
+                                Box(
+                                    modifier = Modifier
+                                        .size(24.dp)
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(Color(colorVal))
+                                        .border(
+                                            width = if (isSelected) 2.dp else 1.dp,
+                                            color = if (isSelected) Color(0xFF3B82F6) else Color(0xFFCBD5E1),
+                                            shape = RoundedCornerShape(4.dp)
+                                        )
+                                        .clickable {
+                                            viewModel.activeColor = colorVal
+                                        }
+                                )
+                            }
+                        }
+                    }
+
+                    if (showToolSettings == "laser") {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text("Laser Mode", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                            // Line Laser
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (viewModel.laserMode == "line") MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
+                                    .border(1.dp, if (viewModel.laserMode == "line") MaterialTheme.colorScheme.primary else Color.Gray, RoundedCornerShape(8.dp))
+                                    .clickable { viewModel.laserMode = "line" }
+                                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                            ) {
+                                Text("Line Laser", fontSize = 14.sp, fontWeight = if (viewModel.laserMode == "line") FontWeight.Bold else FontWeight.Normal)
+                            }
+                            // Spot Laser
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (viewModel.laserMode == "spot") MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
+                                    .border(1.dp, if (viewModel.laserMode == "spot") MaterialTheme.colorScheme.primary else Color.Gray, RoundedCornerShape(8.dp))
+                                    .clickable { viewModel.laserMode = "spot" }
+                                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                            ) {
+                                Text("Spot Laser", fontSize = 14.sp, fontWeight = if (viewModel.laserMode == "spot") FontWeight.Bold else FontWeight.Normal)
+                            }
+                        }
+                        
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Invisible After", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                            androidx.compose.material3.Switch(
+                                checked = viewModel.laserDisappearEnabled,
+                                onCheckedChange = { viewModel.laserDisappearEnabled = it }
+                            )
+                        }
+                        
+                        if (viewModel.laserDisappearEnabled) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Text("Delay: ${viewModel.laserDisappearDelay / 1000f}s", fontSize = 12.sp, modifier = Modifier.width(80.dp))
+                                androidx.compose.material3.Slider(
+                                    value = viewModel.laserDisappearDelay.toFloat(),
+                                    onValueChange = { viewModel.laserDisappearDelay = it.toLong() },
+                                    valueRange = 1000f..10000f,
+                                    steps = 8,
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+                    }
+
+                    Text("Color", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    // Grid of colors
+                    val swatches = listOf(
+                        0xFF1E1B4B.toInt(), 0xFFDC2626.toInt(), 0xFF78350F.toInt(),
+                        0xFF6B21A8.toInt(), 0xFF0284C7.toInt(), 0xFF0D9488.toInt(),
+                        0xFFEAB308.toInt(), 0xFFEA580C.toInt(), 0xFF000000.toInt()
+                    )
+                    
+                    var index = 0
+                    while(index < swatches.size) {
+                        Row(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+                            for(i in 0 until 3) {
+                                if (index < swatches.size) {
+                                    val c = swatches[index]
+                                    val isSel = viewModel.activeColor == c
+                                    Box(
+                                        modifier = Modifier
+                                            .size(36.dp)
+                                            .clip(CircleShape)
+                                            .background(Color(c))
+                                            .border(2.dp, if (isSel) MaterialTheme.colorScheme.primary else Color.Transparent, CircleShape)
+                                            .clickable { viewModel.activeColor = c }
+                                    )
+                                    index++
+                                }
+                            }
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(onClick = { showToolSettings = null }, modifier = Modifier.fillMaxWidth()) {
+                        Text("Done")
+                    }
+                }
+            }
+        }
+    }

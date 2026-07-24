@@ -1,0 +1,341 @@
+                    fontSize = 12.sp,
+                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun NoteListHeader(
+    searchKeyword: String,
+    onSearchChange: (String) -> Unit,
+    onCreateNoteClick: () -> Unit,
+    onImportPdfClick: () -> Unit,
+    onImportDocxClick: () -> Unit,
+    selectedFilter: String,
+    onFilterSelected: (String) -> Unit,
+    onMenuClick: () -> Unit = {},
+    isTablet: Boolean = false
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 16.dp, start = 16.dp, end = 16.dp, bottom = 8.dp)
+    ) {
+        // App Title Bar and Actions
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (!isTablet) {
+                    IconButton(
+                        onClick = onMenuClick,
+                        modifier = Modifier.padding(end = 4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Menu,
+                            contentDescription = "Open Navigation Sidebar",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+                Column {
+                    Text(
+                        text = "Notein",
+                        fontSize = 26.sp,
+                        fontWeight = FontWeight.Medium,
+                        letterSpacing = (-0.5).sp,
+                        color = Color(0xFF001E2F)
+                    )
+                    Text(
+                        text = "Clean Minimalism Suite",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    )
+                }
+            }
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // Cloud backup indicator
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    modifier = Modifier.size(38.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Default.CloudDone,
+                            contentDescription = "Cloud Done",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+
+                // Import PDF button
+                FilledIconButton(
+                    onClick = onImportPdfClick,
+                    modifier = Modifier
+                        .size(38.dp)
+                        .testTag("import_pdf_button"),
+                    colors = IconButtonDefaults.filledIconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PictureAsPdf,
+                        contentDescription = "Import PDF document",
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+
+                // Import DOCX button
+                FilledIconButton(
+                    onClick = onImportDocxClick,
+                    modifier = Modifier
+                        .size(38.dp)
+                        .testTag("import_docx_button"),
+                    colors = IconButtonDefaults.filledIconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onTertiaryContainer
+                    )
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Description,
+                        contentDescription = "Import Word DOCX document",
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+
+                // Add button
+                FilledIconButton(
+                    onClick = onCreateNoteClick,
+                    modifier = Modifier
+                        .size(38.dp)
+                        .testTag("create_note_button"),
+                    colors = IconButtonDefaults.filledIconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "Create new note", modifier = Modifier.size(18.dp))
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        // Clean Search bar
+        OutlinedTextField(
+            value = searchKeyword,
+            onValueChange = onSearchChange,
+            placeholder = { Text("Search handwriting or PDFs...", style = androidx.compose.ui.text.TextStyle(fontStyle = FontStyle.Italic, fontWeight = FontWeight.Light)) },
+            leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search", tint = MaterialTheme.colorScheme.onSurfaceVariant) },
+            trailingIcon = { Icon(Icons.Default.AutoAwesome, contentDescription = "AI Hub", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp)) },
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("search_bar"),
+            shape = CircleShape,
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedContainerColor = Color.White,
+                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                unfocusedBorderColor = Color.Transparent
+            ),
+            singleLine = true
+        )
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // Horizontal Category Filter List
+        CategoryFilterRow(
+            selectedFilter = selectedFilter,
+            onFilterSelected = onFilterSelected
+        )
+    }
+}
+
+@Composable
+fun NoteCardPreview(note: NoteEntity, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(72.dp)
+            .background(Color(note.pageColor))
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
+        contentAlignment = Alignment.Center
+    ) {
+        if (note.coverType != "none") {
+            // Draw a simplified cover preview
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val primary = Color(0xFF3B82F6)
+                val secondary = Color(0xFFF43F5E)
+                when(note.coverType) {
+                    "dark" -> drawRect(Color.DarkGray)
+                    "light" -> drawRect(Color.LightGray)
+                    "tiger", "reader", "sketch", "wash", "ink", "car" -> {
+                        drawRect(Color(0xFFE2E8F0))
+                        drawCircle(primary, size.height * 0.4f, center = Offset(size.width * 0.5f, size.height * 0.5f))
+                    }
+                    "geo1", "geo2", "geo3" -> {
+                        drawRect(Color(0xFFF1F5F9))
+                        drawRect(secondary, size = Size(size.width * 0.5f, size.height))
+                    }
+                    "watermelon", "pineapple", "lemon" -> {
+                        drawRect(Color(0xFFFEF3C7))
+                        drawCircle(Color(0xFF10B981), size.height * 0.3f)
+                    }
+                    else -> drawRect(Color(0xFFE2E8F0))
+                }
+            }
+        } else {
+            when (note.templateType) {
+                "grid" -> {
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                        val step = 10.dp.toPx()
+                        var x = 0f
+                        while (x < size.width) {
+                            drawLine(
+                                color = Color(0xFFC4C7CF).copy(alpha = 0.3f),
+                                start = Offset(x, 0f),
+                                end = Offset(x, size.height),
+                                strokeWidth = 1f
+                            )
+                            x += step
+                        }
+                        var y = 0f
+                        while (y < size.height) {
+                            drawLine(
+                                color = Color(0xFFC4C7CF).copy(alpha = 0.3f),
+                                start = Offset(0f, y),
+                                end = Offset(size.width, y),
+                                strokeWidth = 1f
+                            )
+                            y += step
+                        }
+                    }
+                }
+                "ruled" -> {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val step = 12.dp.toPx()
+                    var y = step
+                    while (y < size.height) {
+                        drawLine(
+                            color = Color(0xFF93C5FD).copy(alpha = 0.5f),
+                            start = Offset(0f, y),
+                            end = Offset(size.width, y),
+                            strokeWidth = 1.5f
+                        )
+                        y += step
+                    }
+                }
+            }
+            "cornell" -> {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val cueX = size.width * 0.3f
+                    drawLine(
+                        color = Color(0xFFC4C7CF).copy(alpha = 0.7f),
+                        start = Offset(cueX, 0f),
+                        end = Offset(cueX, size.height * 0.75f),
+                        strokeWidth = 1.5f
+                    )
+                    val summaryY = size.height * 0.75f
+                    drawLine(
+                        color = Color(0xFFC4C7CF).copy(alpha = 0.7f),
+                        start = Offset(0f, summaryY),
+                        end = Offset(size.width, summaryY),
+                        strokeWidth = 1.5f
+                    )
+                }
+            }
+            "meeting" -> {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    repeat(3) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(6.dp)
+                                    .border(1.dp, MaterialTheme.colorScheme.primary, CircleShape)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Box(
+                                modifier = Modifier
+                                    .height(4.dp)
+                                    .fillMaxWidth()
+                                    .background(Color(0xFFE1E2EC), RoundedCornerShape(2.dp))
+                            )
+                        }
+                    }
+                }
+            }
+            "pdf" -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color(0xFFF9F9FB)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(width = 30.dp, height = 38.dp)
+                            .background(Color(0xFFFFDAD6), RoundedCornerShape(2.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("PDF", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = Color(0xFF410002))
+                    }
+                }
+            }
+            else -> {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val path = Path().apply {
+                        moveTo(size.width * 0.15f, size.height * 0.5f)
+                        quadraticTo(
+                            size.width * 0.4f, size.height * 0.15f,
+                            size.width * 0.65f, size.height * 0.5f
+                        )
+                        quadraticTo(
+                            size.width * 0.85f, size.height * 0.8f,
+                            size.width * 0.9f, size.height * 0.35f
+                        )
+                    }
+                    drawPath(
+                        path = path,
+                        color = Color(0xFF0061A4).copy(alpha = 0.4f),
+                        style = DrawStroke(
+                            width = 2.5f,
+                            cap = StrokeCap.Round
+                        )
+                    )
+                }
+            }
+        }
+        }
+    }
+}
+
+@Composable
+fun NoteList(
+    notes: List<NoteEntity>,
+    selectedNote: NoteEntity?,
+    onSelect: (NoteEntity) -> Unit,
+    onDelete: (NoteEntity) -> Unit
+) {
+    if (notes.isEmpty()) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(24.dp),
+            contentAlignment = Alignment.Center

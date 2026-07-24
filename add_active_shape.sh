@@ -1,0 +1,1 @@
+sed -i 's/var activeToolType by mutableStateOf("pen")/var activeToolType by mutableStateOf("pen")\n    var activeShapeType by mutableStateOf("rectangle")/g' app/src/main/java/com/example/ui/components/NoteViewModel.kt

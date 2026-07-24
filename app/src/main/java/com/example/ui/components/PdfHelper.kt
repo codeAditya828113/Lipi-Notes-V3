@@ -1,0 +1,486 @@
+package com.example.ui.components
+
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.Rect
+import android.graphics.RectF
+import android.graphics.drawable.BitmapDrawable
+import android.graphics.pdf.PdfDocument
+import android.graphics.pdf.PdfRenderer
+import android.net.Uri
+import android.os.ParcelFileDescriptor
+import android.util.Log
+import coil.imageLoader
+import coil.request.ImageRequest
+import coil.request.SuccessResult
+import java.io.File
+import java.io.FileOutputStream
+
+object PdfHelper {
+    const val PDF_QUALITY_FACTOR = 1.8f
+
+    fun loadSoftwareBitmap(context: Context, uriString: String): Bitmap? {
+        return try {
+            val uri = Uri.parse(uriString)
+            var bitmap: Bitmap? = null
+            if (uri.scheme == "content" || uri.scheme == "file") {
+                context.contentResolver.openInputStream(uri)?.use { stream ->
+                    bitmap = BitmapFactory.decodeStream(stream)
+                }
+            }
+            if (bitmap == null) {
+                val file = File(uriString)
+                if (file.exists()) {
+                    bitmap = BitmapFactory.decodeFile(file.absolutePath)
+                }
+            }
+            if (bitmap == null) {
+                val request = ImageRequest.Builder(context)
+                    .data(uriString)
+                    .allowHardware(false)
+                    .build()
+                val result = kotlinx.coroutines.runBlocking {
+                    context.imageLoader.execute(request)
+                }
+                if (result is SuccessResult && result.drawable is BitmapDrawable) {
+                    bitmap = (result.drawable as BitmapDrawable).bitmap
+                }
+            }
+            if (bitmap != null && bitmap!!.config == Bitmap.Config.HARDWARE) {
+                bitmap = bitmap!!.copy(Bitmap.Config.ARGB_8888, false)
+            }
+            bitmap
+        } catch (e: Exception) {
+            Log.e("PdfHelper", "Failed to load software bitmap for $uriString", e)
+            null
+        }
+    }
+
+    fun createSamplePdf(file: File) {
+        val document = PdfDocument()
+        try {
+            // Page 1
+            var pageInfo = PdfDocument.PageInfo.Builder(600, 800, 1).create()
+            var page = document.startPage(pageInfo)
+            var canvas = page.canvas
+            var paint = Paint()
+
+            // Background
+            paint.color = android.graphics.Color.WHITE
+            canvas.drawRect(0f, 0f, 600f, 800f, paint)
+
+            paint.color = android.graphics.Color.rgb(0, 97, 164) // Blue Primary
+            paint.textSize = 24f
+            paint.isFakeBoldText = true
+            canvas.drawText("QUANTUM COMPUTING FOUNDATIONS (1/3)", 40f, 80f, paint)
+
+            paint.color = android.graphics.Color.DKGRAY
+            paint.textSize = 14f
+            paint.isFakeBoldText = false
+            canvas.drawText("Subject: Qubit Superposition & Quantum Gates", 40f, 130f, paint)
+            canvas.drawText("• Unlike classical bits (0 or 1), a qubit can exist in a superposition.", 40f, 180f, paint)
+            canvas.drawText("• Represented mathematically as: |ψ⟩ = α|0⟩ + β|1⟩, where |α|² + |β|² = 1.", 40f, 220f, paint)
+            canvas.drawText("• Hadamard Gate (H) maps the basis state to a superposition state.", 40f, 260f, paint)
+            canvas.drawText("• [Sketch the superposition probability matrix below using the stylus]", 40f, 320f, paint)
+
+            // Draw some decorative diagrams
+            paint.color = android.graphics.Color.LTGRAY
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = 2f
+            canvas.drawCircle(300f, 500f, 80f, paint)
+            canvas.drawLine(300f, 400f, 300f, 600f, paint)
+            canvas.drawLine(200f, 500f, 400f, 500f, paint)
+
+            paint.color = android.graphics.Color.DKGRAY
+            paint.style = Paint.Style.FILL
+            paint.strokeWidth = 0f
+            canvas.drawText("|0⟩", 290f, 395f, paint)
+            canvas.drawText("|1⟩", 290f, 615f, paint)
+            canvas.drawText("|ψ⟩", 360f, 440f, paint)
+
+            document.finishPage(page)
+
+            // Page 2
+            pageInfo = PdfDocument.PageInfo.Builder(600, 800, 2).create()
+            page = document.startPage(pageInfo)
+            canvas = page.canvas
+            paint = Paint()
+
+            paint.color = android.graphics.Color.WHITE
+            canvas.drawRect(0f, 0f, 600f, 800f, paint)
+
+            paint.color = android.graphics.Color.rgb(180, 40, 40)
+            paint.textSize = 24f
+            paint.isFakeBoldText = true
+            canvas.drawText("GRADIENT DESCENT & ERROR (2/3)", 40f, 80f, paint)
+
+            paint.color = android.graphics.Color.DKGRAY
+            paint.textSize = 14f
+            paint.isFakeBoldText = false
+            canvas.drawText("Subject: Machine Learning & Backpropagation", 40f, 130f, paint)
+            canvas.drawText("• Backpropagation computes gradients of loss function with respect to weights.", 40f, 180f, paint)
+            canvas.drawText("• Chain Rule: ∂L/∂w = (∂L/∂y) * (∂y/∂z) * (∂z/∂w).", 40f, 220f, paint)
+            canvas.drawText("• Optimizer update step: w = w - η * (∂L/∂w).", 40f, 260f, paint)
+            canvas.drawText("• [Sketch the layered neural network feedforward flow below]", 40f, 320f, paint)
+
+            // Draw network node outline
+            paint.color = android.graphics.Color.LTGRAY
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = 2f
+            canvas.drawCircle(150f, 500f, 30f, paint)
+            canvas.drawCircle(300f, 440f, 30f, paint)
+            canvas.drawCircle(300f, 560f, 30f, paint)
+            canvas.drawCircle(450f, 500f, 30f, paint)
+            canvas.drawLine(180f, 500f, 270f, 440f, paint)
+            canvas.drawLine(180f, 500f, 270f, 560f, paint)
+            canvas.drawLine(330f, 440f, 420f, 500f, paint)
+            canvas.drawLine(330f, 560f, 420f, 500f, paint)
+
+            document.finishPage(page)
+
+            // Page 3
+            pageInfo = PdfDocument.PageInfo.Builder(600, 800, 3).create()
+            page = document.startPage(pageInfo)
+            canvas = page.canvas
+            paint = Paint()
+
+            paint.color = android.graphics.Color.WHITE
+            canvas.drawRect(0f, 0f, 600f, 800f, paint)
+
+            paint.color = android.graphics.Color.rgb(0, 120, 80)
+            paint.textSize = 24f
+            paint.isFakeBoldText = true
+            canvas.drawText("MATERIAL DESIGN 3 STYLING (3/3)", 40f, 80f, paint)
+
+            paint.color = android.graphics.Color.DKGRAY
+            paint.textSize = 14f
+            paint.isFakeBoldText = false
+            canvas.drawText("Subject: Modern Mobile Product Scaling Specs", 40f, 130f, paint)
+            canvas.drawText("• Spacing Grid: Built around an 8dp baseline grid (8dp, 16dp, 24dp).", 40f, 180f, paint)
+            canvas.drawText("• Touch Targets: Standard size 48dp x 48dp (minimum accessible area).", 40f, 220f, paint)
+            canvas.drawText("• Colour Hierarchy: Rely on primary, secondary, and tertiary containers.", 40f, 260f, paint)
+            canvas.drawText("• [Use the highlighter tool to mark crucial sections here]", 40f, 320f, paint)
+
+            document.finishPage(page)
+
+            FileOutputStream(file).use { out ->
+                document.writeTo(out)
+            }
+        } catch (e: Exception) {
+            Log.e("PdfHelper", "Failed to create sample pdf", e)
+        } finally {
+            document.close()
+        }
+    }
+
+    fun getPdfPageCount(pdfFile: File): Int {
+        if (!pdfFile.exists()) return 1
+        return try {
+            val input = ParcelFileDescriptor.open(pdfFile, ParcelFileDescriptor.MODE_READ_ONLY)
+            val renderer = PdfRenderer(input)
+            val count = renderer.pageCount
+            renderer.close()
+            input.close()
+            count
+        } catch (e: Exception) {
+            Log.e("PdfHelper", "Failed to get pdf page count", e)
+            1
+        }
+    }
+
+    fun renderPdfPageToBitmap(pdfFile: File, pageIndex: Int, maxWidth: Int, maxHeight: Int): Bitmap? {
+        if (!pdfFile.exists() || maxWidth <= 0 || maxHeight <= 0) return null
+        var input: ParcelFileDescriptor? = null
+        var renderer: PdfRenderer? = null
+        var page: PdfRenderer.Page? = null
+        return try {
+            input = ParcelFileDescriptor.open(pdfFile, ParcelFileDescriptor.MODE_READ_ONLY)
+            renderer = PdfRenderer(input)
+            
+            if (pageIndex >= renderer.pageCount) {
+                return null
+            }
+            
+            page = renderer.openPage(pageIndex)
+            val pageWidth = page.width
+            val pageHeight = page.height
+            
+            // Calculate scale to fit within maxWidth and maxHeight
+            val scaleX = maxWidth.toFloat() / pageWidth
+            val scaleY = maxHeight.toFloat() / pageHeight
+            val scale = kotlin.math.min(scaleX, scaleY)
+            
+            var destWidth = (pageWidth * scale * PDF_QUALITY_FACTOR).toInt().coerceAtLeast(1)
+            var destHeight = (pageHeight * scale * PDF_QUALITY_FACTOR).toInt().coerceAtLeast(1)
+
+            // Cap dimensions to avoid huge memory allocations (max 2048px on longest side)
+            val maxDimension = 2048
+            if (destWidth > maxDimension || destHeight > maxDimension) {
+                val capScale = maxDimension.toFloat() / maxOf(destWidth, destHeight)
+                destWidth = (destWidth * capScale).toInt().coerceAtLeast(1)
+                destHeight = (destHeight * capScale).toInt().coerceAtLeast(1)
+            }
+            
+            // Create a bitmap of exactly the scaled dimensions to preserve aspect ratio
+            val bitmap = Bitmap.createBitmap(destWidth, destHeight, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bitmap)
+            canvas.drawColor(android.graphics.Color.WHITE)
+            
+            // Render PDF page beautifully into the aspect-ratio-scaled bitmap
+            page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+            bitmap
+        } catch (t: Throwable) {
+            Log.e("PdfHelper", "Failed to render PDF page $pageIndex safely", t)
+            null
+        } finally {
+            try { page?.close() } catch (_: Exception) {}
+            try { renderer?.close() } catch (_: Exception) {}
+            try { input?.close() } catch (_: Exception) {}
+        }
+    }
+
+    /**
+     * Generates a beautiful paginated PDF from a list of paragraphs (imported DOCX)
+     */
+    fun createPdfFromText(file: File, title: String, paragraphs: List<String>) {
+        val document = PdfDocument()
+        try {
+            var pageNumber = 1
+            var pageInfo = PdfDocument.PageInfo.Builder(600, 800, pageNumber).create()
+            var page = document.startPage(pageInfo)
+            var canvas = page.canvas
+            val paint = Paint()
+
+            // Setup styling
+            val margin = 40f
+            val pageWidth = 600f
+            val pageHeight = 800f
+            val contentWidth = pageWidth - (margin * 2)
+            
+            var currentY = margin + 40f
+
+            fun drawHeader(canvas: Canvas) {
+                val headerPaint = Paint().apply {
+                    color = android.graphics.Color.rgb(0, 97, 164)
+                    textSize = 18f
+                    isFakeBoldText = true
+                    isAntiAlias = true
+                }
+                canvas.drawText(title.uppercase(), margin, margin + 20f, headerPaint)
+                
+                // Draw a nice thin border line below header
+                val linePaint = Paint().apply {
+                    color = android.graphics.Color.LTGRAY
+                    strokeWidth = 1f
+                }
+                canvas.drawLine(margin, margin + 30f, pageWidth - margin, margin + 30f, linePaint)
+            }
+
+            // Draw first page header
+            paint.color = android.graphics.Color.WHITE
+            canvas.drawRect(0f, 0f, pageWidth, pageHeight, paint)
+            drawHeader(canvas)
+
+            val textPaint = Paint().apply {
+                color = android.graphics.Color.DKGRAY
+                textSize = 13f
+                isAntiAlias = true
+            }
+
+            // A helper to wrap lines beautifully
+            fun wrapText(text: String, width: Float, paint: Paint): List<String> {
+                val words = text.split(" ")
+                val lines = mutableListOf<String>()
+                var currentLine = ""
+                for (word in words) {
+                    val testLine = if (currentLine.isEmpty()) word else "$currentLine $word"
+                    val testWidth = paint.measureText(testLine)
+                    if (testWidth <= width) {
+                        currentLine = testLine
+                    } else {
+                        if (currentLine.isNotEmpty()) {
+                            lines.add(currentLine)
+                        }
+                        currentLine = word
+                    }
+                }
+                if (currentLine.isNotEmpty()) {
+                    lines.add(currentLine)
+                }
+                return lines
+            }
+
+            for (p in paragraphs) {
+                // If we're too close to the bottom, start a new page
+                if (currentY > pageHeight - margin - 30f) {
+                    document.finishPage(page)
+                    pageNumber++
+                    pageInfo = PdfDocument.PageInfo.Builder(600, 800, pageNumber).create()
+                    page = document.startPage(pageInfo)
+                    canvas = page.canvas
+                    
+                    // Draw background
+                    paint.color = android.graphics.Color.WHITE
+                    canvas.drawRect(0f, 0f, pageWidth, pageHeight, paint)
+                    drawHeader(canvas)
+                    currentY = margin + 50f
+                }
+
+                val lines = wrapText(p, contentWidth, textPaint)
+                for (line in lines) {
+                    if (currentY > pageHeight - margin - 20f) {
+                        document.finishPage(page)
+                        pageNumber++
+                        pageInfo = PdfDocument.PageInfo.Builder(600, 800, pageNumber).create()
+                        page = document.startPage(pageInfo)
+                        canvas = page.canvas
+                        
+                        // Draw background
+                        paint.color = android.graphics.Color.WHITE
+                        canvas.drawRect(0f, 0f, pageWidth, pageHeight, paint)
+                        drawHeader(canvas)
+                        currentY = margin + 50f
+                    }
+                    canvas.drawText(line, margin, currentY, textPaint)
+                    currentY += 20f // line height
+                }
+                currentY += 12f // paragraph spacing
+            }
+
+            document.finishPage(page)
+
+            FileOutputStream(file).use { out ->
+                document.writeTo(out)
+            }
+        } catch (e: Exception) {
+            Log.e("PdfHelper", "Failed to create pdf from text", e)
+        } finally {
+            document.close()
+        }
+    }
+
+    /**
+     * Exports any note (with all its stylus annotations/strokes and underlying PDF pages/templates) to a flattened PDF file
+     */
+    fun exportNoteToPdf(
+        context: Context? = null,
+        pdfFile: File?, // If it's a PDF note, we have a base PDF file.
+        outputFile: File,
+        templateType: String,
+        strokes: List<com.example.data.Stroke>,
+        images: List<com.example.data.ImageElement> = emptyList(),
+        pageCount: Int,
+        title: String
+    ) {
+        val document = PdfDocument()
+        try {
+            val paint = Paint()
+            val strokePaint = Paint().apply {
+                style = Paint.Style.STROKE
+                strokeCap = Paint.Cap.ROUND
+                strokeJoin = Paint.Join.ROUND
+                isAntiAlias = true
+            }
+
+            for (pageIndex in 1..pageCount) {
+                val pageInfo = PdfDocument.PageInfo.Builder(600, 800, pageIndex).create()
+                val page = document.startPage(pageInfo)
+                val canvas = page.canvas
+
+                // 1. Draw base page layout or original PDF page
+                if (templateType == "pdf" && pdfFile != null && pdfFile.exists()) {
+                    val originalBitmap = renderPdfPageToBitmap(pdfFile, pageIndex - 1, 600, 800)
+                    if (originalBitmap != null) {
+                        canvas.drawBitmap(originalBitmap, 0f, 0f, paint)
+                    } else {
+                        paint.color = android.graphics.Color.WHITE
+                        canvas.drawRect(0f, 0f, 600f, 800f, paint)
+                    }
+                } else {
+                    // Draw backgrounds matching note templates beautifully!
+                    paint.color = android.graphics.Color.WHITE
+                    canvas.drawRect(0f, 0f, 600f, 800f, paint)
+
+                    if (templateType == "ruled") {
+                        paint.color = android.graphics.Color.rgb(230, 240, 255)
+                        paint.strokeWidth = 1f
+                        var y = 100f
+                        while (y < 800f) {
+                            canvas.drawLine(0f, y, 600f, y, paint)
+                            y += 30f
+                        }
+                        // Left margin line
+                        paint.color = android.graphics.Color.rgb(255, 200, 200)
+                        canvas.drawLine(80f, 0f, 80f, 800f, paint)
+                    } else if (templateType == "grid") {
+                        paint.color = android.graphics.Color.rgb(240, 240, 240)
+                        paint.strokeWidth = 1f
+                        var x = 0f
+                        while (x < 600f) {
+                            canvas.drawLine(x, 0f, x, 800f, paint)
+                            x += 30f
+                        }
+                        var y = 0f
+                        while (y < 800f) {
+                            canvas.drawLine(0f, y, 600f, y, paint)
+                            y += 30f
+                        }
+                    }
+                }
+
+                // 2. Draw user inserted pictures/images for this page
+                if (context != null && images.isNotEmpty()) {
+                    val pageImages = images.filter { it.page == pageIndex && !it.isHidden }
+                    for (imageElem in pageImages) {
+                        try {
+                            val bitmap = loadSoftwareBitmap(context, imageElem.uri)
+                            if (bitmap != null) {
+                                val srcRect = Rect(0, 0, bitmap.width, bitmap.height)
+                                val dstRect = RectF(
+                                    imageElem.x,
+                                    imageElem.y,
+                                    imageElem.x + imageElem.width,
+                                    imageElem.y + imageElem.height
+                                )
+                                canvas.drawBitmap(bitmap, srcRect, dstRect, paint)
+                            }
+                        } catch (e: Exception) {
+                            Log.e("PdfHelper", "Error drawing image in PDF page $pageIndex", e)
+                        }
+                    }
+                }
+
+                // 3. Draw user strokes on top
+                val pageStrokes = strokes.filter { it.page == pageIndex }
+                for (stroke in pageStrokes) {
+                    if (stroke.points.size > 1 && stroke.toolType != "eraser") {
+                        strokePaint.color = stroke.color
+                        strokePaint.strokeWidth = stroke.width
+                        val path = android.graphics.Path()
+                        stroke.points.forEachIndexed { idx, pt ->
+                            if (idx == 0) {
+                                path.moveTo(pt.x, pt.y)
+                            } else {
+                                path.lineTo(pt.x, pt.y)
+                            }
+                        }
+                        canvas.drawPath(path, strokePaint)
+                    }
+                }
+
+                document.finishPage(page)
+            }
+
+            FileOutputStream(outputFile).use { out ->
+                document.writeTo(out)
+            }
+        } catch (e: Exception) {
+            Log.e("PdfHelper", "Failed to export note to PDF", e)
+        } finally {
+            document.close()
+        }
+    }
+}

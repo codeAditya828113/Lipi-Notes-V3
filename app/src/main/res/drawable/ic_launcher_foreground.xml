@@ -1,0 +1,46 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    
+    <!-- Dark slate base disc in the icon core center (54, 54) -->
+    <path
+        android:fillColor="#1F2937"
+        android:pathData="M54,18 A36,36 0 1,0 54,90 A36,36 0 1,0 54,18 Z" />
+        
+    <!-- Notebook sheets overlay -->
+    <path
+        android:fillColor="#374151"
+        android:pathData="M34,32 h40 v44 h-40 z" />
+    <path
+        android:fillColor="#F9FAFB"
+        android:pathData="M36,34 h36 v40 h-36 z" />
+        
+    <!-- Ruled template blue lines -->
+    <path
+        android:fillColor="#93C5FD"
+        android:pathData="M42,42 h24 v2 h-24 z" />
+    <path
+        android:fillColor="#93C5FD"
+        android:pathData="M42,50 h24 v2 h-24 z" />
+    <path
+        android:fillColor="#93C5FD"
+        android:pathData="M42,58 h18 v2 h-18 z" />
+
+    <!-- Stylus pencil body (diagonal angle drawing) -->
+    <path
+        android:fillColor="#FBBF24"
+        android:pathData="M72,34 L44,62 L42,68 L48,66 L76,38 Z" />
+    <!-- Graphite stylus tip -->
+    <path
+        android:fillColor="#4B5563"
+        android:pathData="M42,68 L44,65 L43,64 Z" />
+        
+    <!-- Cyan hand-ink streak glow -->
+    <path
+        android:strokeColor="#06B6D4"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:pathData="M46,65 Q54,68 62,56" />
+</vector>

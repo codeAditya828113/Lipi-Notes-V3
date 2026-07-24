@@ -1,0 +1,71 @@
+                        )
+                    }
+                }
+            }
+        ) { innerPadding ->
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+            ) {
+                // Responsive Tablet Sidebar
+                if (isTablet && !viewModel.isFullscreen && selectedNote != null) {
+        // Tablet Side-by-side Layout
+        Row(modifier = Modifier.fillMaxSize()) {
+            // Left list panel (320dp width) - collapsible with animation
+            AnimatedVisibility(
+                visible = isNoteListExpanded,
+                enter = expandHorizontally() + fadeIn(),
+                exit = shrinkHorizontally() + fadeOut()
+            ) {
+                Column(
+                    modifier = Modifier
+                        .width(320.dp)
+                        .fillMaxHeight()
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.1f))
+                        .border(
+                            BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                            shape = RoundedCornerShape(0.dp)
+                        )
+                ) {
+                    NoteListHeader(
+                        searchKeyword = searchKeyword,
+                        onSearchChange = onSearchChange,
+                        onCreateNoteClick = onCreateNoteClick,
+                        onImportPdfClick = { pdfPickerLauncher.launch("application/pdf") },
+                        onImportDocxClick = { docxPickerLauncher.launch("application/vnd.openxmlformats-officedocument.wordprocessingml.document") },
+                        selectedFilter = selectedFilter,
+                        onFilterSelected = onFilterSelected,
+                        onMenuClick = onOpenMenu,
+                        isTablet = true
+                    )
+                    NoteList(
+                        notes = filteredNotes,
+                        selectedNote = selectedNote,
+                        onSelect = { viewModel.selectNote(it) },
+                        onDelete = { viewModel.deleteNote(it) }
+                    )
+                }
+            }
+            // Right Editor Canvas panel
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+            ) {
+                NoteEditorCanvas(
+                    viewModel = viewModel,
+                    selectedNote = selectedNote,
+                    notes = notes,
+                    onCreateNoteClick = onCreateNoteClick,
+                    onBackClick = null,
+                    isSidebarExpanded = isSidebarExpanded,
+                    onToggleSidebar = onToggleSidebar,
+                    isNoteListExpanded = isNoteListExpanded,
+                    onToggleNoteList = onToggleNoteList
+                )
+            }
+        }
+    } else {
+        // Phone view or Full Screen Tablet
+        if (selectedNote != null) {

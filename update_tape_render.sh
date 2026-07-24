@@ -1,0 +1,3 @@
+sed -i 's/val isPencil = stroke.toolType == "pencil"/val isPencil = stroke.toolType == "pencil"\n                                val isTape = stroke.toolType == "tape"/g' app/src/main/java/com/example/ui/components/DrawingCanvas.kt
+sed -i 's/val segmentColor = if (isPencil) {/val segmentColor = if (isTape) {\n                                    if (stroke.isHidden) color.copy(alpha = 0.2f) else color\n                                } else if (isPencil) {/g' app/src/main/java/com/example/ui/components/DrawingCanvas.kt
+sed -i 's/val finalWidth = stroke.width \* avgPressure/val finalWidth = if (isTape) stroke.width * 2f else stroke.width * avgPressure/g' app/src/main/java/com/example/ui/components/DrawingCanvas.kt

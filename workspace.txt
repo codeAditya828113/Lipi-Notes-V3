@@ -1,0 +1,171 @@
+    isTablet: Boolean,
+    searchKeyword: String,
+    onSearchChange: (String) -> Unit,
+    onCreateNoteClick: () -> Unit,
+    selectedFilter: String,
+    onFilterSelected: (String) -> Unit,
+    isSidebarExpanded: Boolean,
+    onToggleSidebar: () -> Unit,
+    isNoteListExpanded: Boolean,
+    onToggleNoteList: () -> Unit,
+    onOpenMenu: () -> Unit
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    val pdfPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            var pdfName = "Imported Document"
+            try {
+                context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                    val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    if (nameIndex != -1 && cursor.moveToFirst()) {
+                        pdfName = cursor.getString(nameIndex)
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+            viewModel.importPdfToNote(uri, pdfName)
+        }
+    }
+
+    val docxPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            var docxName = "Imported Document"
+            try {
+                context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                    val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    if (nameIndex != -1 && cursor.moveToFirst()) {
+                        docxName = cursor.getString(nameIndex)
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+            viewModel.importDocxToNote(uri, docxName)
+        }
+    }
+
+    // Filter notes based on both search query and horizontal active filters
+    val filteredNotes = remember(notes, searchKeyword, selectedFilter) {
+        val baseFiltered = if (searchKeyword.isBlank()) {
+            notes
+        } else {
+            notes.filter { note ->
+                note.title.contains(searchKeyword, ignoreCase = true) ||
+                        note.content.contains(searchKeyword, ignoreCase = true) ||
+                        (note.summary ?: "").contains(searchKeyword, ignoreCase = true)
+            }
+        }
+        
+        when (selectedFilter) {
+            "Handwritten" -> baseFiltered.filter { it.templateType in listOf("blank", "ruled", "grid") }
+            "PDFs" -> baseFiltered.filter { it.templateType == "pdf" || it.templateType == "docx" }
+            "Templates" -> baseFiltered.filter { it.templateType in listOf("cornell", "meeting") }
+            else -> baseFiltered
+        }
+    }
+
+    if (isTablet && !viewModel.isFullscreen) {
+        // Tablet Side-by-side Layout
+        Row(modifier = Modifier.fillMaxSize()) {
+            // Left list panel (320dp width) - collapsible with animation
+            AnimatedVisibility(
+                visible = isNoteListExpanded,
+                enter = expandHorizontally() + fadeIn(),
+                exit = shrinkHorizontally() + fadeOut()
+            ) {
+                Column(
+                    modifier = Modifier
+                        .width(320.dp)
+                        .fillMaxHeight()
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.1f))
+                        .border(
+                            BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                            shape = RoundedCornerShape(0.dp)
+                        )
+                ) {
+                    NoteListHeader(
+                        searchKeyword = searchKeyword,
+                        onSearchChange = onSearchChange,
+                        onCreateNoteClick = onCreateNoteClick,
+                        onImportPdfClick = { pdfPickerLauncher.launch("application/pdf") },
+                        onImportDocxClick = { docxPickerLauncher.launch("application/vnd.openxmlformats-officedocument.wordprocessingml.document") },
+                        selectedFilter = selectedFilter,
+                        onFilterSelected = onFilterSelected,
+                        onMenuClick = onOpenMenu,
+                        isTablet = true
+                    )
+
+                    NoteList(
+                        notes = filteredNotes,
+                        selectedNote = selectedNote,
+                        onSelect = { viewModel.selectNote(it) },
+                        onDelete = { viewModel.deleteNote(it) }
+                    )
+                }
+            }
+
+            // Right Editor Canvas panel
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+            ) {
+                if (selectedNote != null) {
+                    NoteEditorCanvas(
+                        viewModel = viewModel,
+                        selectedNote = selectedNote,
+                        notes = notes,
+                        onCreateNoteClick = onCreateNoteClick,
+                        onBackClick = null,
+                        isSidebarExpanded = isSidebarExpanded,
+                        onToggleSidebar = onToggleSidebar,
+                        isNoteListExpanded = isNoteListExpanded,
+                        onToggleNoteList = onToggleNoteList
+                    )
+                } else {
+                    NoteEditorEmptyState(
+                        onCreateNoteClick = onCreateNoteClick,
+                        isSidebarExpanded = isSidebarExpanded,
+                        onToggleSidebar = onToggleSidebar,
+                        isNoteListExpanded = isNoteListExpanded,
+                        onToggleNoteList = onToggleNoteList
+                    )
+                }
+            }
+        }
+    } else {
+        // Phone view (either list or active full-screen editor)
+        if (selectedNote != null) {
+            Box(modifier = Modifier.fillMaxSize()) {
+                NoteEditorCanvas(
+                    viewModel = viewModel,
+                    selectedNote = selectedNote,
+                    notes = notes,
+                    onCreateNoteClick = onCreateNoteClick,
+                    onBackClick = { viewModel.selectNote(null) },
+                    isSidebarExpanded = false,
+                    onToggleSidebar = {},
+                    isNoteListExpanded = true,
+                    onToggleNoteList = {}
+                )
+            }
+        } else {
+            Column(modifier = Modifier.fillMaxSize()) {
+                NoteListHeader(
+                    searchKeyword = searchKeyword,
+                    onSearchChange = onSearchChange,
+                    onCreateNoteClick = onCreateNoteClick,
+                    onImportPdfClick = { pdfPickerLauncher.launch("application/pdf") },
+                    onImportDocxClick = { docxPickerLauncher.launch("application/vnd.openxmlformats-officedocument.wordprocessingml.document") },
+                    selectedFilter = selectedFilter,
+                    onFilterSelected = onFilterSelected,
+                    onMenuClick = onOpenMenu,
+                    isTablet = false
+                )
+

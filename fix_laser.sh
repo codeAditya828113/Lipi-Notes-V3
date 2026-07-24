@@ -1,0 +1,1 @@
+sed -i 's/val finalStroke = if ((smartShapesEnabled/if (stroke.toolType == "laser") {\n                        activeStroke = null\n                        return\n                    }\n                    val finalStroke = if ((smartShapesEnabled/g' app/src/main/java/com/example/ui/components/NoteViewModel.kt
