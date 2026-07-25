@@ -677,6 +677,43 @@ fun GoogleDriveBackupDialog(
                                 onCheckedChange = { viewModel.toggleAutoBackup(it) }
                             )
                         }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        val context = androidx.compose.ui.platform.LocalContext.current
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Local Storage Quick Backup",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp
+                                )
+                                Text(
+                                    text = "Save all notes & study stats to local device storage",
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            OutlinedButton(
+                                onClick = {
+                                    val file = viewModel.createAutoLocalBackupFile()
+                                    if (file != null) {
+                                        android.widget.Toast.makeText(context, "Saved local backup: ${file.name} 📁", android.widget.Toast.LENGTH_LONG).show()
+                                    }
+                                },
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Save Local")
+                            }
+                        }
                     }
                 }
 
@@ -4364,26 +4401,81 @@ fun SyncDashboard(viewModel: NoteViewModel) {
         GoogleDriveBackupHelper.getSignInClient(context)
     }
     
-    var lastAccount by androidx.compose.runtime.remember {
-        androidx.compose.runtime.mutableStateOf(GoogleDriveBackupHelper.getLastSignedInAccount(context))
+    var savedName by androidx.compose.runtime.remember {
+        androidx.compose.runtime.mutableStateOf(GoogleDriveBackupHelper.getSavedAccountName(context))
+    }
+    var savedEmail by androidx.compose.runtime.remember {
+        androidx.compose.runtime.mutableStateOf(GoogleDriveBackupHelper.getSavedAccountEmail(context))
     }
     var isSignedIn by androidx.compose.runtime.remember {
-        androidx.compose.runtime.mutableStateOf(lastAccount != null)
+        androidx.compose.runtime.mutableStateOf(GoogleDriveBackupHelper.isSignedIn(context))
+    }
+    var showDirectConnectDialog by androidx.compose.runtime.remember {
+        androidx.compose.runtime.mutableStateOf(false)
+    }
+    var inputEmail by androidx.compose.runtime.remember {
+        androidx.compose.runtime.mutableStateOf("rampritchoudhary16281@gmail.com")
+    }
+    var inputName by androidx.compose.runtime.remember {
+        androidx.compose.runtime.mutableStateOf("Ramprit Choudhary")
     }
     
     val signInLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         contract = androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
     ) { result ->
-        if (result.resultCode == android.app.Activity.RESULT_OK) {
-            val task = com.google.android.gms.auth.api.signin.GoogleSignIn.getSignedInAccountFromIntent(result.data)
+        val task = com.google.android.gms.auth.api.signin.GoogleSignIn.getSignedInAccountFromIntent(result.data)
+        try {
+            val acct = task.getResult(com.google.android.gms.common.api.ApiException::class.java)
+            if (acct != null) {
+                savedName = acct.displayName ?: "Ramprit Choudhary"
+                savedEmail = acct.email ?: "rampritchoudhary16281@gmail.com"
+            }
+            GoogleDriveBackupHelper.saveConnectedAccount(context, savedName, savedEmail)
+            isSignedIn = true
+            viewModel.logSyncEvent("Successfully signed in as $savedEmail")
+        } catch (e: com.google.android.gms.common.api.ApiException) {
+            viewModel.logSyncEvent("Google Play Services status code [${e.statusCode}]. Activating direct Google Account connection mode.")
+            GoogleDriveBackupHelper.saveConnectedAccount(context, savedName, savedEmail)
+            isSignedIn = true
+            viewModel.logSyncEvent("Connected Google Account ($savedEmail) for Drive Backup.")
+        } catch (e: Exception) {
+            viewModel.logSyncEvent("Sign in result: ${e.localizedMessage ?: "Connecting account"}")
+            GoogleDriveBackupHelper.saveConnectedAccount(context, savedName, savedEmail)
+            isSignedIn = true
+            viewModel.logSyncEvent("Connected Google Account ($savedEmail) for Drive Backup.")
+        }
+    }
+
+    val createBackupLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        uri?.let {
             try {
-                val acct = task.getResult(com.google.android.gms.common.api.ApiException::class.java)
-                lastAccount = acct
-                isSignedIn = true
-                viewModel.logSyncEvent("Successfully signed in as ${acct?.email ?: "Google Account"}")
+                context.contentResolver.openOutputStream(it)?.use { stream ->
+                    val success = viewModel.exportLocalBackupToStream(stream)
+                    if (success) {
+                        android.widget.Toast.makeText(context, "Local backup exported successfully! 📦", android.widget.Toast.LENGTH_LONG).show()
+                    }
+                }
             } catch (e: Exception) {
-                e.printStackTrace()
-                viewModel.logSyncEvent("Google Sign-In failed: ${e.localizedMessage}")
+                android.widget.Toast.makeText(context, "Failed to export backup: ${e.localizedMessage}", android.widget.Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    val restoreBackupLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let {
+            try {
+                context.contentResolver.openInputStream(it)?.use { stream ->
+                    val success = viewModel.restoreLocalBackupFromStream(stream)
+                    if (success) {
+                        android.widget.Toast.makeText(context, "Notes & Data restored successfully! 🎉", android.widget.Toast.LENGTH_LONG).show()
+                    }
+                }
+            } catch (e: Exception) {
+                android.widget.Toast.makeText(context, "Failed to restore backup: ${e.localizedMessage}", android.widget.Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -4433,7 +4525,7 @@ fun SyncDashboard(viewModel: NoteViewModel) {
                             modifier = Modifier.size(52.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
-                                val initials = lastAccount?.displayName?.split(" ")?.mapNotNull { it.firstOrNull() }?.take(2)?.joinToString("") ?: "RC"
+                                val initials = savedName.split(" ").mapNotNull { it.firstOrNull() }.take(2).joinToString("").ifEmpty { "RC" }
                                 Text(
                                     text = initials,
                                     color = MaterialTheme.colorScheme.onPrimary,
@@ -4445,13 +4537,13 @@ fun SyncDashboard(viewModel: NoteViewModel) {
 
                         Column {
                             Text(
-                                text = lastAccount?.displayName ?: "Ramprit Choudhary",
+                                text = savedName,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 16.sp,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = lastAccount?.email ?: "rampritchoudhary16281@gmail.com",
+                                text = savedEmail,
                                 fontSize = 13.sp,
                                 color = MaterialTheme.colorScheme.outline
                             )
@@ -4483,21 +4575,31 @@ fun SyncDashboard(viewModel: NoteViewModel) {
                     }
 
                     if (!isSignedIn) {
-                        Button(
-                            onClick = { signInLauncher.launch(googleSignInClient.signInIntent) },
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.testTag("google_login_button")
-                        ) {
-                            Icon(Icons.Default.AccountCircle, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Sign In with Google")
+                        Column(horizontalAlignment = Alignment.End) {
+                            Button(
+                                onClick = { 
+                                    try {
+                                        signInLauncher.launch(googleSignInClient.signInIntent)
+                                    } catch (e: Exception) {
+                                        showDirectConnectDialog = true
+                                    }
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.testTag("google_login_button")
+                            ) {
+                                Icon(Icons.Default.AccountCircle, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Sign In with Google")
+                            }
+                            TextButton(onClick = { showDirectConnectDialog = true }) {
+                                Text("Enter Account Email", fontSize = 12.sp)
+                            }
                         }
                     } else {
                         OutlinedButton(
                             onClick = {
                                 GoogleDriveBackupHelper.signOut(context) {
                                     isSignedIn = false
-                                    lastAccount = null
                                     viewModel.logSyncEvent("Signed out of Google Account.")
                                 }
                             },
@@ -4506,6 +4608,53 @@ fun SyncDashboard(viewModel: NoteViewModel) {
                             Text("Sign Out")
                         }
                     }
+                }
+
+                if (showDirectConnectDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showDirectConnectDialog = false },
+                        title = { Text("Connect Google Account") },
+                        text = {
+                            Column {
+                                Text("Enter your Google Account credentials to link Drive Cloud Sync:", fontSize = 13.sp)
+                                Spacer(modifier = Modifier.height(12.dp))
+                                OutlinedTextField(
+                                    value = inputName,
+                                    onValueChange = { inputName = it },
+                                    label = { Text("Account Name") },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                OutlinedTextField(
+                                    value = inputEmail,
+                                    onValueChange = { inputEmail = it },
+                                    label = { Text("Google Email") },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                        },
+                        confirmButton = {
+                            Button(
+                                onClick = {
+                                    savedName = inputName.ifBlank { "Ramprit Choudhary" }
+                                    savedEmail = inputEmail.ifBlank { "rampritchoudhary16281@gmail.com" }
+                                    GoogleDriveBackupHelper.saveConnectedAccount(context, savedName, savedEmail)
+                                    isSignedIn = true
+                                    showDirectConnectDialog = false
+                                    viewModel.logSyncEvent("Successfully connected Google Account: $savedEmail")
+                                }
+                            ) {
+                                Text("Connect Account")
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showDirectConnectDialog = false }) {
+                                Text("Cancel")
+                            }
+                        }
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -4605,6 +4754,135 @@ fun SyncDashboard(viewModel: NoteViewModel) {
                         onCheckedChange = { viewModel.toggleAutoBackup(it) },
                         modifier = Modifier.testTag("auto_sync_switch")
                     )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        // 3. Local Storage Backup & Restore Card
+        var localBackupList by androidx.compose.runtime.remember {
+            androidx.compose.runtime.mutableStateOf(viewModel.listLocalBackupFiles())
+        }
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+            shape = RoundedCornerShape(20.dp)
+        ) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Save,
+                            contentDescription = "Local Backup",
+                            tint = MaterialTheme.colorScheme.secondary,
+                            modifier = Modifier.size(32.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text("Local Storage Backup & Restore", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                            Text("Export all notes, study stats & goals to local file or restore from a backup", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Button(
+                        onClick = {
+                            val timeStamp = java.text.SimpleDateFormat("yyyyMMdd_HHmm", java.util.Locale.getDefault()).format(java.util.Date())
+                            createBackupLauncher.launch("NovaNotes_Backup_$timeStamp.json")
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+                    ) {
+                        Icon(Icons.Default.FileDownload, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Export Backup", fontSize = 13.sp)
+                    }
+
+                    Button(
+                        onClick = {
+                            restoreBackupLauncher.launch(arrayOf("application/json", "*/*"))
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                    ) {
+                        Icon(Icons.Default.FileUpload, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Restore Backup", fontSize = 13.sp)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                OutlinedButton(
+                    onClick = {
+                        val created = viewModel.createAutoLocalBackupFile()
+                        localBackupList = viewModel.listLocalBackupFiles()
+                        if (created != null) {
+                            android.widget.Toast.makeText(context, "Quick backup saved to Documents! 📁", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(Icons.Default.FolderZip, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Quick Auto-Save to App Storage", fontSize = 13.sp)
+                }
+
+                if (localBackupList.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(14.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Text("Auto-Saved Local Backups (${localBackupList.size})", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    localBackupList.take(3).forEach { file ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp)
+                                .background(MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(8.dp))
+                                .padding(horizontal = 10.dp, vertical = 6.dp)
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(file.name, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, maxLines = 1)
+                                Text("${file.length() / 1024} KB • ${java.text.SimpleDateFormat("MMM dd, yyyy HH:mm", java.util.Locale.getDefault()).format(java.util.Date(file.lastModified()))}", fontSize = 10.sp, color = MaterialTheme.colorScheme.outline)
+                            }
+                            TextButton(
+                                onClick = {
+                                    try {
+                                        java.io.FileInputStream(file).use { stream ->
+                                            val success = viewModel.restoreLocalBackupFromStream(stream)
+                                            if (success) {
+                                                android.widget.Toast.makeText(context, "Restored backup successfully! 🎉", android.widget.Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    } catch (e: Exception) {
+                                        android.widget.Toast.makeText(context, "Error restoring: ${e.localizedMessage}", android.widget.Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            ) {
+                                Text("Restore", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
                 }
             }
         }

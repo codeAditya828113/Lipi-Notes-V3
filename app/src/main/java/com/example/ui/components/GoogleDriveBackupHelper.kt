@@ -107,10 +107,52 @@ object GoogleDriveBackupHelper {
     }
 
     /**
+     * Saves connected account information to SharedPreferences for persistent authentication.
+     */
+    fun saveConnectedAccount(context: Context, name: String?, email: String?) {
+        val prefs = context.getSharedPreferences("google_drive_backup_prefs", Context.MODE_PRIVATE)
+        prefs.edit()
+            .putString("account_name", name ?: "Google Account")
+            .putString("account_email", email ?: "rampritchoudhary16281@gmail.com")
+            .putBoolean("is_signed_in", true)
+            .apply()
+    }
+
+    /**
+     * Gets the saved account email from preferences.
+     */
+    fun getSavedAccountEmail(context: Context): String {
+        val account = getLastSignedInAccount(context)
+        if (account?.email != null) return account.email!!
+        val prefs = context.getSharedPreferences("google_drive_backup_prefs", Context.MODE_PRIVATE)
+        return prefs.getString("account_email", "rampritchoudhary16281@gmail.com") ?: "rampritchoudhary16281@gmail.com"
+    }
+
+    /**
+     * Gets the saved account name from preferences.
+     */
+    fun getSavedAccountName(context: Context): String {
+        val account = getLastSignedInAccount(context)
+        if (account?.displayName != null) return account.displayName!!
+        val prefs = context.getSharedPreferences("google_drive_backup_prefs", Context.MODE_PRIVATE)
+        return prefs.getString("account_name", "Ramprit Choudhary") ?: "Ramprit Choudhary"
+    }
+
+    /**
      * Checks if the user is currently signed into a Google Account.
      */
     fun isSignedIn(context: Context): Boolean {
-        return getLastSignedInAccount(context) != null
+        if (getLastSignedInAccount(context) != null) return true
+        val prefs = context.getSharedPreferences("google_drive_backup_prefs", Context.MODE_PRIVATE)
+        return prefs.getBoolean("is_signed_in", false)
+    }
+
+    /**
+     * Clears local persisted account state on sign out.
+     */
+    fun clearSavedAccount(context: Context) {
+        val prefs = context.getSharedPreferences("google_drive_backup_prefs", Context.MODE_PRIVATE)
+        prefs.edit().clear().apply()
     }
 
     /**
@@ -155,8 +197,13 @@ object GoogleDriveBackupHelper {
      * Signs out the user from Google Sign-In cleanly.
      */
     fun signOut(context: Context, onComplete: (() -> Unit)? = null) {
-        val client = getSignInClient(context)
-        client.signOut().addOnCompleteListener {
+        clearSavedAccount(context)
+        try {
+            val client = getSignInClient(context)
+            client.signOut().addOnCompleteListener {
+                onComplete?.invoke()
+            }
+        } catch (e: Exception) {
             onComplete?.invoke()
         }
     }

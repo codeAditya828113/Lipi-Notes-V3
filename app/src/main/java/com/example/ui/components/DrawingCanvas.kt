@@ -180,6 +180,7 @@ fun DrawingCanvas(
     }
 
     val actualBgColor = if (isDarkTheme && canvasBgColor == Color(0xFFFFFFFF)) Color(0xFF121620) else canvasBgColor
+    val isDarkPaperCanvas = isDarkTheme || (0.299f * actualBgColor.red + 0.587f * actualBgColor.green + 0.114f * actualBgColor.blue) < 0.45f
     BoxWithConstraints(modifier = modifier.background(actualBgColor)) {
         val density = LocalDensity.current
         val widthPx = with(density) { maxWidth.toPx() }.toInt().coerceAtLeast(1)
@@ -389,7 +390,7 @@ fun DrawingCanvas(
             }
         }
 
-        Canvas(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .clipToBounds()
@@ -1014,6 +1015,7 @@ fun DrawingCanvas(
                     }
                 }
         ) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
             // Apply canvas panning and zooming transformations if infinite mode is active, hand scroll is enabled, or scrollable PDF is shown
             val isMultiPage = templateType == "pdf" || templateType == "docx" || pdfPageCount > 1
             val isNormalizedCoords = true
@@ -1203,7 +1205,22 @@ fun DrawingCanvas(
                                 } else rawPoints
 
                                 val baseAlpha = if (isLassoed) 0.95f else 1f
-                                val color = androidx.compose.ui.graphics.Color(stroke.color).copy(alpha = baseAlpha * alphaMult)
+                                val rawC = stroke.color
+                                val strokeColorInt = if (stroke.toolType != "highlighter" && stroke.toolType != "laser" && stroke.toolType != "tape") {
+                                    val a = (rawC ushr 24) and 0xFF
+                                    val r = ((rawC ushr 16) and 0xFF) / 255f
+                                    val g = ((rawC ushr 8) and 0xFF) / 255f
+                                    val b = (rawC and 0xFF) / 255f
+                                    val lum = 0.299f * r + 0.587f * g + 0.114f * b
+                                    if (isDarkPaperCanvas && lum < 0.35f && a > 200) {
+                                        0xFFFFFFFF.toInt()
+                                    } else if (!isDarkPaperCanvas && lum > 0.88f && a > 200) {
+                                        0xFF1E1E1E.toInt()
+                                    } else {
+                                        rawC
+                                    }
+                                } else rawC
+                                val color = androidx.compose.ui.graphics.Color(strokeColorInt).copy(alpha = baseAlpha * alphaMult)
                                 val width = stroke.width
                                 
                                 val path = androidx.compose.ui.graphics.Path()
@@ -1222,7 +1239,7 @@ fun DrawingCanvas(
                                 if (stroke.fillShape && stroke.fillOpacity > 0f) {
                                     drawPath(
                                         path = path,
-                                        color = androidx.compose.ui.graphics.Color(stroke.color).copy(alpha = stroke.fillOpacity * baseAlpha * alphaMult),
+                                        color = androidx.compose.ui.graphics.Color(strokeColorInt).copy(alpha = stroke.fillOpacity * baseAlpha * alphaMult),
                                         style = androidx.compose.ui.graphics.drawscope.Fill
                                     )
                                 }
@@ -1334,13 +1351,157 @@ fun DrawingCanvas(
 
                 // 2. Draw Highlighter Layer (Renders BEHIND ink pens)
                 strokes.filter { it.toolType == "highlighter" }.forEach { drawSingleStroke(it, false, 1f) }
-                lassoSelectedStrokes.filter { it.toolType == "highlighter" }.forEach { drawSingleStroke(it, true, 1f) }
-                currentStroke?.let { if (it.toolType == "highlighter") drawSingleStroke(it, false, 1f) }
 
                 // 3. Draw Ink Layer (Pens, Erasers paths, Lasso guides)
                 strokes.filter { it.toolType != "highlighter" }.forEach { drawSingleStroke(it, false, 1f) }
-                
-                // Draw Fading Strokes (Laser)
+            }
+        } // End of first Canvas (background and completed strokes)
+
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val isMultiPage = templateType == "pdf" || templateType == "docx" || pdfPageCount > 1
+            val isNormalizedCoords = true
+            withTransform({
+                translate(offset.x, offset.y)
+                scale(scale, scale, pivot = Offset(size.width / 2f, 0f))
+            }) {
+                val drawSingleStroke: (com.example.data.Stroke, Boolean, Float) -> Unit = { stroke, isLassoed, alphaMult ->
+                    if (!stroke.isHidden) {
+                        val strokePage = stroke.page.coerceIn(1, pdfPageCount)
+                        val isVisible = if (pdfPageCount > 1) {
+                            val pTop = getPageTop(strokePage)
+                            val pH = getPageHeight(strokePage)
+                            val visibleStart = -offset.y / scale
+                            val visibleEnd = (-offset.y + heightPx) / scale
+                            pTop + pH >= visibleStart && pTop <= visibleEnd
+                        } else {
+                            true
+                        }
+
+                        if (isVisible) {
+                            val rawPoints = stroke.points
+                            if (rawPoints.isNotEmpty()) {
+                                val bbox = lassoBoundingBox
+                                val cX = if (bbox != null) (bbox.left + bbox.right) / 2f else 0f
+                                val cY = if (bbox != null) (bbox.top + bbox.bottom) / 2f else 0f
+
+                                val points = if (isLassoed && bbox != null) {
+                                    rawPoints.map { pt ->
+                                        val tx = pt.x + lassoDragOffset.x
+                                        val ty = pt.y + lassoDragOffset.y
+                                        val fx = if (lassoScaleX != 1f) cX + (tx - cX) * lassoScaleX else tx
+                                        val fy = if (lassoScaleY != 1f) cY + (ty - cY) * lassoScaleY else ty
+                                        com.example.data.Point(fx, fy, pt.pressure)
+                                    }
+                                } else rawPoints
+
+                                val baseAlpha = if (isLassoed) 0.95f else 1f
+                                val rawC = stroke.color
+                                val strokeColorInt = if (stroke.toolType != "highlighter" && stroke.toolType != "laser" && stroke.toolType != "tape") {
+                                    val a = (rawC ushr 24) and 0xFF
+                                    val r = ((rawC ushr 16) and 0xFF) / 255f
+                                    val g = ((rawC ushr 8) and 0xFF) / 255f
+                                    val b = (rawC and 0xFF) / 255f
+                                    val lum = 0.299f * r + 0.587f * g + 0.114f * b
+                                    if (isDarkPaperCanvas && lum < 0.35f && a > 200) {
+                                        0xFFFFFFFF.toInt()
+                                    } else if (!isDarkPaperCanvas && lum > 0.88f && a > 200) {
+                                        0xFF1E1E1E.toInt()
+                                    } else {
+                                        rawC
+                                    }
+                                } else rawC
+                                val color = androidx.compose.ui.graphics.Color(strokeColorInt).copy(alpha = baseAlpha * alphaMult)
+                                val width = stroke.width
+                                
+                                val path = androidx.compose.ui.graphics.Path()
+                                val firstPt = points.first()
+                                val lx = fromNormalizedX(firstPt.x, strokePage)
+                                val ly = fromNormalizedY(firstPt.y, strokePage)
+                                path.moveTo(lx, ly)
+
+                                for (i in 1 until points.size) {
+                                    val pt = points[i]
+                                    val pX = fromNormalizedX(pt.x, strokePage)
+                                    val pY = fromNormalizedY(pt.y, strokePage)
+                                    path.lineTo(pX, pY)
+                                }
+
+                                if (stroke.fillShape && stroke.fillOpacity > 0f) {
+                                    drawPath(
+                                        path = path,
+                                        color = androidx.compose.ui.graphics.Color(strokeColorInt).copy(alpha = stroke.fillOpacity * baseAlpha * alphaMult),
+                                        style = androidx.compose.ui.graphics.drawscope.Fill
+                                    )
+                                }
+                                val pathEffect = if (stroke.toolType == "lasso" && !lassoSolidLine) {
+                                    androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(15f, 10f), 0f)
+                                } else if (stroke.toolType == "pencil") {
+                                    androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(1f, 4f), 0f)
+                                } else null
+
+                                val rainbowBrush = if (stroke.isRainbow) {
+                                    val bounds = path.getBounds()
+                                    val brushEnd = if (bounds.width == 0f && bounds.height == 0f) {
+                                        androidx.compose.ui.geometry.Offset(bounds.right + 1f, bounds.bottom + 1f)
+                                    } else {
+                                        androidx.compose.ui.geometry.Offset(bounds.right, bounds.bottom)
+                                    }
+                                    androidx.compose.ui.graphics.Brush.linearGradient(
+                                        colors = listOf(
+                                            androidx.compose.ui.graphics.Color(0xFFFF0000),
+                                            androidx.compose.ui.graphics.Color(0xFFFF7F00),
+                                            androidx.compose.ui.graphics.Color(0xFFFFFF00),
+                                            androidx.compose.ui.graphics.Color(0xFF00FF00),
+                                            androidx.compose.ui.graphics.Color(0xFF0000FF),
+                                            androidx.compose.ui.graphics.Color(0xFF4B0082),
+                                            androidx.compose.ui.graphics.Color(0xFF8B00FF)
+                                        ),
+                                        start = androidx.compose.ui.geometry.Offset(bounds.left, bounds.top),
+                                        end = brushEnd
+                                    )
+                                } else null
+
+                                if (stroke.toolType == "pencil") {
+                                    val pencilAlpha = 0.5f * (color.alpha)
+                                    val drawColor = color.copy(alpha = pencilAlpha)
+                                    val baseStyle = androidx.compose.ui.graphics.drawscope.Stroke(
+                                        width = width, cap = androidx.compose.ui.graphics.StrokeCap.Square, join = androidx.compose.ui.graphics.StrokeJoin.Bevel, pathEffect = pathEffect
+                                    )
+                                    val drawAction: (androidx.compose.ui.graphics.drawscope.Stroke, androidx.compose.ui.graphics.Color?, androidx.compose.ui.graphics.Brush?) -> Unit = { style, col, br ->
+                                        if (br != null) drawPath(path, brush = br, style = style)
+                                        else drawPath(path, color = col!!, style = style)
+                                    }
+                                    drawAction(baseStyle, drawColor, rainbowBrush)
+                                    val offset1 = 0.3f * width
+                                    val stroke2 = androidx.compose.ui.graphics.drawscope.Stroke(width = width * 0.7f, cap = androidx.compose.ui.graphics.StrokeCap.Square, join = androidx.compose.ui.graphics.StrokeJoin.Bevel, pathEffect = pathEffect)
+                                    val stroke3 = androidx.compose.ui.graphics.drawscope.Stroke(width = width * 0.4f, cap = androidx.compose.ui.graphics.StrokeCap.Square, join = androidx.compose.ui.graphics.StrokeJoin.Bevel, pathEffect = pathEffect)
+
+                                    drawContext.transform.translate(offset1, offset1)
+                                    drawAction(stroke2, drawColor.copy(alpha = pencilAlpha * 0.7f), rainbowBrush)
+                                    drawContext.transform.translate(-offset1, -offset1) 
+                                    drawContext.transform.translate(-offset1, -offset1)
+                                    drawAction(stroke2, drawColor.copy(alpha = pencilAlpha * 0.7f), rainbowBrush)
+                                    drawContext.transform.translate(offset1, offset1) 
+                                    drawContext.transform.translate(offset1, -offset1)
+                                    drawAction(stroke3, drawColor.copy(alpha = pencilAlpha * 0.5f), rainbowBrush)
+                                    drawContext.transform.translate(-offset1, offset1)
+                                } else {
+                                    if (rainbowBrush != null) {
+                                        drawPath(path = path, brush = rainbowBrush, style = androidx.compose.ui.graphics.drawscope.Stroke(width = width, cap = androidx.compose.ui.graphics.StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round, pathEffect = pathEffect), blendMode = if (stroke.toolType == "highlighter") androidx.compose.ui.graphics.BlendMode.Multiply else androidx.compose.ui.graphics.drawscope.DrawScope.DefaultBlendMode)
+                                    } else {
+                                        drawPath(path = path, color = color, style = androidx.compose.ui.graphics.drawscope.Stroke(width = width, cap = androidx.compose.ui.graphics.StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round, pathEffect = pathEffect), blendMode = if (stroke.toolType == "highlighter") androidx.compose.ui.graphics.BlendMode.Multiply else androidx.compose.ui.graphics.drawscope.DrawScope.DefaultBlendMode)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } // End of drawSingleStroke in second Canvas
+
+                // Draw active highlighters
+                lassoSelectedStrokes.filter { it.toolType == "highlighter" }.forEach { drawSingleStroke(it, true, 1f) }
+                currentStroke?.let { if (it.toolType == "highlighter") drawSingleStroke(it, false, 1f) }
+
+                // Draw active inks and fading strokes
                 val now = System.currentTimeMillis()
                 fadingStrokes.forEach { fs ->
                     val age = now - fs.createdAt
@@ -1531,8 +1692,9 @@ fun DrawingCanvas(
                 }
             }
         }
-
-            // 6. Floating Zoom Controls Overlay (aligned at bottom-start of the drawing canvas)
+        } // Close the Box with pointerInteropFilter
+        
+        // 6. Floating Zoom Controls Overlay (aligned at bottom-start of the drawing canvas)
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomStart)

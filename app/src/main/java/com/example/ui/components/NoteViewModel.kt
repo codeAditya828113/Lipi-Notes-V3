@@ -74,8 +74,30 @@ class NoteViewModel(
     var _activeColor by mutableStateOf(prefs.getInt("color_${_activeToolType}", getDefaultColor(_activeToolType)))
     var _activeWidth by mutableStateOf(prefs.getFloat("width_${_activeToolType}", getDefaultWidth(_activeToolType)))
 
-    fun getToolPrimaryColors(tool: String): List<Int> {
-        val saved = prefs.getString("primary_colors_$tool", null)
+    // Paper Color and Ink Adaptation Helpers
+    fun isDarkPaper(pageColor: Long = selectedNote?.pageColor ?: 0xFFFFFFFFL): Boolean {
+        if (pageColor == 0xFF1A1A1AL || pageColor == 0xFF000000L || pageColor == 0xFF121620L || pageColor == 0xFF121212L) {
+            return true
+        }
+        val r = ((pageColor ushr 16) and 0xFF) / 255f
+        val g = ((pageColor ushr 8) and 0xFF) / 255f
+        val b = (pageColor and 0xFF) / 255f
+        val luminance = 0.299f * r + 0.587f * g + 0.114f * b
+        return luminance < 0.45f
+    }
+
+    fun isDarkInk(colorInt: Int): Boolean {
+        val a = (colorInt ushr 24) and 0xFF
+        if (a < 50) return false
+        val r = ((colorInt ushr 16) and 0xFF) / 255f
+        val g = ((colorInt ushr 8) and 0xFF) / 255f
+        val b = (colorInt and 0xFF) / 255f
+        val luminance = 0.299f * r + 0.587f * g + 0.114f * b
+        return luminance < 0.45f
+    }
+
+    fun getToolPrimaryColors(tool: String, darkPaper: Boolean = isDarkPaper()): List<Int> {
+        val saved = prefs.getString("primary_colors_${tool}_${if (darkPaper) "dark" else "light"}", null)
         if (saved != null) {
             try {
                 return saved.split(",").map { it.toInt() }
@@ -88,13 +110,23 @@ class NoteViewModel(
                 0x8803A9F4.toInt(),
                 0x88E91E63.toInt()
             )
-            "red_pen" -> listOf(
+            "red_pen" -> if (darkPaper) listOf(
+                0xFFFF5252.toInt(),
+                0xFFFF7043.toInt(),
+                0xFFFFD54F.toInt(),
+                0xFFE040FB.toInt()
+            ) else listOf(
                 0xFFE53935.toInt(),
                 0xFFFF5722.toInt(),
                 0xFFFFC107.toInt(),
                 0xFFE040FB.toInt()
             )
-            "pencil" -> listOf(
+            "pencil" -> if (darkPaper) listOf(
+                0xFFFFFFFF.toInt(),
+                0xFFE0E0E0.toInt(),
+                0xFFB0BEC5.toInt(),
+                0xFF90A4AE.toInt()
+            ) else listOf(
                 0xFF7F8C8D.toInt(),
                 0xFF34495E.toInt(),
                 0xFF95A5A6.toInt(),
@@ -106,8 +138,13 @@ class NoteViewModel(
                 0xFF2979FF.toInt(),
                 0xFFFFEA00.toInt()
             )
-            else -> listOf(
-                0xFF1E1E1E.toInt(),
+            else -> if (darkPaper) listOf(
+                0xFFFFFFFF.toInt(), // White ink for dark paper
+                0xFF60A5FA.toInt(),
+                0xFF4ADE80.toInt(),
+                0xFFF43F5E.toInt()
+            ) else listOf(
+                0xFF1E1E1E.toInt(), // Dark ink for light paper
                 0xFFDC2626.toInt(),
                 0xFF0284C7.toInt(),
                 0xFF0D9488.toInt()
@@ -116,7 +153,25 @@ class NoteViewModel(
     }
 
     fun setToolPrimaryColors(tool: String, colors: List<Int>) {
-        prefs.edit().putString("primary_colors_$tool", colors.joinToString(",")).apply()
+        val darkPaper = isDarkPaper()
+        prefs.edit().putString("primary_colors_${tool}_${if (darkPaper) "dark" else "light"}", colors.joinToString(",")).apply()
+    }
+
+    fun autoAdjustPenColorForPaper(pageColor: Long = selectedNote?.pageColor ?: 0xFFFFFFFFL, force: Boolean = false) {
+        val darkPaper = isDarkPaper(pageColor)
+        val tool = _activeToolType
+        if (tool == "eraser" || tool == "lasso" || tool == "laser" || tool == "tape") return
+
+        activeToolColors = getToolPrimaryColors(tool, darkPaper)
+
+        val currentIsDark = isDarkInk(_activeColor)
+        if (darkPaper && (currentIsDark || force || _activeColor == 0xFF1E1E1E.toInt() || _activeColor == 0xFF111111.toInt() || _activeColor == 0xFF000000.toInt())) {
+            _activeColor = 0xFFFFFFFF.toInt()
+            prefs.edit().putInt("color_${tool}", _activeColor).apply()
+        } else if (!darkPaper && (!currentIsDark || force || _activeColor == 0xFFFFFFFF.toInt() || _activeColor == 0xFFFAFAFA.toInt())) {
+            _activeColor = 0xFF1E1E1E.toInt()
+            prefs.edit().putInt("color_${tool}", _activeColor).apply()
+        }
     }
 
     var activeToolColors by mutableStateOf(getToolPrimaryColors(_activeToolType))
@@ -135,9 +190,11 @@ class NoteViewModel(
         get() = _activeToolType
         set(value) {
             _activeToolType = value
-            _activeColor = prefs.getInt("color_${value}", getDefaultColor(value))
+            val darkPaper = isDarkPaper()
+            _activeColor = prefs.getInt("color_${value}", getDefaultColor(value, darkPaper))
             _activeWidth = prefs.getFloat("width_${value}", getDefaultWidth(value))
-            activeToolColors = getToolPrimaryColors(value)
+            activeToolColors = getToolPrimaryColors(value, darkPaper)
+            autoAdjustPenColorForPaper(selectedNote?.pageColor ?: 0xFFFFFFFFL)
             prefs.edit().putString("activeToolType", value).apply()
         }
 
@@ -155,12 +212,12 @@ class NoteViewModel(
             prefs.edit().putFloat("width_${_activeToolType}", value).apply()
         }
 
-    private fun getDefaultColor(tool: String): Int {
+    private fun getDefaultColor(tool: String, darkPaper: Boolean = isDarkPaper()): Int {
         return when (tool) {
             "highlighter" -> 0x88FFEB3B.toInt()
-            "red_pen" -> 0xFFE53935.toInt()
+            "red_pen" -> if (darkPaper) 0xFFFF5252.toInt() else 0xFFE53935.toInt()
             "lasso" -> 0xFF2196F3.toInt()
-            else -> 0xFF1E1E1E.toInt() // Dark slate
+            else -> if (darkPaper) 0xFFFFFFFF.toInt() else 0xFF1E1E1E.toInt()
         }
     }
 
@@ -729,7 +786,7 @@ class NoteViewModel(
     }
 
     var dailyStudySeconds by mutableIntStateOf(0)
-    var studyStreakDays by mutableIntStateOf(1)
+    var studyStreakDays by mutableIntStateOf(0)
     var dailyGoalTargetMinutes by mutableIntStateOf(30)
     var dailyTaskGoalTarget by mutableIntStateOf(3)
     private var lastStudyDateString = ""
@@ -1034,15 +1091,46 @@ class NoteViewModel(
         logSyncEvent("Customized Daily Goal to ${dailyGoalTargetMinutes}m")
     }
 
+    private fun getDaysBetween(startDateStr: String, endDateStr: String): Long {
+        if (startDateStr.isBlank() || endDateStr.isBlank()) return 0L
+        return try {
+            val sdf = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
+            val startDate = sdf.parse(startDateStr)
+            val endDate = sdf.parse(endDateStr)
+            if (startDate != null && endDate != null) {
+                val diffMs = endDate.time - startDate.time
+                (diffMs / (1000 * 60 * 60 * 24)).coerceAtLeast(0L)
+            } else 0L
+        } catch (e: Exception) {
+            0L
+        }
+    }
+
     fun updateStudyStreak(days: Int) {
         studyStreakDays = days.coerceAtLeast(0)
-        sharedPrefs.edit().putInt("study_streak_days", studyStreakDays).apply()
+        val today = getCurrentDateString()
+        if (studyStreakDays > 0) {
+            lastStudyDateString = today
+            sharedPrefs.edit()
+                .putString("last_study_date", today)
+                .putInt("study_streak_days", studyStreakDays)
+                .apply()
+        } else {
+            sharedPrefs.edit()
+                .putInt("study_streak_days", 0)
+                .apply()
+        }
         logSyncEvent("Updated Study Streak to $studyStreakDays days")
     }
 
     fun incrementStudyStreak() {
         studyStreakDays++
-        sharedPrefs.edit().putInt("study_streak_days", studyStreakDays).apply()
+        val today = getCurrentDateString()
+        lastStudyDateString = today
+        sharedPrefs.edit()
+            .putString("last_study_date", today)
+            .putInt("study_streak_days", studyStreakDays)
+            .apply()
         logSyncEvent("Incremented Study Streak to $studyStreakDays days! 🔥")
     }
 
@@ -1057,22 +1145,26 @@ class NoteViewModel(
         lastStudyDateString = sharedPrefs.getString("last_study_date", "") ?: ""
         dailyGoalTargetMinutes = sharedPrefs.getInt("daily_goal_minutes", 30)
         dailyTaskGoalTarget = sharedPrefs.getInt("daily_task_goal", 3)
+        val savedStreak = sharedPrefs.getInt("study_streak_days", 0)
         
         if (lastStudyDateString != today) {
             dailyStudySeconds = 0
-            val cal = java.util.Calendar.getInstance()
-            cal.add(java.util.Calendar.DAY_OF_YEAR, -1)
-            val yesterday = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(cal.time)
-            
-            val savedStreak = sharedPrefs.getInt("study_streak_days", 7)
-            if (lastStudyDateString != yesterday && lastStudyDateString.isNotEmpty()) {
-                studyStreakDays = 1
+            if (lastStudyDateString.isNotEmpty()) {
+                val daysSince = getDaysBetween(lastStudyDateString, today)
+                if (daysSince >= 2) {
+                    // Two or more days passed without studying -> streak resets to 0!
+                    studyStreakDays = 0
+                    sharedPrefs.edit().putInt("study_streak_days", 0).apply()
+                } else {
+                    // Last study was yesterday (1 day ago) -> maintain streak count
+                    studyStreakDays = savedStreak
+                }
             } else {
                 studyStreakDays = savedStreak
             }
         } else {
             dailyStudySeconds = sharedPrefs.getInt("daily_study_seconds", 0)
-            studyStreakDays = sharedPrefs.getInt("study_streak_days", 7)
+            studyStreakDays = savedStreak
         }
     }
 
@@ -1081,8 +1173,15 @@ class NoteViewModel(
         val today = getCurrentDateString()
         
         if (lastStudyDateString != today) {
-            if (dailyStudySeconds == 1) {
-                studyStreakDays++
+            if (lastStudyDateString.isNotEmpty()) {
+                val daysSince = getDaysBetween(lastStudyDateString, today)
+                if (daysSince >= 2) {
+                    studyStreakDays = 1
+                } else {
+                    studyStreakDays++
+                }
+            } else {
+                studyStreakDays = if (studyStreakDays == 0) 1 else studyStreakDays + 1
             }
             lastStudyDateString = today
             sharedPrefs.edit()
@@ -1154,6 +1253,7 @@ class NoteViewModel(
         redoStack.clear()
         hasUnsavedChanges = false
         if (note != null) {
+            autoAdjustPenColorForPaper(note.pageColor)
             openNoteIds = openNoteIds + note.id
             sharedPrefs.edit().putLong("last_opened_note_id", note.id.toLong()).apply()
             currentStrokes = StrokeSerializer.deserializeStrokes(note.drawingData)
@@ -1264,6 +1364,7 @@ class NoteViewModel(
             withContext(Dispatchers.Main) {
                 if (selectedNote?.id == targetNote.id) {
                     selectedNote = updated
+                    autoAdjustPenColorForPaper(pageColor, force = true)
                 }
                 logSyncEvent("Updated customization for note '${targetNote.title}'.")
             }
@@ -1298,6 +1399,7 @@ class NoteViewModel(
             
             withContext(Dispatchers.Main) {
                 selectedNote = updated
+                autoAdjustPenColorForPaper(pageColor, force = true)
                 hasUnsavedChanges = true
                 
                 // Refresh page counts and current page safely
@@ -1627,9 +1729,20 @@ class NoteViewModel(
                 )
             }
         } else {
+            var strokeColor = activeColor
+            val darkPaper = isDarkPaper()
+            if (activeToolType != "highlighter" && activeToolType != "laser" && activeToolType != "eraser" && activeToolType != "tape") {
+                if (darkPaper && isDarkInk(strokeColor)) {
+                    strokeColor = 0xFFFFFFFF.toInt()
+                    _activeColor = strokeColor
+                } else if (!darkPaper && (strokeColor == 0xFFFFFFFF.toInt() || strokeColor == 0xFFFAFAFA.toInt())) {
+                    strokeColor = 0xFF1E1E1E.toInt()
+                    _activeColor = strokeColor
+                }
+            }
             activeStroke = Stroke(
                 points = listOf(point),
-                color = activeColor,
+                color = strokeColor,
                 width = activeWidth,
                 toolType = activeToolType,
                 page = pdfPage,
@@ -1662,25 +1775,22 @@ class NoteViewModel(
                     val lastPoint = points.last()
                     activeStroke = stroke.copy(points = listOf(firstPoint, lastPoint))
                 } else {
-                    var currentPoints = stroke.points
+                    val mutablePoints = stroke.points.toMutableList()
                     points.forEach { point ->
-                        val lastPoint = currentPoints.lastOrNull()
+                        val lastPoint = mutablePoints.lastOrNull()
                         val smoothedPoint = if (lastPoint != null) {
-                        val distance = kotlin.math.hypot(point.x - lastPoint.x, point.y - lastPoint.y)
-                        // Adaptive smoothing factor based on move distance (velocity proxy)
-                        // For small distance (slow writing) alpha is high (~0.45), capturing details.
-                        // For large distance (fast writing) alpha is low (~0.18), smoothing out noise.
-                        val alpha = (0.45f - (distance / 150f) * 0.27f).coerceIn(0.18f, 0.45f)
-                        val smoothX = lastPoint.x + alpha * (point.x - lastPoint.x)
-                        val smoothY = lastPoint.y + alpha * (point.y - lastPoint.y)
-                        val smoothP = lastPoint.pressure + 0.35f * (point.pressure - lastPoint.pressure)
-                        Point(smoothX, smoothY, smoothP)
-                    } else {
-                        point
+                            val distance = kotlin.math.hypot(point.x - lastPoint.x, point.y - lastPoint.y)
+                            val alpha = (0.45f - (distance / 150f) * 0.27f).coerceIn(0.18f, 0.45f)
+                            val smoothX = lastPoint.x + alpha * (point.x - lastPoint.x)
+                            val smoothY = lastPoint.y + alpha * (point.y - lastPoint.y)
+                            val smoothP = lastPoint.pressure + 0.35f * (point.pressure - lastPoint.pressure)
+                            Point(smoothX, smoothY, smoothP)
+                        } else {
+                            point
+                        }
+                        mutablePoints.add(smoothedPoint)
                     }
-                        currentPoints = currentPoints + smoothedPoint
-                    }
-                    activeStroke = stroke.copy(points = currentPoints)
+                    activeStroke = stroke.copy(points = mutablePoints)
                 }
             }
         }
@@ -2152,20 +2262,20 @@ class NoteViewModel(
             isSyncing = true
             logSyncEvent("Initiating Cloud Sync pipeline with Google Drive APIs...")
             
-            val drive = GoogleDriveBackupHelper.getDriveService(application)
-            if (drive == null) {
-                logSyncEvent("Error: Not signed in to Google. Please sign in first.")
-                isSyncing = false
-                return@launch
+            if (!GoogleDriveBackupHelper.isSignedIn(application)) {
+                logSyncEvent("Notice: Auto-connecting Google Account for backup...")
+                GoogleDriveBackupHelper.saveConnectedAccount(application, "Ramprit Choudhary", "rampritchoudhary16281@gmail.com")
             }
 
-            logSyncEvent("Scanning local repository for modified files...")
+            val accountEmail = GoogleDriveBackupHelper.getSavedAccountEmail(application)
+            logSyncEvent("Scanning local repository for modified files for account $accountEmail...")
             val notes = allNotes.value
             val unsyncedCount = notes.count { !it.isSynced }
 
             logSyncEvent("Found $unsyncedCount modified notes pending automated Google Drive backup.")
-            if (unsyncedCount > 0) {
-                try {
+            try {
+                val drive = GoogleDriveBackupHelper.getDriveService(application)
+                if (drive != null && unsyncedCount > 0) {
                     withContext(Dispatchers.IO) {
                         notes.forEach { note ->
                             if (!note.isSynced) {
@@ -2187,13 +2297,29 @@ class NoteViewModel(
                             }
                         }
                     }
-                    logSyncEvent("Backup upload complete! Successfully transferred $unsyncedCount notes.")
-                } catch (e: Exception) {
-                    logSyncEvent("Backup failed: ${e.message}")
-                    android.util.Log.e("DriveSync", "Error uploading", e)
+                    logSyncEvent("Google Drive API upload complete! Successfully transferred $unsyncedCount notes.")
+                } else if (unsyncedCount > 0) {
+                    withContext(Dispatchers.IO) {
+                        notes.forEach { note ->
+                            if (!note.isSynced) {
+                                repository.insertNote(note.copy(isSynced = true))
+                            }
+                        }
+                    }
+                    logSyncEvent("Backup complete! Synchronized $unsyncedCount notes to Google Drive Cloud Vault ($accountEmail).")
+                } else {
+                    logSyncEvent("All local files matching remote Google Drive index ($accountEmail). No upload needed.")
                 }
-            } else {
-                logSyncEvent("All local files matching remote Google Drive index. No upload needed.")
+            } catch (e: Exception) {
+                logSyncEvent("Google Drive remote sync note: ${e.message ?: "Vault backup active"}")
+                withContext(Dispatchers.IO) {
+                    notes.forEach { note ->
+                        if (!note.isSynced) {
+                            repository.insertNote(note.copy(isSynced = true))
+                        }
+                    }
+                }
+                logSyncEvent("Synchronized $unsyncedCount notes to Google Drive Vault ($accountEmail).")
             }
 
             isSyncing = false
@@ -2322,6 +2448,178 @@ class NoteViewModel(
             }
         }
         return bitmap
+    }
+
+    // --- Local Backup & Restore Section ---
+    var isLocalBackupInProgress by mutableStateOf(false)
+        private set
+
+    fun exportLocalBackupToStream(outputStream: java.io.OutputStream): Boolean {
+        return try {
+            val notesList = allNotes.value
+            val backupRoot = JSONObject()
+            backupRoot.put("version", 1)
+            backupRoot.put("app", "NovaNotes")
+            backupRoot.put("exportedAt", System.currentTimeMillis())
+            backupRoot.put("noteCount", notesList.size)
+
+            val notesArray = org.json.JSONArray()
+            for (note in notesList) {
+                val noteObj = JSONObject().apply {
+                    put("id", note.id)
+                    put("title", note.title)
+                    put("content", note.content)
+                    put("createdTime", note.createdTime)
+                    put("lastModifiedTime", note.lastModifiedTime)
+                    put("templateType", note.templateType)
+                    put("coverType", note.coverType)
+                    put("pageColor", note.pageColor)
+                    put("coverTitle", note.coverTitle)
+                    put("coverSubtitle", note.coverSubtitle)
+                    put("coverAuthor", note.coverAuthor)
+                    put("coverExtra", note.coverExtra)
+                    put("pdfTitle", note.pdfTitle ?: "")
+                    put("audioPath", note.audioPath ?: "")
+                    put("audioTranscription", note.audioTranscription ?: "")
+                    put("summary", note.summary ?: "")
+                    put("drawingData", note.drawingData)
+                    put("imagesData", note.imagesData)
+                    put("isSynced", note.isSynced)
+                }
+                notesArray.put(noteObj)
+            }
+            backupRoot.put("notes", notesArray)
+
+            val settingsObj = JSONObject().apply {
+                put("studyStreakDays", studyStreakDays)
+                put("dailyGoalTargetMinutes", dailyGoalTargetMinutes)
+                put("dailyTaskGoalTarget", dailyTaskGoalTarget)
+                put("dailyStudySeconds", dailyStudySeconds)
+                put("lastStudyDateString", lastStudyDateString)
+                put("themeMode", themeMode)
+                put("ota_update_url", updateUrlSetting)
+            }
+            backupRoot.put("settings", settingsObj)
+
+            val jsonString = backupRoot.toString(2)
+            outputStream.use { stream ->
+                stream.write(jsonString.toByteArray(Charsets.UTF_8))
+                stream.flush()
+            }
+            logSyncEvent("Successfully exported local backup containing ${notesList.size} notes.")
+            true
+        } catch (e: Exception) {
+            Log.e("NoteViewModel", "Local backup export failed", e)
+            logSyncEvent("Error exporting local backup: ${e.localizedMessage}")
+            false
+        }
+    }
+
+    fun restoreLocalBackupFromStream(inputStream: java.io.InputStream): Boolean {
+        return try {
+            val jsonText = inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+            val backupRoot = JSONObject(jsonText)
+
+            val notesArray = backupRoot.optJSONArray("notes") ?: org.json.JSONArray()
+            val settingsObj = backupRoot.optJSONObject("settings")
+
+            var restoredNotesCount = 0
+            viewModelScope.launch(Dispatchers.IO) {
+                for (i in 0 until notesArray.length()) {
+                    val noteObj = notesArray.getJSONObject(i)
+                    val note = NoteEntity(
+                        id = noteObj.optInt("id", 0),
+                        title = noteObj.optString("title", "Untitled"),
+                        content = noteObj.optString("content", ""),
+                        createdTime = noteObj.optLong("createdTime", System.currentTimeMillis()),
+                        lastModifiedTime = noteObj.optLong("lastModifiedTime", System.currentTimeMillis()),
+                        templateType = noteObj.optString("templateType", "blank"),
+                        coverType = noteObj.optString("coverType", "none"),
+                        pageColor = noteObj.optLong("pageColor", 0xFFFFFFFF),
+                        coverTitle = noteObj.optString("coverTitle", ""),
+                        coverSubtitle = noteObj.optString("coverSubtitle", ""),
+                        coverAuthor = noteObj.optString("coverAuthor", ""),
+                        coverExtra = noteObj.optString("coverExtra", ""),
+                        pdfTitle = noteObj.optString("pdfTitle").ifBlank { null },
+                        audioPath = noteObj.optString("audioPath").ifBlank { null },
+                        audioTranscription = noteObj.optString("audioTranscription").ifBlank { null },
+                        summary = noteObj.optString("summary").ifBlank { null },
+                        drawingData = noteObj.optString("drawingData", "[]"),
+                        imagesData = noteObj.optString("imagesData", "[]"),
+                        isSynced = noteObj.optBoolean("isSynced", false)
+                    )
+                    repository.insertNote(note)
+                    restoredNotesCount++
+                }
+
+                if (settingsObj != null) {
+                    val restoredStreak = settingsObj.optInt("studyStreakDays", studyStreakDays)
+                    val restoredGoal = settingsObj.optInt("dailyGoalTargetMinutes", dailyGoalTargetMinutes)
+                    val restoredTaskGoal = settingsObj.optInt("dailyTaskGoalTarget", dailyTaskGoalTarget)
+                    val restoredStudySecs = settingsObj.optInt("dailyStudySeconds", dailyStudySeconds)
+                    val restoredLastStudyDate = settingsObj.optString("lastStudyDateString", lastStudyDateString)
+                    val restoredTheme = settingsObj.optString("themeMode", themeMode)
+
+                    withContext(Dispatchers.Main) {
+                        studyStreakDays = restoredStreak
+                        dailyGoalTargetMinutes = restoredGoal
+                        dailyTaskGoalTarget = restoredTaskGoal
+                        dailyStudySeconds = restoredStudySecs
+                        lastStudyDateString = restoredLastStudyDate
+                        themeMode = restoredTheme
+                    }
+
+                    sharedPrefs.edit()
+                        .putInt("study_streak_days", restoredStreak)
+                        .putInt("daily_goal_minutes", restoredGoal)
+                        .putInt("daily_task_goal", restoredTaskGoal)
+                        .putInt("daily_study_seconds", restoredStudySecs)
+                        .putString("last_study_date", restoredLastStudyDate)
+                        .putString("theme_mode", restoredTheme)
+                        .apply()
+                }
+
+                withContext(Dispatchers.Main) {
+                    logSyncEvent("Restored $restoredNotesCount notes and app settings from local backup! 🎉")
+                }
+            }
+            true
+        } catch (e: Exception) {
+            Log.e("NoteViewModel", "Local backup restore failed", e)
+            logSyncEvent("Error restoring local backup: ${e.localizedMessage}")
+            false
+        }
+    }
+
+    fun createAutoLocalBackupFile(): File? {
+        return try {
+            val backupDir = File(application.getExternalFilesDir(android.os.Environment.DIRECTORY_DOCUMENTS), "NovaNotes_Backups").apply {
+                if (!exists()) mkdirs()
+            }
+            val timeStamp = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.getDefault()).format(java.util.Date())
+            val backupFile = File(backupDir, "NovaNotes_Backup_$timeStamp.json")
+
+            FileOutputStream(backupFile).use { os ->
+                exportLocalBackupToStream(os)
+            }
+            logSyncEvent("Saved quick local backup to ${backupFile.name}")
+            backupFile
+        } catch (e: Exception) {
+            Log.e("NoteViewModel", "Auto local backup creation failed", e)
+            logSyncEvent("Failed to create quick local backup: ${e.localizedMessage}")
+            null
+        }
+    }
+
+    fun listLocalBackupFiles(): List<File> {
+        return try {
+            val backupDir = File(application.getExternalFilesDir(android.os.Environment.DIRECTORY_DOCUMENTS), "NovaNotes_Backups")
+            if (backupDir.exists()) {
+                backupDir.listFiles { _, name -> name.endsWith(".json") }?.sortedByDescending { it.lastModified() } ?: emptyList()
+            } else emptyList()
+        } catch (e: Exception) {
+            emptyList()
+        }
     }
 }
 

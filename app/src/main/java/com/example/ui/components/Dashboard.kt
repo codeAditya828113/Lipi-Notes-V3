@@ -628,13 +628,42 @@ fun CustomizeGoalsModal(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Default.LocalFireDepartment, contentDescription = null, tint = Color(0xFFFF5722), modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Study Streak Counter", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text("Study Streak Counter (Manual Edit)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                         }
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Quick streak preset chips
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            listOf(0, 1, 3, 7, 14, 30).forEach { days ->
+                                val isSel = tempStreakDays == days.toString()
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = if (isSel) Color(0xFFFF5722).copy(alpha = 0.2f) else MaterialTheme.colorScheme.surface,
+                                    border = BorderStroke(1.dp, if (isSel) Color(0xFFFF5722) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clickable { tempStreakDays = days.toString() }
+                                ) {
+                                    Text(
+                                        text = if (days == 0) "0d" else "${days}d",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        textAlign = TextAlign.Center,
+                                        color = if (isSel) Color(0xFFFF5722) else MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.padding(vertical = 6.dp)
+                                    )
+                                }
+                            }
+                        }
+
                         Spacer(modifier = Modifier.height(8.dp))
 
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             OutlinedButton(
@@ -642,16 +671,23 @@ fun CustomizeGoalsModal(
                                     val current = tempStreakDays.toIntOrNull() ?: 0
                                     if (current > 0) tempStreakDays = (current - 1).toString()
                                 },
-                                shape = RoundedCornerShape(8.dp)
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
                             ) {
-                                Text("- 1 Day")
+                                Text("-1 Day")
                             }
 
-                            Text(
-                                text = "${tempStreakDays.toIntOrNull() ?: 0} Days 🔥",
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                color = Color(0xFFFF5722)
+                            OutlinedTextField(
+                                value = tempStreakDays,
+                                onValueChange = { tempStreakDays = it.filter { char -> char.isDigit() } },
+                                label = { Text("Streak Days", fontSize = 10.sp) },
+                                singleLine = true,
+                                modifier = Modifier.weight(1f),
+                                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = Color(0xFFFF5722),
+                                    focusedLabelColor = Color(0xFFFF5722)
+                                )
                             )
 
                             Button(
@@ -660,11 +696,20 @@ fun CustomizeGoalsModal(
                                     tempStreakDays = (current + 1).toString()
                                 },
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF5722)),
-                                shape = RoundedCornerShape(8.dp)
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
                             ) {
-                                Text("+ 1 Day 🔥")
+                                Text("+1 Day 🔥")
                             }
                         }
+
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "💡 Type any number to set your streak manually. If you don't study for 2 consecutive days, your streak automatically resets to 0.",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            lineHeight = 14.sp
+                        )
                     }
                 }
 
@@ -696,7 +741,7 @@ fun CustomizeGoalsModal(
             Button(
                 onClick = {
                     val goalVal = tempGoalMins.toIntOrNull() ?: 30
-                    val streakVal = tempStreakDays.toIntOrNull() ?: 1
+                    val streakVal = tempStreakDays.toIntOrNull() ?: 0
                     val taskVal = tempTaskGoal.toIntOrNull() ?: 3
                     
                     viewModel.updateDailyGoalMinutes(goalVal)
