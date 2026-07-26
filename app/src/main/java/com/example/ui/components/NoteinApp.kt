@@ -335,15 +335,15 @@ fun NoteinApp(
             onDismissRequest = { viewModel.dismissUpdatePromptDialog() },
             icon = {
                 Icon(
-                    imageVector = Icons.Default.SystemUpdate,
+                    imageVector = if (viewModel.updateAvailable) Icons.Default.SystemUpdate else Icons.Default.CheckCircle,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
+                    tint = if (viewModel.updateAvailable) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary,
                     modifier = Modifier.size(32.dp)
                 )
             },
             title = {
                 Text(
-                    text = "Update Available (v${viewModel.updateVersionName})",
+                    text = if (viewModel.updateAvailable) "Update Available (v${viewModel.updateVersionName})" else "App is Up to Date (v${com.example.BuildConfig.VERSION_NAME})",
                     fontWeight = FontWeight.Bold,
                     fontSize = 18.sp
                 )
@@ -354,7 +354,11 @@ fun NoteinApp(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = "A new version of NovaNotes is ready to install! Enjoy performance improvements, stylus responsiveness, and new features.",
+                        text = if (viewModel.updateAvailable) {
+                            "A new version of NovaNotes (v${viewModel.updateVersionName}) is available! Click 'Download APK' to open GitHub and automatically start downloading the update."
+                        } else {
+                            "You are currently running the latest version of NovaNotes (v${com.example.BuildConfig.VERSION_NAME}). You can re-download the latest release APK from GitHub anytime."
+                        },
                         fontSize = 13.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -367,7 +371,7 @@ fun NoteinApp(
                         ) {
                             Column(modifier = Modifier.padding(12.dp)) {
                                 Text(
-                                    text = "What's New:",
+                                    text = "Release Details:",
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.primary
@@ -408,10 +412,13 @@ fun NoteinApp(
             },
             confirmButton = {
                 val context = androidx.compose.ui.platform.LocalContext.current
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     OutlinedButton(
                         onClick = {
-                            val targetUrl = if (viewModel.updateApkUrl.isNotBlank()) viewModel.updateApkUrl else "https://github.com/rampritchoudhary16281/NovaNotes/releases"
+                            val targetUrl = "https://github.com/rampritchoudhary16281/NovaNotes/releases"
                             try {
                                 val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(targetUrl))
                                 context.startActivity(intent)
@@ -421,27 +428,29 @@ fun NoteinApp(
                         },
                         shape = RoundedCornerShape(10.dp)
                     ) {
-                        Text("Open GitHub", fontSize = 12.sp)
+                        Text("View Releases", fontSize = 12.sp)
                     }
 
                     Button(
                         onClick = {
                             viewModel.markPendingUpdate(viewModel.updateNotes)
                             viewModel.downloadAndInstallApk()
-                            val targetUrl = if (viewModel.updateApkUrl.isNotBlank()) viewModel.updateApkUrl else "https://github.com/rampritchoudhary16281/NovaNotes/releases"
+                            val targetUrl = if (viewModel.updateApkUrl.isNotBlank()) viewModel.updateApkUrl else "https://github.com/rampritchoudhary16281/NovaNotes/releases/latest"
                             try {
                                 val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(targetUrl))
                                 context.startActivity(intent)
                             } catch (e: Exception) {
                                 android.util.Log.e("OTAUpdate", "Could not open browser", e)
                             }
+                            viewModel.dismissUpdatePromptDialog()
                         },
                         enabled = viewModel.updateProgress == null,
-                        shape = RoundedCornerShape(10.dp)
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.testTag("download_latest_apk_button")
                     ) {
                         Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Update Now", fontSize = 12.sp)
+                        Text(if (viewModel.updateAvailable) "Download APK" else "Re-download APK", fontSize = 12.sp)
                     }
                 }
             },
@@ -450,7 +459,7 @@ fun NoteinApp(
                     onClick = { viewModel.dismissUpdatePromptDialog() },
                     shape = RoundedCornerShape(10.dp)
                 ) {
-                    Text("Remind Later")
+                    Text("Close")
                 }
             }
         )

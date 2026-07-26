@@ -1006,34 +1006,49 @@ class NoteViewModel(
                     var json = fetchJsonObject(updateUrlSetting)
 
                     // 2. Fallback to GitHub Releases API if update.json fails or returned null
-                    if (json == null) {
+                    if (json == null || !json.has("apkUrl")) {
                         val ghRelease = fetchJsonObject("https://api.github.com/repos/rampritchoudhary16281/NovaNotes/releases/latest")
                         if (ghRelease != null) {
-                            val tagName = ghRelease.optString("tag_name", "1.0").replace("v", "")
-                            val body = ghRelease.optString("body", "• Performance optimizations\n• Stability improvements")
+                            val rawTag = ghRelease.optString("tag_name", "1.0").trim()
+                            val tagName = rawTag.replace("v", "").trim()
+                            val body = ghRelease.optString("body", "• Performance optimizations\n• Stylus responsiveness\n• New canvas & feature updates")
+                            val htmlUrl = ghRelease.optString("html_url", "https://github.com/rampritchoudhary16281/NovaNotes/releases/latest")
                             val assets = ghRelease.optJSONArray("assets")
-                            var apkDownloadUrl = ghRelease.optString("html_url", "https://github.com/rampritchoudhary16281/NovaNotes/releases")
+                            var apkDownloadUrl = ""
                             if (assets != null && assets.length() > 0) {
                                 for (i in 0 until assets.length()) {
                                     val asset = assets.getJSONObject(i)
                                     val name = asset.optString("name", "")
-                                    if (name.endsWith(".apk")) {
-                                        apkDownloadUrl = asset.optString("browser_download_url", apkDownloadUrl)
+                                    if (name.endsWith(".apk", ignoreCase = true)) {
+                                        apkDownloadUrl = asset.optString("browser_download_url", "")
                                         break
                                     }
                                 }
                             }
+                            if (apkDownloadUrl.isBlank()) {
+                                apkDownloadUrl = if (rawTag.isNotBlank()) {
+                                    "https://github.com/rampritchoudhary16281/NovaNotes/releases/download/$rawTag/app-release.apk"
+                                } else {
+                                    "https://github.com/rampritchoudhary16281/NovaNotes/releases/latest"
+                                }
+                            }
                             val vCode = try {
-                                val parts = tagName.split(".")
-                                if (parts.size >= 2) parts[0].toInt() * 10 + parts[1].toInt() else tagName.toInt()
+                                val cleanTag = tagName.replace(Regex("[^0-9.]"), "")
+                                val parts = cleanTag.split(".")
+                                if (parts.size >= 2) {
+                                    parts[0].toInt() * 100 + parts[1].toInt() * 10 + (if (parts.size > 2) parts[2].toInt() else 0)
+                                } else if (parts.isNotEmpty() && parts[0].isNotEmpty()) {
+                                    parts[0].toInt() * 100
+                                } else com.example.BuildConfig.VERSION_CODE + 1
                             } catch (e: Exception) {
                                 com.example.BuildConfig.VERSION_CODE + 1
                             }
                             json = JSONObject().apply {
                                 put("versionCode", vCode)
-                                put("versionName", tagName)
+                                put("versionName", tagName.ifBlank { "1.0" })
                                 put("apkUrl", apkDownloadUrl)
                                 put("releaseNotes", body)
+                                put("htmlUrl", htmlUrl)
                             }
                         }
                     }
@@ -1044,7 +1059,7 @@ class NoteViewModel(
                 if (result != null) {
                     val remoteVersionCode = result.optInt("versionCode", 1)
                     val remoteVersionName = result.optString("versionName", com.example.BuildConfig.VERSION_NAME)
-                    val apkUrl = result.optString("apkUrl", "https://github.com/rampritchoudhary16281/NovaNotes/releases")
+                    val apkUrl = result.optString("apkUrl", "https://github.com/rampritchoudhary16281/NovaNotes/releases/latest")
                     val releaseNotes = result.optString("releaseNotes", "• Performance optimizations\n• Feature updates and bug fixes")
 
                     val currentVersionCode = com.example.BuildConfig.VERSION_CODE
@@ -1052,7 +1067,7 @@ class NoteViewModel(
                         updateAvailable = true
                         updateVersionName = remoteVersionName
                         updateVersionCode = remoteVersionCode
-                        updateApkUrl = if (apkUrl.isNotBlank()) apkUrl else "https://github.com/rampritchoudhary16281/NovaNotes/releases"
+                        updateApkUrl = if (apkUrl.isNotBlank()) apkUrl else "https://github.com/rampritchoudhary16281/NovaNotes/releases/latest"
                         updateNotes = releaseNotes
                         updateStatusMessage = "New version v$remoteVersionName available!"
                         showUpdatePromptDialog = true
@@ -1060,27 +1075,35 @@ class NoteViewModel(
                         logSyncEvent("Update available: v$remoteVersionName")
                     } else {
                         updateAvailable = false
-                        updateVersionName = remoteVersionName
-                        updateApkUrl = if (apkUrl.isNotBlank()) apkUrl else "https://github.com/rampritchoudhary16281/NovaNotes/releases"
+                        updateVersionName = remoteVersionName.ifBlank { com.example.BuildConfig.VERSION_NAME }
+                        updateApkUrl = if (apkUrl.isNotBlank()) apkUrl else "https://github.com/rampritchoudhary16281/NovaNotes/releases/latest"
                         updateNotes = releaseNotes
                         updateStatusMessage = "App is up to date (v${com.example.BuildConfig.VERSION_NAME})"
                         logSyncEvent("App is up to date")
                         if (!silent) {
-                            showUpdatePromptDialog = false
+                            showUpdatePromptDialog = true
                         }
                     }
                 } else {
                     // Smooth fallback when no remote JSON or release tag found
                     updateAvailable = false
-                    updateApkUrl = "https://github.com/rampritchoudhary16281/NovaNotes/releases"
+                    updateVersionName = com.example.BuildConfig.VERSION_NAME
+                    updateApkUrl = "https://github.com/rampritchoudhary16281/NovaNotes/releases/latest"
                     updateStatusMessage = "App is up to date (v${com.example.BuildConfig.VERSION_NAME})"
                     logSyncEvent("App is up to date")
+                    if (!silent) {
+                        showUpdatePromptDialog = true
+                    }
                 }
             } catch (e: Exception) {
                 Log.e("OTAUpdate", "Error checking for updates", e)
                 updateAvailable = false
-                updateApkUrl = "https://github.com/rampritchoudhary16281/NovaNotes/releases"
+                updateVersionName = com.example.BuildConfig.VERSION_NAME
+                updateApkUrl = "https://github.com/rampritchoudhary16281/NovaNotes/releases/latest"
                 updateStatusMessage = "App is up to date (v${com.example.BuildConfig.VERSION_NAME})"
+                if (!silent) {
+                    showUpdatePromptDialog = true
+                }
             } finally {
                 updateChecking = false
             }
