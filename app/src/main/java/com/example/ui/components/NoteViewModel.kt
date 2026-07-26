@@ -79,6 +79,14 @@ class NoteViewModel(
     var _activeColor by mutableStateOf(prefs.getInt("color_${_activeToolType}", getDefaultColor(_activeToolType)))
     var _activeWidth by mutableStateOf(prefs.getFloat("width_${_activeToolType}", getDefaultWidth(_activeToolType)))
 
+    private var _eraserModeState = mutableStateOf(prefs.getString("eraserMode", "stroke") ?: "stroke")
+    var eraserMode: String
+        get() = _eraserModeState.value
+        set(value) {
+            _eraserModeState.value = value
+            prefs.edit().putString("eraserMode", value).apply()
+        }
+
     // Paper Color and Ink Adaptation Helpers
     fun isDarkPaper(pageColor: Long = selectedNote?.pageColor ?: 0xFFFFFFFFL): Boolean {
         if (pageColor == 0xFF1A1A1AL || pageColor == 0xFF000000L || pageColor == 0xFF121620L || pageColor == 0xFF121212L) {
@@ -2116,23 +2124,76 @@ class NoteViewModel(
         }
     }
 
+    fun clearAllCanvasStrokes() {
+        saveToUndoStack()
+        currentStrokes = currentStrokes.filter { 
+            (selectedNote?.templateType == "pdf" || selectedNote?.templateType == "docx") && it.page != pdfPage 
+        }
+        saveActiveCanvasStrokes()
+        logSyncEvent("Cleared all strokes on page $pdfPage")
+    }
+
     private fun performEraserAction(point: Point) {
-        // Eraser touch intersection: remove strokes that are within 35 pixels
-        val eraseRadius = 35f
-        val remainingStrokes = currentStrokes.filter { stroke ->
-            if ((selectedNote?.templateType == "pdf" || selectedNote?.templateType == "docx") && stroke.page != pdfPage) {
-                true // keep other pages' annotations intact
-            } else {
-                stroke.points.none { pt ->
-                    val dx = pt.x - point.x
-                    val dy = pt.y - point.y
-                    (dx * dx + dy * dy) < (eraseRadius * eraseRadius)
+        if (eraserMode == "clear_all") {
+            clearAllCanvasStrokes()
+            return
+        }
+        val eraseRadius = activeWidth.coerceAtLeast(15f)
+        
+        if (eraserMode == "precise") {
+            var changed = false
+            val updatedStrokes = mutableListOf<Stroke>()
+            currentStrokes.forEach { stroke ->
+                if ((selectedNote?.templateType == "pdf" || selectedNote?.templateType == "docx") && stroke.page != pdfPage) {
+                    updatedStrokes.add(stroke)
+                } else {
+                    val currentSegment = mutableListOf<Point>()
+                    val splitStrokes = mutableListOf<Stroke>()
+                    stroke.points.forEach { pt ->
+                        val dx = pt.x - point.x
+                        val dy = pt.y - point.y
+                        val isInside = (dx * dx + dy * dy) < (eraseRadius * eraseRadius)
+                        if (isInside) {
+                            changed = true
+                            if (currentSegment.isNotEmpty()) {
+                                splitStrokes.add(stroke.copy(points = currentSegment.toList()))
+                                currentSegment.clear()
+                            }
+                        } else {
+                            currentSegment.add(pt)
+                        }
+                    }
+                    if (currentSegment.isNotEmpty()) {
+                        splitStrokes.add(stroke.copy(points = currentSegment.toList()))
+                    }
+                    if (splitStrokes.isNotEmpty()) {
+                        updatedStrokes.addAll(splitStrokes)
+                    } else if (!changed) {
+                        updatedStrokes.add(stroke)
+                    }
                 }
             }
-        }
-        if (remainingStrokes.size != currentStrokes.size) {
-            currentStrokes = remainingStrokes
-            saveActiveCanvasStrokes()
+            if (changed) {
+                currentStrokes = updatedStrokes
+                saveActiveCanvasStrokes()
+            }
+        } else {
+            // "stroke" mode
+            val remainingStrokes = currentStrokes.filter { stroke ->
+                if ((selectedNote?.templateType == "pdf" || selectedNote?.templateType == "docx") && stroke.page != pdfPage) {
+                    true // keep other pages' annotations intact
+                } else {
+                    stroke.points.none { pt ->
+                        val dx = pt.x - point.x
+                        val dy = pt.y - point.y
+                        (dx * dx + dy * dy) < (eraseRadius * eraseRadius)
+                    }
+                }
+            }
+            if (remainingStrokes.size != currentStrokes.size) {
+                currentStrokes = remainingStrokes
+                saveActiveCanvasStrokes()
+            }
         }
     }
 
@@ -2382,34 +2443,58 @@ class NoteViewModel(
     /**
      * Converts raw canvas coordinates to high-contrast monochrome Bitmap for accurate Gemini OCR analysis.
      */
-    private fun strokesToBitmap(strokes: List<Stroke>, width: Int = 512, height: Int = 640): Bitmap {
+    private fun strokesToBitmap(strokes: List<Stroke>, width: Int = 1024, height: Int = 1024): Bitmap {
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = android.graphics.Canvas(bitmap)
         canvas.drawColor(android.graphics.Color.WHITE) // High contrast base
 
-        strokes.forEach { stroke ->
-            if (stroke.points.size > 1 && stroke.toolType != "eraser") {
-                val paint = android.graphics.Paint().apply {
-                    color = stroke.color
-                    strokeWidth = stroke.width * 0.8f // keep lines sharp
-                    style = android.graphics.Paint.Style.STROKE
-                    strokeCap = android.graphics.Paint.Cap.ROUND
-                    strokeJoin = android.graphics.Paint.Join.ROUND
-                    isAntiAlias = true
-                }
-                val path = android.graphics.Path()
-                stroke.points.forEachIndexed { i, pt ->
-                    // Linear map coordinates from standard tablet size bounds (assuming 1200x1200 max) to 512x640 thumbnail
-                    val mappedX = pt.x * (width.toFloat() / 1000f).coerceAtMost(1.2f)
-                    val mappedY = pt.y * (height.toFloat() / 1000f).coerceAtMost(1.2f)
-                    if (i == 0) {
-                        path.moveTo(mappedX, mappedY)
-                    } else {
-                        path.lineTo(mappedX, mappedY)
-                    }
-                }
-                canvas.drawPath(path, paint)
+        val validStrokes = strokes.filter { it.toolType != "eraser" && it.points.size > 1 }
+        if (validStrokes.isEmpty()) return bitmap
+
+        var minX = Float.MAX_VALUE
+        var minY = Float.MAX_VALUE
+        var maxX = Float.MIN_VALUE
+        var maxY = Float.MIN_VALUE
+
+        validStrokes.forEach { stroke ->
+            stroke.points.forEach { pt ->
+                if (pt.x < minX) minX = pt.x
+                if (pt.y < minY) minY = pt.y
+                if (pt.x > maxX) maxX = pt.x
+                if (pt.y > maxY) maxY = pt.y
             }
+        }
+
+        val padding = 60f
+        val strokeWidthSpan = maxX - minX
+        val strokeHeightSpan = maxY - minY
+
+        val scale = if (strokeWidthSpan > 0f && strokeHeightSpan > 0f) {
+            val scaleX = (width - padding * 2) / strokeWidthSpan
+            val scaleY = (height - padding * 2) / strokeHeightSpan
+            minOf(scaleX, scaleY).coerceAtMost(3.0f)
+        } else 1.0f
+
+        validStrokes.forEach { stroke ->
+            val paint = android.graphics.Paint().apply {
+                color = stroke.color
+                strokeWidth = (stroke.width * scale).coerceAtLeast(3f) // keep lines crisp
+                style = android.graphics.Paint.Style.STROKE
+                strokeCap = android.graphics.Paint.Cap.ROUND
+                strokeJoin = android.graphics.Paint.Join.ROUND
+                isAntiAlias = true
+            }
+            val path = android.graphics.Path()
+            stroke.points.forEachIndexed { i, pt ->
+                val mappedX = padding + (pt.x - minX) * scale
+                val mappedY = padding + (pt.y - minY) * scale
+                if (i == 0) {
+                    path.moveTo(mappedX, mappedY)
+                } else {
+                    path.lineTo(mappedX, mappedY)
+                }
+            }
+            canvas.drawPath(path, paint)
         }
         return bitmap
     }

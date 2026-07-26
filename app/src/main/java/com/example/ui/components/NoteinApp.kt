@@ -52,6 +52,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
@@ -2164,6 +2165,30 @@ fun RealisticPenItem(
                         strokeWidth = 1.5f
                     )
                 }
+                "lasso" -> {
+                    val ovalPath = Path().apply {
+                        addOval(androidx.compose.ui.geometry.Rect(Offset(w * 0.15f, h * 0.15f), Size(w * 0.7f, h * 0.55f)))
+                    }
+                    drawPath(
+                        path = ovalPath,
+                        color = Color(0xFF2563EB),
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(
+                            width = 1.5.dp.toPx(),
+                            pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(4f, 3f), 0f)
+                        )
+                    )
+                    drawCircle(
+                        color = Color(0xFF1D4ED8),
+                        radius = 2.dp.toPx(),
+                        center = Offset(w * 0.5f, h * 0.7f)
+                    )
+                    drawLine(
+                        color = Color(0xFF2563EB),
+                        start = Offset(w * 0.5f, h * 0.7f),
+                        end = Offset(w * 0.75f, h * 0.9f),
+                        strokeWidth = 1.5.dp.toPx()
+                    )
+                }
             }
         }
     }
@@ -2190,10 +2215,13 @@ fun NoteEditorCanvas(
     var showFloatingPenSection by remember { mutableStateOf(true) }
     var showTemplateSelectionModal by remember { mutableStateOf(false) }
     var showScribbleToTextDialog by remember { mutableStateOf(false) }
+    var showHandwrittenSearchDialog by remember { mutableStateOf(false) }
     var showFullscreenTimerDialog by remember { mutableStateOf(false) }
     var showHyperlinkDialog by remember { mutableStateOf(false) }
     var showLayersDialog by remember { mutableStateOf(false) }
     var showColorPickerDialogIndex by remember { mutableStateOf<Int?>(null) }
+    var editingImageIndex by remember { mutableStateOf<Int?>(null) }
+    var editingImageElement by remember { mutableStateOf<com.example.data.ImageElement?>(null) }
     val focusRequester = remember { FocusRequester() }
 
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -2294,6 +2322,7 @@ fun NoteEditorCanvas(
                                     "shapes" -> "Shape Tool Settings"
                                     "lasso" -> "Lasso Settings"
                                     "laser" -> "Laser Pointer Settings"
+                                    "eraser" -> "Eraser Settings"
                                     "pen", "fountain_pen", "ballpoint" -> "Pen Settings"
                                     "highlighter" -> "Highlighter Settings"
                                     "pencil" -> "Pencil Settings"
@@ -2631,8 +2660,97 @@ fun NoteEditorCanvas(
                         }
                     }
 
-                    Text("Color", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                    Spacer(modifier = Modifier.height(8.dp))
+                    if (showToolSettings == "eraser") {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text("Eraser Mode", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            // Stroke Eraser
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (viewModel.eraserMode == "stroke") MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
+                                    .border(1.dp, if (viewModel.eraserMode == "stroke") MaterialTheme.colorScheme.primary else Color.LightGray, RoundedCornerShape(8.dp))
+                                    .clickable { viewModel.eraserMode = "stroke" }
+                                    .padding(vertical = 10.dp, horizontal = 4.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Icon(Icons.Default.AutoFixNormal, contentDescription = null, modifier = Modifier.size(20.dp), tint = if (viewModel.eraserMode == "stroke") MaterialTheme.colorScheme.primary else Color.Gray)
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text("Stroke", fontSize = 12.sp, fontWeight = if (viewModel.eraserMode == "stroke") FontWeight.Bold else FontWeight.Normal)
+                                }
+                            }
+                            
+                            // Precise Eraser
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (viewModel.eraserMode == "precise") MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
+                                    .border(1.dp, if (viewModel.eraserMode == "precise") MaterialTheme.colorScheme.primary else Color.LightGray, RoundedCornerShape(8.dp))
+                                    .clickable { viewModel.eraserMode = "precise" }
+                                    .padding(vertical = 10.dp, horizontal = 4.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Icon(Icons.Default.Gesture, contentDescription = null, modifier = Modifier.size(20.dp), tint = if (viewModel.eraserMode == "precise") MaterialTheme.colorScheme.primary else Color.Gray)
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text("Precise", fontSize = 12.sp, fontWeight = if (viewModel.eraserMode == "precise") FontWeight.Bold else FontWeight.Normal)
+                                }
+                            }
+
+                            // Clear All
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (viewModel.eraserMode == "clear_all") MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
+                                    .border(1.dp, if (viewModel.eraserMode == "clear_all") MaterialTheme.colorScheme.primary else Color.LightGray, RoundedCornerShape(8.dp))
+                                    .clickable { viewModel.eraserMode = "clear_all" }
+                                    .padding(vertical = 10.dp, horizontal = 4.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Icon(Icons.Default.DeleteSweep, contentDescription = null, modifier = Modifier.size(20.dp), tint = if (viewModel.eraserMode == "clear_all") MaterialTheme.colorScheme.primary else Color.Gray)
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text("Clear All", fontSize = 12.sp, fontWeight = if (viewModel.eraserMode == "clear_all") FontWeight.Bold else FontWeight.Normal)
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text("Eraser Size (${viewModel.activeWidth.toInt()} px)", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                        androidx.compose.material3.Slider(
+                            value = viewModel.activeWidth,
+                            onValueChange = { viewModel.activeWidth = it },
+                            valueRange = 10f..100f,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Button(
+                            onClick = {
+                                viewModel.clearAllCanvasStrokes()
+                                showToolSettings = null
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.errorContainer, contentColor = MaterialTheme.colorScheme.onErrorContainer),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.DeleteSweep, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Clear Page Drawing Strokes")
+                        }
+                    }
+
+                    if (showToolSettings != "eraser" && showToolSettings != "shapes") {
+                        Text("Color", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                        Spacer(modifier = Modifier.height(8.dp))
                     
                     // Grid of colors
                     val swatches = listOf(
@@ -2660,6 +2778,7 @@ fun NoteEditorCanvas(
                                 }
                             }
                         }
+                    }
                     }
                     
                     Spacer(modifier = Modifier.height(16.dp))
@@ -3291,10 +3410,10 @@ fun NoteEditorCanvas(
                             Icon(
                                 imageVector = Icons.Default.Edit,
                                 contentDescription = "Draw mode",
-                                tint = if (viewModel.activeToolType == "pen" || viewModel.activeToolType == "fountain_pen" || viewModel.activeToolType == "pencil" || viewModel.activeToolType == "felt_pen" || viewModel.activeToolType == "brush" || viewModel.activeToolType == "red_pen" || viewModel.activeToolType == "laser") Color(0xFF3B82F6) else Color(0xFF475569),
+                                tint = if (viewModel.activeToolType in listOf("pen", "fountain_pen", "pencil", "highlighter", "laser")) Color(0xFF3B82F6) else Color(0xFF475569),
                                 modifier = Modifier.size(18.dp)
                             )
-                            if (viewModel.activeToolType == "pen" || viewModel.activeToolType == "fountain_pen" || viewModel.activeToolType == "pencil" || viewModel.activeToolType == "felt_pen" || viewModel.activeToolType == "brush" || viewModel.activeToolType == "red_pen" || viewModel.activeToolType == "laser") {
+                            if (viewModel.activeToolType in listOf("pen", "fountain_pen", "pencil", "highlighter", "laser")) {
                                 Box(modifier = Modifier.width(14.dp).height(2.dp).background(Color(0xFF3B82F6)))
                             }
                         }
@@ -3564,6 +3683,23 @@ fun NoteEditorCanvas(
                         }
                     }
 
+                    // Search Handwritten Strokes (Gemini AI)
+                    IconButton(
+                        onClick = {
+                            showHandwrittenSearchDialog = true
+                        },
+                        modifier = Modifier
+                            .size(32.dp)
+                            .testTag("search_handwritten_strokes_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ManageSearch,
+                            contentDescription = "Search & Analyze Handwritten Strokes with Gemini AI",
+                            tint = Color(0xFF8B5CF6), // Purple / Gemini Accent
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+
                     // Google Search Button
                     IconButton(
                         onClick = {
@@ -3602,16 +3738,13 @@ fun NoteEditorCanvas(
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     val realPens = listOf(
-                        "fountain_pen" to "Fountain Pen",
+                        "fountain_pen" to "Pen",
                         "pencil" to "Pencil",
-                        "felt_pen" to "Felt Pen",
-                        "highlighter" to "Highlighter",
                         "eraser" to "Eraser",
-                        "brush" to "Calligraphy Brush",
-                        "red_pen" to "Red Pen",
-                        "laser" to "Laser Pointer",
-                        "tape" to "Tape",
-                        "shapes" to "Shapes"
+                        "highlighter" to "Highlighter",
+                        "laser" to "Laser",
+                        "shapes" to "Shapes",
+                        "lasso" to "Lasso"
                     )
                     realPens.forEach { (toolId, label) ->
                         val isSelected = viewModel.activeToolType == toolId || (toolId == "fountain_pen" && viewModel.activeToolType == "ballpoint")
@@ -3972,6 +4105,10 @@ fun NoteEditorCanvas(
                     onPageSelected = { viewModel.setPDFPage(it) },
                     isRulerActive = viewModel.isRulerActive,
                     onShapeLongPressed = { stroke -> viewModel.selectShape(stroke) },
+                    onImageLongPressed = { idx, img ->
+                        editingImageIndex = idx
+                        editingImageElement = img
+                    },
                     onLassoDrag = { offset -> viewModel.lassoDragOffset = Offset(viewModel.lassoDragOffset.x + offset.x, viewModel.lassoDragOffset.y + offset.y) },
                     onLassoScaleUpdated = { scaleX, scaleY -> viewModel.updateLassoScale(scaleX, scaleY) },
                     modifier = Modifier.fillMaxSize()
@@ -4164,7 +4301,7 @@ fun NoteEditorCanvas(
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(top = 16.dp, start = 16.dp, end = 16.dp),
+                            .padding(top = 16.dp, start = 64.dp, end = 64.dp),
                         contentAlignment = Alignment.TopCenter
                     ) {
                         androidx.compose.animation.AnimatedVisibility(
@@ -4184,24 +4321,24 @@ fun NoteEditorCanvas(
                         }
                     }
 
-                    // Floating Toggle FAB Button (Bottom-Right)
+                    // Floating Toggle Pen Palette FAB Button (Top-Right)
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(16.dp),
-                        contentAlignment = Alignment.BottomEnd
+                        contentAlignment = Alignment.TopEnd
                     ) {
                         FloatingActionButton(
                             onClick = { showFloatingPenSection = !showFloatingPenSection },
                             containerColor = MaterialTheme.colorScheme.primaryContainer,
                             contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                             shape = CircleShape,
-                            modifier = Modifier.size(56.dp).testTag("floating_pen_section_toggle")
+                            modifier = Modifier.size(48.dp).testTag("floating_pen_section_toggle")
                         ) {
                             Icon(
                                 imageVector = if (showFloatingPenSection) Icons.Default.Close else Icons.Default.Brush,
                                 contentDescription = "Toggle Immersive Pen Palette",
-                                modifier = Modifier.size(24.dp)
+                                modifier = Modifier.size(22.dp)
                             )
                         }
                     }
@@ -4448,6 +4585,529 @@ fun NoteEditorCanvas(
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+
+    if (editingImageIndex != null && editingImageElement != null) {
+        PhotoOptionsDialog(
+            imageElement = editingImageElement!!,
+            onDismiss = {
+                editingImageIndex = null
+                editingImageElement = null
+            },
+            onApply = { updatedImg ->
+                val mutList = viewModel.currentImages.toMutableList()
+                val idx = editingImageIndex
+                if (idx != null && idx in mutList.indices) {
+                    mutList[idx] = updatedImg
+                    viewModel.currentImages = mutList
+                    viewModel.saveActiveCanvasStrokes()
+                }
+                editingImageIndex = null
+                editingImageElement = null
+            },
+            onDelete = {
+                val mutList = viewModel.currentImages.toMutableList()
+                val idx = editingImageIndex
+                if (idx != null && idx in mutList.indices) {
+                    mutList.removeAt(idx)
+                    viewModel.currentImages = mutList
+                    viewModel.saveActiveCanvasStrokes()
+                }
+                editingImageIndex = null
+                editingImageElement = null
+            }
+        )
+    }
+
+    if (showHandwrittenSearchDialog) {
+        HandwrittenSearchDialog(
+            note = selectedNote,
+            viewModel = viewModel,
+            onDismiss = { showHandwrittenSearchDialog = false }
+        )
+    }
+}
+
+@Composable
+fun HandwrittenSearchDialog(
+    note: com.example.data.NoteEntity,
+    viewModel: NoteViewModel,
+    onDismiss: () -> Unit
+) {
+    var query by remember { mutableStateOf("") }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 6.dp,
+            shadowElevation = 8.dp,
+            modifier = Modifier
+                .widthIn(max = 520.dp)
+                .padding(16.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(20.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                // Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.AutoAwesome,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            "Handwritten Canvas Search",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp
+                        )
+                    }
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.Default.Close, contentDescription = "Close")
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Gemini Analyzer Action Banner
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
+                    )
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.Default.Gesture,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    "Gemini 3.5 Flash Handwriting Analysis",
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 13.sp
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            "Analyze vector strokes on this canvas to recognize handwritten words, equations, and drawings, making them searchable across your notes.",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        if (viewModel.isIndexing) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Analyzing strokes with Gemini AI...", fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                            }
+                        } else {
+                            Button(
+                                onClick = { viewModel.indexActiveNoteWithGemini() },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(38.dp)
+                                    .testTag("analyze_canvas_strokes_button"),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
+                            ) {
+                                Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Analyze & Index Strokes", fontSize = 12.sp)
+                            }
+                        }
+
+                        viewModel.aiIndexingError?.let { err ->
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(err, color = MaterialTheme.colorScheme.error, fontSize = 11.sp)
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Search Input
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("handwritten_search_input"),
+                    placeholder = { Text("Search handwritten text, tags, summary...", fontSize = 13.sp) },
+                    leadingIcon = {
+                        Icon(Icons.Default.Search, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    },
+                    trailingIcon = {
+                        if (query.isNotEmpty()) {
+                            IconButton(onClick = { query = "" }) {
+                                Icon(Icons.Default.Close, contentDescription = "Clear", modifier = Modifier.size(18.dp))
+                            }
+                        }
+                    },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp)
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Recognized Content & Search Matches
+                Text("Gemini Transcription & Index", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Spacer(modifier = Modifier.height(8.dp))
+
+                val transcription = note.content
+                val summary = note.summary ?: ""
+
+                if (transcription.isBlank() && summary.isBlank()) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Icon(
+                                Icons.Default.FindInPage,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.outline,
+                                modifier = Modifier.size(32.dp)
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                "No handwritten text indexed yet.",
+                                fontWeight = FontWeight.Medium,
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                "Draw or write notes on the canvas, then click 'Analyze & Index Strokes' above to make your handwriting searchable.",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.outline,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
+                        }
+                    }
+                } else {
+                    val matchesQuery = query.isBlank() ||
+                            transcription.contains(query, ignoreCase = true) ||
+                            summary.contains(query, ignoreCase = true)
+
+                    if (!matchesQuery) {
+                        Text(
+                            "No matching text found for '$query'",
+                            color = MaterialTheme.colorScheme.outline,
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(vertical = 12.dp)
+                        )
+                    } else {
+                        // Summary Card
+                        if (summary.isNotBlank()) {
+                            Card(
+                                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                                )
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Text("Summary", fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(summary, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                        }
+
+                        // Full Transcription Card
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                            )
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("Recognized Text", fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+                                    if (query.isNotBlank() && transcription.contains(query, ignoreCase = true)) {
+                                        Surface(
+                                            color = MaterialTheme.colorScheme.primary,
+                                            shape = RoundedCornerShape(8.dp)
+                                        ) {
+                                            Text(
+                                                "Match Found!",
+                                                color = MaterialTheme.colorScheme.onPrimary,
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(6.dp))
+                                androidx.compose.foundation.text.selection.SelectionContainer {
+                                    Text(
+                                        transcription,
+                                        fontSize = 13.sp,
+                                        lineHeight = 18.sp,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun PhotoOptionsDialog(
+    imageElement: com.example.data.ImageElement,
+    onDismiss: () -> Unit,
+    onApply: (com.example.data.ImageElement) -> Unit,
+    onDelete: () -> Unit
+) {
+    var selectedFilter by remember { mutableStateOf(imageElement.filter) }
+    var cropLeft by remember { mutableStateOf(imageElement.cropLeft) }
+    var cropTop by remember { mutableStateOf(imageElement.cropTop) }
+    var cropRight by remember { mutableStateOf(imageElement.cropRight) }
+    var cropBottom by remember { mutableStateOf(imageElement.cropBottom) }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 6.dp,
+            shadowElevation = 8.dp,
+            modifier = Modifier
+                .widthIn(max = 480.dp)
+                .padding(16.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(20.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                // Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Photo, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Photo Options", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    }
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.Default.Close, contentDescription = "Close")
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Image Preview Canvas
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(180.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color(0xFF0F172A)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    val context = androidx.compose.ui.platform.LocalContext.current
+                    val bitmapState = remember(imageElement.uri) {
+                        try {
+                            val uri = android.net.Uri.parse(imageElement.uri)
+                            if (uri.scheme == "content" || uri.scheme == "file") {
+                                context.contentResolver.openInputStream(uri)?.use { stream ->
+                                    android.graphics.BitmapFactory.decodeStream(stream)?.asImageBitmap()
+                                }
+                            } else null
+                        } catch (e: Exception) {
+                            null
+                        }
+                    }
+
+                    if (bitmapState != null) {
+                        Canvas(modifier = Modifier.fillMaxSize()) {
+                            val bmp = bitmapState
+                            val filter = getImageColorFilter(selectedFilter)
+                            val srcX = (bmp.width * cropLeft).toInt().coerceIn(0, bmp.width - 1)
+                            val srcY = (bmp.height * cropTop).toInt().coerceIn(0, bmp.height - 1)
+                            val srcW = (bmp.width * (1f - cropLeft - cropRight)).toInt().coerceIn(1, bmp.width - srcX)
+                            val srcH = (bmp.height * (1f - cropTop - cropBottom)).toInt().coerceIn(1, bmp.height - srcY)
+
+                            val aspect = srcW.toFloat() / srcH.toFloat()
+                            val dstW = if (size.width / size.height > aspect) size.height * aspect else size.width
+                            val dstH = if (size.width / size.height > aspect) size.height else size.width / aspect
+                            val dstX = (size.width - dstW) / 2f
+                            val dstY = (size.height - dstH) / 2f
+
+                            drawImage(
+                                image = bmp,
+                                srcOffset = androidx.compose.ui.unit.IntOffset(srcX, srcY),
+                                srcSize = androidx.compose.ui.unit.IntSize(srcW, srcH),
+                                dstOffset = androidx.compose.ui.unit.IntOffset(dstX.toInt(), dstY.toInt()),
+                                dstSize = androidx.compose.ui.unit.IntSize(dstW.toInt(), dstH.toInt()),
+                                colorFilter = filter
+                            )
+                        }
+                    } else {
+                        Text("Photo Preview", color = Color.White, fontSize = 12.sp)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Filters
+                Text("Color Filter", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                Spacer(modifier = Modifier.height(8.dp))
+
+                val filterOptions = listOf(
+                    "none" to "Original",
+                    "grayscale" to "B&W",
+                    "sepia" to "Sepia",
+                    "vivid" to "Vivid",
+                    "invert" to "Invert",
+                    "warm" to "Warm",
+                    "cool" to "Cool",
+                    "high_contrast" to "Contrast"
+                )
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    filterOptions.forEach { (filterId, label) ->
+                        val isSelected = selectedFilter == filterId
+                        FilterChip(
+                            selected = isSelected,
+                            onClick = { selectedFilter = filterId },
+                            label = { Text(label, fontSize = 12.sp) }
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Cropping
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Cropping Edges", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                    TextButton(
+                        onClick = {
+                            cropLeft = 0f
+                            cropTop = 0f
+                            cropRight = 0f
+                            cropBottom = 0f
+                        }
+                    ) {
+                        Text("Reset Crop", fontSize = 12.sp)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+                Text("Crop Left: ${(cropLeft * 100).toInt()}%", fontSize = 12.sp)
+                Slider(
+                    value = cropLeft,
+                    onValueChange = { cropLeft = it.coerceIn(0f, 0.45f - cropRight) },
+                    valueRange = 0f..0.45f,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Text("Crop Right: ${(cropRight * 100).toInt()}%", fontSize = 12.sp)
+                Slider(
+                    value = cropRight,
+                    onValueChange = { cropRight = it.coerceIn(0f, 0.45f - cropLeft) },
+                    valueRange = 0f..0.45f,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Text("Crop Top: ${(cropTop * 100).toInt()}%", fontSize = 12.sp)
+                Slider(
+                    value = cropTop,
+                    onValueChange = { cropTop = it.coerceIn(0f, 0.45f - cropBottom) },
+                    valueRange = 0f..0.45f,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Text("Crop Bottom: ${(cropBottom * 100).toInt()}%", fontSize = 12.sp)
+                Slider(
+                    value = cropBottom,
+                    onValueChange = { cropBottom = it.coerceIn(0f, 0.45f - cropTop) },
+                    valueRange = 0f..0.45f,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Delete Photo Button
+                OutlinedButton(
+                    onClick = onDelete,
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Delete Photo")
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Apply Changes Button
+                Button(
+                    onClick = {
+                        onApply(
+                            imageElement.copy(
+                                filter = selectedFilter,
+                                cropLeft = cropLeft,
+                                cropTop = cropTop,
+                                cropRight = cropRight,
+                                cropBottom = cropBottom
+                            )
+                        )
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Apply Changes")
                 }
             }
         }
@@ -5324,10 +5984,12 @@ fun FloatingPenSection(
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 val realPens = listOf(
-                    "fountain_pen" to "Fountain Pen",
+                    "fountain_pen" to "Pen",
                     "pencil" to "Pencil",
-                    "highlighter" to "Highlighter",
                     "eraser" to "Eraser",
+                    "highlighter" to "Highlighter",
+                    "laser" to "Laser",
+                    "shapes" to "Shapes",
                     "lasso" to "Lasso"
                 )
                 realPens.forEach { (toolId, label) ->
@@ -5338,7 +6000,28 @@ fun FloatingPenSection(
                         isSelected = isSelected,
                         onClick = {
                             viewModel.activeToolType = toolId
+                            if (toolId == "shapes") {
+                                onToolDoubleTap("shapes")
+                            }
                         }
+                    )
+                }
+
+                // Dedicated Shape Drawer Button in Pen Palette
+                IconButton(
+                    onClick = {
+                        viewModel.activeToolType = "shapes"
+                        onToolDoubleTap("shapes")
+                    },
+                    modifier = Modifier
+                        .size(36.dp)
+                        .testTag("floating_pen_section_shape_drawer")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Category,
+                        contentDescription = "Open Shape Drawer",
+                        tint = if (viewModel.activeToolType == "shapes") MaterialTheme.colorScheme.primary else (if (isDarkTheme) Color(0xFF94A3B8) else Color(0xFF475569)),
+                        modifier = Modifier.size(18.dp)
                     )
                 }
             }

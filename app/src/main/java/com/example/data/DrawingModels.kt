@@ -100,10 +100,15 @@ data class ImageElement(
     val width: Float,
     val height: Float,
     val page: Int = 1,
-    val isHidden: Boolean = false
+    val isHidden: Boolean = false,
+    val filter: String = "none",
+    val cropLeft: Float = 0f,
+    val cropTop: Float = 0f,
+    val cropRight: Float = 0f,
+    val cropBottom: Float = 0f
 ) {
     fun serialize(): String {
-        return "$uri|$x|$y|$width|$height|$page"
+        return "$uri|$x|$y|$width|$height|$page|$filter|$cropLeft|$cropTop|$cropRight|$cropBottom"
     }
 }
 
@@ -125,7 +130,12 @@ object ImageElementSerializer {
                     y = parts[2].toFloat(),
                     width = parts[3].toFloat(),
                     height = parts[4].toFloat(),
-                    page = parts[5].toInt()
+                    page = parts[5].toInt(),
+                    filter = if (parts.size > 6) parts[6] else "none",
+                    cropLeft = if (parts.size > 7) parts[7].toFloatOrNull() ?: 0f else 0f,
+                    cropTop = if (parts.size > 8) parts[8].toFloatOrNull() ?: 0f else 0f,
+                    cropRight = if (parts.size > 9) parts[9].toFloatOrNull() ?: 0f else 0f,
+                    cropBottom = if (parts.size > 10) parts[10].toFloatOrNull() ?: 0f else 0f
                 )
             } catch (e: Exception) {
                 null

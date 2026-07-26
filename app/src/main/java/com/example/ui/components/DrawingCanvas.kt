@@ -109,6 +109,7 @@ fun DrawingCanvas(
     onPageSelected: (Int) -> Unit = {},
     isRulerActive: Boolean = false,
     onShapeLongPressed: (Stroke) -> Unit = {},
+    onImageLongPressed: (Int, com.example.data.ImageElement) -> Unit = {_,_->},
     onLassoDrag: (Offset) -> Unit = {},
     onLassoScaleUpdated: (Float, Float) -> Unit = {_,_->}
 ) {
@@ -557,9 +558,13 @@ fun DrawingCanvas(
                                 longPressJob?.cancel()
                                 longPressJob = coroutineScope.launch {
                                     kotlinx.coroutines.delay(400)
-                                    if (potentialImageIndex == touchedImageIndex) {
+                                    if (potentialImageIndex == touchedImageIndex && touchedImageIndex != null) {
                                         selectedImageIndex = touchedImageIndex
                                         activeImageInteraction = "drag"
+                                        val img = images.getOrNull(touchedImageIndex!!)
+                                        if (img != null) {
+                                            onImageLongPressed(touchedImageIndex!!, img)
+                                        }
                                         potentialImageIndex = null
                                         pendingStrokeDownPoint = null
                                     }
@@ -1168,10 +1173,19 @@ fun DrawingCanvas(
                             val renderH = (img.height / getNormH(imgPage)) * getPageHeight(imgPage)
 
                             if (renderY + renderH >= visibleTop && renderY <= visibleBottom) {
+                                val filter = getImageColorFilter(img.filter)
+                                val srcX = (bmp.width * img.cropLeft).toInt().coerceIn(0, bmp.width - 1)
+                                val srcY = (bmp.height * img.cropTop).toInt().coerceIn(0, bmp.height - 1)
+                                val srcW = (bmp.width * (1f - img.cropLeft - img.cropRight)).toInt().coerceIn(1, bmp.width - srcX)
+                                val srcH = (bmp.height * (1f - img.cropTop - img.cropBottom)).toInt().coerceIn(1, bmp.height - srcY)
+
                                 drawImage(
                                     image = bmp,
+                                    srcOffset = androidx.compose.ui.unit.IntOffset(srcX, srcY),
+                                    srcSize = androidx.compose.ui.unit.IntSize(srcW, srcH),
                                     dstOffset = androidx.compose.ui.unit.IntOffset(renderX.toInt(), renderY.toInt()),
-                                    dstSize = androidx.compose.ui.unit.IntSize(renderW.toInt(), renderH.toInt())
+                                    dstSize = androidx.compose.ui.unit.IntSize(renderW.toInt(), renderH.toInt()),
+                                    colorFilter = filter
                                 )
                                 if (selectedImageIndex == images.indexOf(img)) {
                                     drawRect(
@@ -1836,3 +1850,36 @@ fun DrawingCanvas(
             }
         }
     }
+
+fun getImageColorFilter(filter: String): androidx.compose.ui.graphics.ColorFilter? {
+    return when (filter) {
+        "grayscale" -> androidx.compose.ui.graphics.ColorFilter.colorMatrix(androidx.compose.ui.graphics.ColorMatrix().apply { setToSaturation(0f) })
+        "sepia" -> androidx.compose.ui.graphics.ColorFilter.colorMatrix(androidx.compose.ui.graphics.ColorMatrix(floatArrayOf(
+            0.393f, 0.769f, 0.189f, 0f, 0f,
+            0.349f, 0.686f, 0.168f, 0f, 0f,
+            0.272f, 0.534f, 0.131f, 0f, 0f,
+            0f, 0f, 0f, 1f, 0f
+        )))
+        "invert" -> androidx.compose.ui.graphics.ColorFilter.colorMatrix(androidx.compose.ui.graphics.ColorMatrix(floatArrayOf(
+            -1f, 0f, 0f, 0f, 255f,
+            0f, -1f, 0f, 0f, 255f,
+            0f, 0f, -1f, 0f, 255f,
+            0f, 0f, 0f, 1f, 0f
+        )))
+        "vivid" -> androidx.compose.ui.graphics.ColorFilter.colorMatrix(androidx.compose.ui.graphics.ColorMatrix().apply { setToSaturation(1.8f) })
+        "warm" -> androidx.compose.ui.graphics.ColorFilter.colorMatrix(androidx.compose.ui.graphics.ColorMatrix(floatArrayOf(
+            1.2f, 0f, 0f, 0f, 10f,
+            0f, 1.0f, 0f, 0f, 0f,
+            0f, 0f, 0.8f, 0f, 0f,
+            0f, 0f, 0f, 1f, 0f
+        )))
+        "cool" -> androidx.compose.ui.graphics.ColorFilter.colorMatrix(androidx.compose.ui.graphics.ColorMatrix(floatArrayOf(
+            0.8f, 0f, 0f, 0f, 0f,
+            0f, 1.0f, 0f, 0f, 0f,
+            0f, 0f, 1.3f, 0f, 10f,
+            0f, 0f, 0f, 1f, 0f
+        )))
+        "high_contrast" -> androidx.compose.ui.graphics.ColorFilter.colorMatrix(androidx.compose.ui.graphics.ColorMatrix().apply { setToSaturation(2.2f) })
+        else -> null
+    }
+}
