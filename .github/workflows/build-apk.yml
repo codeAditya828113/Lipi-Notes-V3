@@ -10,10 +10,14 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
 
     - name: Set up JDK 17
       uses: actions/setup-java@v4
@@ -72,9 +76,25 @@ jobs:
 
     - name: Build Debug APK
       run: ./gradlew assembleDebug --stacktrace -Djava.awt.headless=true
+      env:
+        GITHUB_RUN_NUMBER: ${{ github.run_number }}
 
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
       with:
         name: app-debug-apk
         path: app/build/outputs/apk/debug/app-debug.apk
+
+    - name: Create GitHub Release
+      if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: v1.0.${{ github.run_number }}
+        name: NovaNotes v1.0.${{ github.run_number }}
+        body: |
+          Automated Release v1.0.${{ github.run_number }}
+          • Performance optimizations & stability fixes
+          • Automatically generated build
+        files: app/build/outputs/apk/debug/app-debug.apk
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

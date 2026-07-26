@@ -13,12 +13,17 @@ android {
   namespace = "com.example"
   compileSdk { version = release(36) { minorApiLevel = 1 } }
 
+  val runNumber = providers.environmentVariable("GITHUB_RUN_NUMBER")
+    .map { it.toIntOrNull() ?: 1 }
+    .orElse(1)
+    .get()
+
   defaultConfig {
     applicationId = "com.aistudio.novanotes.fcbecc"
     minSdk = 24
     targetSdk = 36
-    versionCode = 1
-    versionName = "1.0"
+    versionCode = runNumber
+    versionName = "1.0.$runNumber"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
