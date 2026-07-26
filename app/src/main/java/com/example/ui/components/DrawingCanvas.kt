@@ -426,13 +426,8 @@ fun DrawingCanvas(
                     val isMultiPage = templateType == "pdf" || templateType == "docx" || pdfPageCount > 1
                     val isNormalizedCoords = true
 
-                    // Palm Rejection & Palm Contact Area Detection
-                    val touchMajor = try { motionEvent.getTouchMajor(activePointerIndex) } catch (e: Exception) { 0f }
-                    val touchMinor = try { motionEvent.getTouchMinor(activePointerIndex) } catch (e: Exception) { 0f }
-                    val isLargePalmContact = isFinger && (touchMajor > 38f || touchMinor > 38f)
-
-                    if (isLargePalmContact && !isStylus) {
-                        // Absorb and suppress large palm rest contact
+                    // Palm Rejection: If stylus is active, ignore finger touches when stylusOnlyDrawing is enabled
+                    if (isStylus && isFinger && stylusOnlyDrawing) {
                         return@pointerInteropFilter true
                     }
 
@@ -718,7 +713,7 @@ fun DrawingCanvas(
                             val margin = 35f
                             if (worldX >= bbox.left - margin && worldX <= bbox.right + margin &&
                                 worldY >= bbox.top - margin && worldY <= bbox.bottom + margin) {
-                                if (s.toolType == "shapes" || s.fillShape || s.points.any { pt -> kotlin.math.hypot(pt.x - worldX, pt.y - worldY) <= 35f }) {
+                                if (s.toolType == "shapes" || s.fillShape) {
                                     matched = s
                                     break
                                 }
@@ -780,8 +775,12 @@ fun DrawingCanvas(
 
                     // Multi-touch gesture processing for ALL templates to allow zooming & vertical scrolling
                     if (motionEvent.pointerCount >= 2) {
+                        if (isWritingStartedOnPage) {
+                            onStrokeEnded()
+                            isWritingStartedOnPage = false
+                        }
                         when (action) {
-                            MotionEvent.ACTION_POINTER_DOWN -> {
+                            MotionEvent.ACTION_POINTER_DOWN, MotionEvent.ACTION_DOWN -> {
                                 val x0 = motionEvent.getX(0)
                                 val y0 = motionEvent.getY(0)
                                 val x1 = motionEvent.getX(1)
@@ -807,11 +806,12 @@ fun DrawingCanvas(
                                     
                                     val rawOffset = initialOffset + (currentPivot - initialPivot)
                                     
-                                    val pageCount = if (isMultiPage) pdfPageCount else 1
-                                    val pageH = if (isNormalizedCoords) pdfH else heightPx.toFloat()
-                                    val maxScrollY = -((pageCount * pageH * scale - heightPx).coerceAtLeast(0f))
-                                    
-                                    val maxScrollX = ((scale - 1f) * widthPx / 2f).coerceAtLeast(0f)
+                                    var totalCanvasHeight = 0f
+                                    for (p in 1..pdfPageCount) {
+                                        totalCanvasHeight += getPageHeight(p)
+                                    }
+                                    val maxScrollY = -((totalCanvasHeight * scale - heightPx + 200f).coerceAtLeast(0f))
+                                    val maxScrollX = ((scale - 1f) * widthPx / 2f + 100f).coerceAtLeast(0f)
                                     
                                     offset = Offset(
                                         rawOffset.x.coerceIn(-maxScrollX, maxScrollX),
@@ -877,8 +877,8 @@ fun DrawingCanvas(
                         }
                     }
 
-                    // Hand/Finger scrolling when Stylus-Only Drawing is active OR viewing scrollable PDF
-                    if ((stylusOnlyDrawing || isMultiPage) && isFinger) {
+                    // Hand/Finger scrolling when Stylus-Only Drawing / Palm Rejection mode is active
+                    if (stylusOnlyDrawing && isFinger) {
                         when (action) {
                             MotionEvent.ACTION_DOWN -> {
                                 view.parent?.requestDisallowInterceptTouchEvent(true)
@@ -896,9 +896,8 @@ fun DrawingCanvas(
                                     for (p in 1..pdfPageCount) {
                                         totalHeight += getPageHeight(p)
                                     }
-                                    val maxScrollY = -((totalHeight * scale - heightPx).coerceAtLeast(0f))
-                                    
-                                    val maxScrollX = ((scale - 1f) * widthPx / 2f).coerceAtLeast(0f)
+                                    val maxScrollY = -((totalHeight * scale - heightPx + 200f).coerceAtLeast(0f))
+                                    val maxScrollX = ((scale - 1f) * widthPx / 2f + 100f).coerceAtLeast(0f)
                                     
                                     offset = Offset(
                                         rawOffset.x.coerceIn(-maxScrollX, maxScrollX),
@@ -946,25 +945,15 @@ fun DrawingCanvas(
 
                     when (action) {
                         MotionEvent.ACTION_DOWN -> {
-                            val pageL = getPageLeft(touchedPage)
-                            val pageT = getPageTop(touchedPage)
-                            val pageW = getPageWidth(touchedPage)
-                            val pageH = getPageHeight(touchedPage)
-                            val isInsidePage = snappedX >= pageL && snappedX <= pageL + pageW && snappedY >= pageT && snappedY <= pageT + pageH
-
-                            if (isInsidePage) {
-                                isWritingStartedOnPage = true
-                                view.parent?.requestDisallowInterceptTouchEvent(true)
-                                isZooming = false
-                                strokeStartedPage = touchedPage
-                                onPageSelected(touchedPage)
-                                
-                                val startX = toNormalizedX(snappedX, touchedPage).coerceIn(0f, 600f)
-                                val startY = toNormalizedY(snappedY, touchedPage).coerceIn(0f, getNormH(touchedPage))
-                                onStrokeStarted(Point(startX, startY, pressure))
-                            } else {
-                                isWritingStartedOnPage = false
-                            }
+                            isWritingStartedOnPage = true
+                            view.parent?.requestDisallowInterceptTouchEvent(true)
+                            isZooming = false
+                            strokeStartedPage = touchedPage
+                            onPageSelected(touchedPage)
+                            
+                            val startX = toNormalizedX(snappedX, touchedPage).coerceIn(0f, 600f)
+                            val startY = toNormalizedY(snappedY, touchedPage).coerceIn(0f, getNormH(touchedPage))
+                            onStrokeStarted(Point(startX, startY, pressure))
                             true
                         }
                         MotionEvent.ACTION_MOVE -> {
