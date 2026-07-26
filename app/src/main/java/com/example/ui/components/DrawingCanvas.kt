@@ -34,6 +34,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke as DrawStroke
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.nativeCanvas
@@ -171,6 +172,7 @@ fun DrawingCanvas(
     var lastStylusDownTime by remember { mutableStateOf(0L) }
     var lastStylusDownX by remember { mutableStateOf(0f) }
     var lastStylusDownY by remember { mutableStateOf(0f) }
+    var isWritingStartedOnPage by remember { mutableStateOf(false) }
 
     // Reset translation if switched back to fixed page mode (unless it's a PDF note, which scrolls)
     LaunchedEffect(canvasMode) {
@@ -944,72 +946,87 @@ fun DrawingCanvas(
 
                     when (action) {
                         MotionEvent.ACTION_DOWN -> {
-                            // Lock coordinates and prevent any parent intercept while writing
-                            view.parent?.requestDisallowInterceptTouchEvent(true)
-                            isZooming = false
-                            strokeStartedPage = touchedPage
-                            onPageSelected(touchedPage)
-                            
-                            val startX = toNormalizedX(snappedX, touchedPage)
-                            val startY = toNormalizedY(snappedY, touchedPage)
-                            onStrokeStarted(Point(startX, startY, pressure))
+                            val pageL = getPageLeft(touchedPage)
+                            val pageT = getPageTop(touchedPage)
+                            val pageW = getPageWidth(touchedPage)
+                            val pageH = getPageHeight(touchedPage)
+                            val isInsidePage = snappedX >= pageL && snappedX <= pageL + pageW && snappedY >= pageT && snappedY <= pageT + pageH
+
+                            if (isInsidePage) {
+                                isWritingStartedOnPage = true
+                                view.parent?.requestDisallowInterceptTouchEvent(true)
+                                isZooming = false
+                                strokeStartedPage = touchedPage
+                                onPageSelected(touchedPage)
+                                
+                                val startX = toNormalizedX(snappedX, touchedPage).coerceIn(0f, 600f)
+                                val startY = toNormalizedY(snappedY, touchedPage).coerceIn(0f, getNormH(touchedPage))
+                                onStrokeStarted(Point(startX, startY, pressure))
+                            } else {
+                                isWritingStartedOnPage = false
+                            }
                             true
                         }
                         MotionEvent.ACTION_MOVE -> {
-                            // Lock coordinates and prevent any parent intercept while writing
-                            view.parent?.requestDisallowInterceptTouchEvent(true)
-                            val pointsList = mutableListOf<Point>()
-                            val historySize = motionEvent.historySize
-                            for (i in 0 until historySize) {
-                                val hx = try { motionEvent.getHistoricalX(activePointerIndex, i) } catch (e: Exception) { motionEvent.getHistoricalX(i) }
-                                val hy = try { motionEvent.getHistoricalY(activePointerIndex, i) } catch (e: Exception) { motionEvent.getHistoricalY(i) }
-                                val hp = if (isStylus) {
-                                    try { motionEvent.getHistoricalPressure(activePointerIndex, i) } catch (e: Exception) { motionEvent.getHistoricalPressure(i) }
-                                } else 1.0f
-                                val pivotX = widthPx / 2f
-                                val mHx = (hx - pivotX - offset.x) / scale + pivotX
-                                val mHy = (hy - offset.y) / scale
-                                
-                                var snappedHx = mHx
-                                var snappedHy = mHy
+                            if (isWritingStartedOnPage) {
+                                view.parent?.requestDisallowInterceptTouchEvent(true)
+                                val pointsList = mutableListOf<Point>()
+                                val historySize = motionEvent.historySize
+                                val normH = getNormH(strokeStartedPage)
+                                for (i in 0 until historySize) {
+                                    val hx = try { motionEvent.getHistoricalX(activePointerIndex, i) } catch (e: Exception) { motionEvent.getHistoricalX(i) }
+                                    val hy = try { motionEvent.getHistoricalY(activePointerIndex, i) } catch (e: Exception) { motionEvent.getHistoricalY(i) }
+                                    val hp = if (isStylus) {
+                                        try { motionEvent.getHistoricalPressure(activePointerIndex, i) } catch (e: Exception) { motionEvent.getHistoricalPressure(i) }
+                                    } else 1.0f
+                                    val pivotX = widthPx / 2f
+                                    val mHx = (hx - pivotX - offset.x) / scale + pivotX
+                                    val mHy = (hy - offset.y) / scale
+                                    
+                                    var snappedHx = mHx
+                                    var snappedHy = mHy
 
-                                if (isRulerActive && activeRulerInteraction == null) {
-                                    val dxR = mHx - rulerOffset.x
-                                    val dyR = mHy - rulerOffset.y
-                                    val angleRad = Math.toRadians(rulerAngle.toDouble())
-                                    val cosR = Math.cos(-angleRad).toFloat()
-                                    val sinR = Math.sin(-angleRad).toFloat()
-                                    val localXR = dxR * cosR - dyR * sinR
-                                    val localYR = dxR * sinR + dyR * cosR
+                                    if (isRulerActive && activeRulerInteraction == null) {
+                                        val dxR = mHx - rulerOffset.x
+                                        val dyR = mHy - rulerOffset.y
+                                        val angleRad = Math.toRadians(rulerAngle.toDouble())
+                                        val cosR = Math.cos(-angleRad).toFloat()
+                                        val sinR = Math.sin(-angleRad).toFloat()
+                                        val localXR = dxR * cosR - dyR * sinR
+                                        val localYR = dxR * sinR + dyR * cosR
 
-                                    if (localYR in (-rulerH / 2)..rulerH / 2) {
-                                        val snapThreshold = 45f
-                                        val distToLeft = Math.abs(localXR - (-rulerW / 2))
-                                        val distToRight = Math.abs(localXR - (rulerW / 2))
-                                        if (distToLeft < snapThreshold || distToRight < snapThreshold) {
-                                            val snappedLocalXR = if (distToLeft < distToRight) -rulerW / 2 else rulerW / 2
-                                            val cosRot = Math.cos(angleRad).toFloat()
-                                            val sinRot = Math.sin(angleRad).toFloat()
-                                            snappedHx = snappedLocalXR * cosRot - localYR * sinRot + rulerOffset.x
-                                            snappedHy = snappedLocalXR * sinRot + localYR * cosRot + rulerOffset.y
+                                        if (localYR in (-rulerH / 2)..rulerH / 2) {
+                                            val snapThreshold = 45f
+                                            val distToLeft = Math.abs(localXR - (-rulerW / 2))
+                                            val distToRight = Math.abs(localXR - (rulerW / 2))
+                                            if (distToLeft < snapThreshold || distToRight < snapThreshold) {
+                                                val snappedLocalXR = if (distToLeft < distToRight) -rulerW / 2 else rulerW / 2
+                                                val cosRot = Math.cos(angleRad).toFloat()
+                                                val sinRot = Math.sin(angleRad).toFloat()
+                                                snappedHx = snappedLocalXR * cosRot - localYR * sinRot + rulerOffset.x
+                                                snappedHy = snappedLocalXR * sinRot + localYR * cosRot + rulerOffset.y
+                                            }
                                         }
                                     }
-                                }
 
-                                val fHx = toNormalizedX(snappedHx, strokeStartedPage)
-                                val fHy = toNormalizedY(snappedHy, strokeStartedPage)
-                                pointsList.add(Point(fHx, fHy, hp))
-                            }
-                            val finalXVal = toNormalizedX(snappedX, strokeStartedPage)
-                            val finalYVal = toNormalizedY(snappedY, strokeStartedPage)
-                            pointsList.add(Point(finalXVal, finalYVal, pressure))
-                            if (pointsList.isNotEmpty()) {
-                                onStrokeDragged(pointsList)
+                                    val fHx = toNormalizedX(snappedHx, strokeStartedPage).coerceIn(0f, 600f)
+                                    val fHy = toNormalizedY(snappedHy, strokeStartedPage).coerceIn(0f, normH)
+                                    pointsList.add(Point(fHx, fHy, hp))
+                                }
+                                val finalXVal = toNormalizedX(snappedX, strokeStartedPage).coerceIn(0f, 600f)
+                                val finalYVal = toNormalizedY(snappedY, strokeStartedPage).coerceIn(0f, normH)
+                                pointsList.add(Point(finalXVal, finalYVal, pressure))
+                                if (pointsList.isNotEmpty()) {
+                                    onStrokeDragged(pointsList)
+                                }
                             }
                             true
                         }
-                        MotionEvent.ACTION_UP -> {
-                            onStrokeEnded()
+                        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                            if (isWritingStartedOnPage) {
+                                onStrokeEnded()
+                                isWritingStartedOnPage = false
+                            }
                             true
                         }
                         else -> false
@@ -1190,11 +1207,14 @@ fun DrawingCanvas(
                         val strokePage = stroke.page.coerceIn(1, pdfPageCount)
                         val pTop = getPageTop(strokePage)
                         val pH = getPageHeight(strokePage)
+                        val pLeft = getPageLeft(strokePage)
+                        val pW = getPageWidth(strokePage)
                         val isVisible = pTop + pH >= visibleTop && pTop <= visibleBottom
 
                         if (isVisible) {
-                            val rawPoints = stroke.points
-                            if (rawPoints.isNotEmpty()) {
+                            clipRect(left = pLeft, top = pTop, right = pLeft + pW, bottom = pTop + pH) {
+                                val rawPoints = stroke.points
+                                if (rawPoints.isNotEmpty()) {
                                 val bbox = lassoBoundingBox
                                 val cX = if (bbox != null) (bbox.left + bbox.right) / 2f else 0f
                                 val cY = if (bbox != null) (bbox.top + bbox.bottom) / 2f else 0f
@@ -1371,6 +1391,7 @@ fun DrawingCanvas(
                         }
                     }
                 }
+            }
 
                 // 2. Draw Highlighter Layer (Renders BEHIND ink pens) using index loops without list allocation
                 for (i in strokes.indices) {
@@ -1405,10 +1426,13 @@ fun DrawingCanvas(
                         val strokePage = stroke.page.coerceIn(1, pdfPageCount)
                         val pTop = getPageTop(strokePage)
                         val pH = getPageHeight(strokePage)
+                        val pLeft = getPageLeft(strokePage)
+                        val pW = getPageWidth(strokePage)
                         val isVisible = pTop + pH >= visibleTop && pTop <= visibleBottom
 
                         if (isVisible) {
-                            val rawPoints = stroke.points
+                            clipRect(left = pLeft, top = pTop, right = pLeft + pW, bottom = pTop + pH) {
+                                val rawPoints = stroke.points
                             if (rawPoints.isNotEmpty()) {
                                 val bbox = lassoBoundingBox
                                 val cX = if (bbox != null) (bbox.left + bbox.right) / 2f else 0f
@@ -1525,7 +1549,8 @@ fun DrawingCanvas(
                             }
                         }
                     }
-                } // End of drawSingleStroke in second Canvas
+                }
+            } // End of drawSingleStroke in second Canvas
 
                 // Draw active highlighters
                 for (i in lassoSelectedStrokes.indices) {
