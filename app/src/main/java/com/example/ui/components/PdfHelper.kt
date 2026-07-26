@@ -412,9 +412,6 @@ object PdfHelper {
                             canvas.drawLine(0f, y, 600f, y, paint)
                             y += 30f
                         }
-                        // Left margin line
-                        paint.color = android.graphics.Color.rgb(255, 200, 200)
-                        canvas.drawLine(80f, 0f, 80f, 800f, paint)
                     } else if (templateType == "grid") {
                         paint.color = android.graphics.Color.rgb(240, 240, 240)
                         paint.strokeWidth = 1f

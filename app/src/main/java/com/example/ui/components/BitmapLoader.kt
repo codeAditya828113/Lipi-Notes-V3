@@ -12,6 +12,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import coil.imageLoader
 import coil.request.ImageRequest
 import coil.request.SuccessResult
+import coil.size.Precision
 import com.example.data.ImageElement
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -20,21 +21,26 @@ import kotlinx.coroutines.withContext
 fun rememberImageBitmaps(images: List<ImageElement>): Map<String, ImageBitmap> {
     val context = LocalContext.current
     val bitmaps = remember { mutableStateMapOf<String, ImageBitmap>() }
+    // Only extract URIs so that position/dimension drag changes don't restart Coil fetches
+    val uriList = remember(images) { images.map { it.uri }.distinct() }
 
-    LaunchedEffect(images) {
+    LaunchedEffect(uriList) {
         withContext(Dispatchers.IO) {
-            images.forEach { imageElem ->
-                if (!bitmaps.containsKey(imageElem.uri)) {
+            uriList.forEach { uri ->
+                if (!bitmaps.containsKey(uri)) {
                     try {
                         val request = ImageRequest.Builder(context)
-                            .data(imageElem.uri)
+                            .data(uri)
+                            .size(2048, 2048)
+                            .precision(Precision.INEXACT)
+                            .allowHardware(true)
                             .build()
                         val result = context.imageLoader.execute(request)
                         if (result is SuccessResult) {
                             val drawable = result.drawable
                             if (drawable is BitmapDrawable) {
                                 val imageBitmap = drawable.bitmap.asImageBitmap()
-                                bitmaps[imageElem.uri] = imageBitmap
+                                bitmaps[uri] = imageBitmap
                             }
                         }
                     } catch (e: Exception) {
@@ -46,3 +52,4 @@ fun rememberImageBitmaps(images: List<ImageElement>): Map<String, ImageBitmap> {
     }
     return bitmaps
 }
+

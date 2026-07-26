@@ -1,6 +1,11 @@
 package com.example.ui.components
 
 import android.app.Application
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.content.Context
+import android.os.Build
+import androidx.core.app.NotificationCompat
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Offset
 import android.graphics.Bitmap
@@ -795,6 +800,7 @@ class NoteViewModel(
         startAutoSaveLoop()
         startFadingLoop()
         loadTimerStateForActiveNote()
+        checkFirstRunOrUpdateChangelog()
 
         viewModelScope.launch(Dispatchers.IO) {
             val count = repository.allNotes.first().size
@@ -807,6 +813,8 @@ class NoteViewModel(
                 repository.insertNote(NoteEntity(title = "Scratch paper", templateType = "blank", lastModifiedTime = time - 3000))
                 repository.insertNote(NoteEntity(title = "Quick Start Guide", templateType = "blank", lastModifiedTime = time - 4000))
             }
+            kotlinx.coroutines.delay(2500L)
+            checkForUpdates(silent = true)
         }
     }
 
@@ -890,6 +898,60 @@ class NoteViewModel(
         private set
     var updateDownloadedFile by mutableStateOf<File?>(null)
         private set
+    var showUpdatePromptDialog by mutableStateOf(false)
+        private set
+    var showChangelogDialog by mutableStateOf(false)
+        private set
+    var changelogNotes by mutableStateOf("")
+        private set
+    var changelogVersionName by mutableStateOf("")
+        private set
+
+    fun dismissUpdatePromptDialog() {
+        showUpdatePromptDialog = false
+    }
+
+    fun dismissChangelogDialog() {
+        showChangelogDialog = false
+    }
+
+    fun showChangelogManually() {
+        changelogVersionName = com.example.BuildConfig.VERSION_NAME
+        changelogNotes = sharedPrefs.getString("last_installed_notes", null)
+            ?: "• Full-width Ruled page template without side margins\n• Low-latency stroke rendering and clip boundaries\n• Automatic update notifications and direct GitHub APK download\n• Post-update Change Log & What's New dialog\n• Floating toolbar & PDF engine improvements"
+        showChangelogDialog = true
+    }
+
+    fun markPendingUpdate(notes: String) {
+        sharedPrefs.edit()
+            .putBoolean("was_update_pending", true)
+            .putString("pending_update_notes", notes.ifBlank { updateNotes })
+            .apply()
+    }
+
+    fun checkFirstRunOrUpdateChangelog() {
+        val lastSeenVersionCode = sharedPrefs.getInt("last_seen_version_code", -1)
+        val currentVersionCode = com.example.BuildConfig.VERSION_CODE
+        val pendingNotes = sharedPrefs.getString("pending_update_notes", null)
+        val wasUpdatePending = sharedPrefs.getBoolean("was_update_pending", false)
+
+        if (wasUpdatePending || (lastSeenVersionCode != -1 && currentVersionCode > lastSeenVersionCode)) {
+            changelogVersionName = com.example.BuildConfig.VERSION_NAME
+            changelogNotes = if (!pendingNotes.isNullOrBlank()) pendingNotes else "• Full-width Ruled page template without side margins\n• Low-latency stroke rendering and clip boundaries\n• Automatic update notifications and direct GitHub APK download\n• Post-update Change Log & What's New dialog\n• Floating toolbar & PDF engine improvements"
+            showChangelogDialog = true
+            sharedPrefs.edit()
+                .putInt("last_seen_version_code", currentVersionCode)
+                .putBoolean("was_update_pending", false)
+                .putString("last_installed_notes", changelogNotes)
+                .apply()
+        } else if (lastSeenVersionCode == -1) {
+            sharedPrefs.edit().putInt("last_seen_version_code", currentVersionCode).apply()
+        }
+    }
+
+    fun triggerUpdateDialog() {
+        showUpdatePromptDialog = true
+    }
 
     // Configurable Update URL (GitHub/raw gist or direct update.json)
     var updateUrlSetting by mutableStateOf(sharedPrefs.getString("ota_update_url", "https://raw.githubusercontent.com/rampritchoudhary16281/NovaNotes/main/update.json") ?: "https://raw.githubusercontent.com/rampritchoudhary16281/NovaNotes/main/update.json")
@@ -901,19 +963,21 @@ class NoteViewModel(
         logSyncEvent("Update URL updated: $url")
     }
 
-    fun checkForUpdates() {
+    fun checkForUpdates(silent: Boolean = false) {
         if (updateChecking) return
         updateChecking = true
         updateError = null
         updateStatusMessage = "Checking for updates..."
-        updateAvailable = false
+        if (!silent) {
+            updateAvailable = false
+        }
 
         viewModelScope.launch {
             try {
                 val result = withContext(Dispatchers.IO) {
                     val urlConnection = URL(updateUrlSetting).openConnection() as HttpURLConnection
-                    urlConnection.connectTimeout = 10000
-                    urlConnection.readTimeout = 10000
+                    urlConnection.connectTimeout = 8000
+                    urlConnection.readTimeout = 8000
                     try {
                         val inputStream = urlConnection.inputStream
                         val content = inputStream.bufferedReader().use { it.readText() }
@@ -936,19 +1000,63 @@ class NoteViewModel(
                     updateApkUrl = apkUrl
                     updateNotes = releaseNotes
                     updateStatusMessage = "New version v$remoteVersionName available!"
+                    showUpdatePromptDialog = true
+                    sendUpdateNotification(remoteVersionName, releaseNotes)
                     logSyncEvent("Update available: v$remoteVersionName")
                 } else {
                     updateAvailable = false
                     updateStatusMessage = "App is up to date (v${com.example.BuildConfig.VERSION_NAME})"
                     logSyncEvent("App is up to date")
+                    if (!silent) {
+                        showUpdatePromptDialog = false
+                    }
                 }
             } catch (e: Exception) {
                 Log.e("OTAUpdate", "Error checking for updates", e)
-                updateError = "Failed to fetch updates: ${e.localizedMessage}"
+                if (!silent) {
+                    updateError = "Failed to fetch updates: ${e.localizedMessage}"
+                }
                 updateStatusMessage = "Update check failed"
             } finally {
                 updateChecking = false
             }
+        }
+    }
+
+    private fun sendUpdateNotification(versionName: String, notes: String) {
+        try {
+            val context = getApplication<Application>()
+            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
+            val channelId = "app_updates_channel"
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val channel = NotificationChannel(
+                    channelId,
+                    "App Updates",
+                    NotificationManager.IMPORTANCE_DEFAULT
+                ).apply {
+                    description = "Notifications for new app updates"
+                }
+                notificationManager.createNotificationChannel(channel)
+            }
+
+            val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)
+            val pendingIntent = android.app.PendingIntent.getActivity(
+                context, 0, intent,
+                android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+            )
+
+            val builder = NotificationCompat.Builder(context, channelId)
+                .setSmallIcon(android.R.drawable.stat_sys_download_done)
+                .setContentTitle("🎉 Update Available: v$versionName")
+                .setContentText("A new version of NovaNotes is available! Tap to open.")
+                .setStyle(NotificationCompat.BigTextStyle().bigText("Version $versionName is available.\n\n$notes"))
+                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                .setContentIntent(pendingIntent)
+                .setAutoCancel(true)
+
+            notificationManager.notify(1001, builder.build())
+        } catch (e: Exception) {
+            Log.e("OTAUpdate", "Failed to send notification", e)
         }
     }
 

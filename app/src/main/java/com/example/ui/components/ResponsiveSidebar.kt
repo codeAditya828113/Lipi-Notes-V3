@@ -762,7 +762,7 @@ fun ResponsiveSidebar(
                                     onClick = { viewModel.checkForUpdates() },
                                     enabled = !viewModel.updateChecking && viewModel.updateProgress == null,
                                     shape = RoundedCornerShape(8.dp),
-                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
                                     modifier = Modifier.weight(1f).height(32.dp)
                                 ) {
                                     if (viewModel.updateChecking) {
@@ -770,6 +770,15 @@ fun ResponsiveSidebar(
                                     } else {
                                         Text("Check", fontSize = 10.sp)
                                     }
+                                }
+
+                                OutlinedButton(
+                                    onClick = { viewModel.showChangelogManually() },
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                                    modifier = Modifier.weight(1.2f).height(32.dp)
+                                ) {
+                                    Text("What's New", fontSize = 10.sp)
                                 }
 
                                 if (viewModel.updateAvailable) {

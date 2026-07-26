@@ -30,6 +30,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke as DrawStroke
@@ -1015,7 +1016,7 @@ fun DrawingCanvas(
                     }
                 }
         ) {
-            Canvas(modifier = Modifier.fillMaxSize()) {
+            Canvas(modifier = Modifier.fillMaxSize().graphicsLayer { clip = true }) {
             // Apply canvas panning and zooming transformations if infinite mode is active, hand scroll is enabled, or scrollable PDF is shown
             val isMultiPage = templateType == "pdf" || templateType == "docx" || pdfPageCount > 1
             val isNormalizedCoords = true
@@ -1025,34 +1026,39 @@ fun DrawingCanvas(
             }) {
                 var pdfOffset = Offset.Zero
 
+                // Compute visible range in page Y coordinates for frustum culling
+                val visibleTop = (-offset.y / scale) - 200f
+                val visibleBottom = ((-offset.y + heightPx) / scale) + 200f
+
                 // 1. Draw Template/PDF Background First
-                
                 when (templateType) {
                     "pdf", "docx" -> {
                         for (p in 1..pdfPageCount) {
-                            val bitmap = pdfBitmaps[p]
-                            val pW = getPageWidth(p)
-                            val pH = getPageHeight(p)
-                            val left = getPageLeft(p)
                             val top = getPageTop(p)
-                            if (bitmap != null && !bitmap.isRecycled) {
-                                drawImage(
-                                    image = bitmap.asImageBitmap(),
-                                    dstOffset = androidx.compose.ui.unit.IntOffset(left.toInt(), top.toInt()),
-                                    dstSize = androidx.compose.ui.unit.IntSize(pW.toInt(), pH.toInt()),
-                                    colorFilter = if (isDarkTheme) {
-                                        androidx.compose.ui.graphics.ColorFilter.colorMatrix(
-                                            androidx.compose.ui.graphics.ColorMatrix(floatArrayOf(
-                                                -1f, 0f, 0f, 0f, 255f,
-                                                0f, -1f, 0f, 0f, 255f,
-                                                0f, 0f, -1f, 0f, 255f,
-                                                0f, 0f, 0f, 1f, 0f
-                                            ))
-                                        )
-                                    } else null
-                                )
-                            } else {
-                                drawRect(color = actualBgColor, topLeft = Offset(left, top), size = Size(pW, pH))
+                            val pH = getPageHeight(p)
+                            if (top + pH >= visibleTop && top <= visibleBottom) {
+                                val bitmap = pdfBitmaps[p]
+                                val pW = getPageWidth(p)
+                                val left = getPageLeft(p)
+                                if (bitmap != null && !bitmap.isRecycled) {
+                                    drawImage(
+                                        image = bitmap.asImageBitmap(),
+                                        dstOffset = androidx.compose.ui.unit.IntOffset(left.toInt(), top.toInt()),
+                                        dstSize = androidx.compose.ui.unit.IntSize(pW.toInt(), pH.toInt()),
+                                        colorFilter = if (isDarkTheme) {
+                                            androidx.compose.ui.graphics.ColorFilter.colorMatrix(
+                                                androidx.compose.ui.graphics.ColorMatrix(floatArrayOf(
+                                                    -1f, 0f, 0f, 0f, 255f,
+                                                    0f, -1f, 0f, 0f, 255f,
+                                                    0f, 0f, -1f, 0f, 255f,
+                                                    0f, 0f, 0f, 1f, 0f
+                                                ))
+                                            )
+                                        } else null
+                                    )
+                                } else {
+                                    drawRect(color = actualBgColor, topLeft = Offset(left, top), size = Size(pW, pH))
+                                }
                             }
                         }
                     }
@@ -1060,83 +1066,82 @@ fun DrawingCanvas(
                         for (p in 1..pdfPageCount) {
                             val topOffset = getPageTop(p)
                             val pageH = getPageHeight(p)
-                            val pageW = getPageWidth(p)
-                            val pageL = getPageLeft(p)
+                            if (topOffset + pageH >= visibleTop && topOffset <= visibleBottom) {
+                                val pageW = getPageWidth(p)
+                                val pageL = getPageLeft(p)
 
-                            drawRect(
-                                color = actualBgColor,
-                                topLeft = Offset(pageL, topOffset),
-                                size = Size(pageW, pageH)
-                            )
+                                drawRect(
+                                    color = actualBgColor,
+                                    topLeft = Offset(pageL, topOffset),
+                                    size = Size(pageW, pageH)
+                                )
 
-                            withTransform({ translate(pageL, topOffset) }) {
-                                when (templateType) {
-                                    "grid" -> {
-                                        val gridSpacing = 30.dp.toPx()
-                                        val gridColor = if (isDarkTheme) Color.White.copy(alpha = 0.12f) else Color.LightGray.copy(alpha = 0.35f)
-                                        for (gx in 0..pageW.toInt() step gridSpacing.toInt()) {
-                                            drawLine(gridColor, start = Offset(gx.toFloat(), 0f), end = Offset(gx.toFloat(), pageH), strokeWidth = 1f)
-                                        }
-                                        for (gy in 0..pageH.toInt() step gridSpacing.toInt()) {
-                                            drawLine(gridColor, start = Offset(0f, gy.toFloat()), end = Offset(pageW, gy.toFloat()), strokeWidth = 1f)
-                                        }
-                                    }
-                                    "dotted" -> {
-                                        val dotSpacing = 24.dp.toPx()
-                                        val dotColor = if (isDarkTheme) Color.White.copy(alpha = 0.2f) else Color.Gray.copy(alpha = 0.45f)
-                                        val dotRadius = 1.5.dp.toPx()
-                                        for (gx in dotSpacing.toInt()..pageW.toInt() step dotSpacing.toInt()) {
-                                            for (gy in dotSpacing.toInt()..pageH.toInt() step dotSpacing.toInt()) {
-                                                drawCircle(color = dotColor, radius = dotRadius, center = Offset(gx.toFloat(), gy.toFloat()))
+                                withTransform({ translate(pageL, topOffset) }) {
+                                    when (templateType) {
+                                        "grid" -> {
+                                            val gridSpacing = 30.dp.toPx()
+                                            val gridColor = if (isDarkTheme) Color.White.copy(alpha = 0.12f) else Color.LightGray.copy(alpha = 0.35f)
+                                            for (gx in 0..pageW.toInt() step gridSpacing.toInt()) {
+                                                drawLine(gridColor, start = Offset(gx.toFloat(), 0f), end = Offset(gx.toFloat(), pageH), strokeWidth = 1f)
+                                            }
+                                            for (gy in 0..pageH.toInt() step gridSpacing.toInt()) {
+                                                drawLine(gridColor, start = Offset(0f, gy.toFloat()), end = Offset(pageW, gy.toFloat()), strokeWidth = 1f)
                                             }
                                         }
-                                    }
-                                    "ruled" -> {
-                                        val lineSpacing = 40.dp.toPx()
-                                        val ruledColor = if (isDarkTheme) Color(0xFF64748B).copy(alpha = 0.6f) else Color(0xFF94A3B8).copy(alpha = 0.75f)
-                                        val marginColor = if (isDarkTheme) Color(0xFFEF4444).copy(alpha = 0.4f) else Color(0xFFFFCDD2)
-                                        val marginX = 60.dp.toPx()
-                                        for (ry in lineSpacing.toInt()..pageH.toInt() step lineSpacing.toInt()) {
-                                            drawLine(ruledColor, start = Offset(0f, ry.toFloat()), end = Offset(pageW, ry.toFloat()), strokeWidth = 1f)
-                                        }
-                                        drawLine(marginColor, start = Offset(marginX, 0f), end = Offset(marginX, pageH), strokeWidth = 2f)
-                                    }
-                                    "cornell" -> {
-                                        val splitX = pageW * 0.28f
-                                        val summaryY = pageH * 0.82f
-                                        val lineColor = if (isDarkTheme) Color(0xFF3B82F6).copy(alpha = 0.3f) else Color(0xFFBBDEFB).copy(alpha = 0.4f)
-                                        val divisionColor = if (isDarkTheme) Color(0xFF64748B) else Color(0xFF90A4AE)
-                                        val lineSpacing = 28.dp.toPx()
-                                        for (cy in lineSpacing.toInt()..summaryY.toInt() step lineSpacing.toInt()) {
-                                            drawLine(lineColor, start = Offset(splitX, cy.toFloat()), end = Offset(pageW, cy.toFloat()), strokeWidth = 1f)
-                                        }
-                                        drawLine(divisionColor, start = Offset(splitX, 0f), end = Offset(splitX, summaryY), strokeWidth = 3f)
-                                        drawLine(divisionColor, start = Offset(0f, summaryY), end = Offset(pageW, summaryY), strokeWidth = 3f)
-                                        drawIntoCanvas { canvas ->
-                                            val paint = android.graphics.Paint().apply {
-                                                color = android.graphics.Color.GRAY
-                                                textSize = 36f
-                                                isAntiAlias = true
+                                        "dotted" -> {
+                                            val dotSpacing = 24.dp.toPx()
+                                            val dotColor = if (isDarkTheme) Color.White.copy(alpha = 0.2f) else Color.Gray.copy(alpha = 0.45f)
+                                            val dotRadius = 1.5.dp.toPx()
+                                            for (gx in dotSpacing.toInt()..pageW.toInt() step dotSpacing.toInt()) {
+                                                for (gy in dotSpacing.toInt()..pageH.toInt() step dotSpacing.toInt()) {
+                                                    drawCircle(color = dotColor, radius = dotRadius, center = Offset(gx.toFloat(), gy.toFloat()))
+                                                }
                                             }
-                                            canvas.nativeCanvas.drawText("Cue / Keywords", 30f, 60f, paint)
-                                            canvas.nativeCanvas.drawText("Notes Canvas", splitX + 30f, 60f, paint)
-                                            canvas.nativeCanvas.drawText("Summary block", 30f, summaryY + 50f, paint)
                                         }
-                                    }
-                                    "meeting" -> {
-                                        val cardBg = Color.White
-                                        val borderColor = Color.LightGray.copy(alpha = 0.5f)
-                                        drawRoundRect(color = cardBg, topLeft = Offset(20.dp.toPx(), 20.dp.toPx()), size = Size(pageW * 0.45f - 30.dp.toPx(), pageH * 0.35f), cornerRadius = CornerRadius(8.dp.toPx()), style = androidx.compose.ui.graphics.drawscope.Fill)
-                                        drawRoundRect(color = borderColor, topLeft = Offset(20.dp.toPx(), 20.dp.toPx()), size = Size(pageW * 0.45f - 30.dp.toPx(), pageH * 0.35f), cornerRadius = CornerRadius(8.dp.toPx()), style = DrawStroke(width = 2f))
-                                        drawRoundRect(color = cardBg, topLeft = Offset(20.dp.toPx(), pageH * 0.35f + 40.dp.toPx()), size = Size(pageW * 0.45f - 30.dp.toPx(), pageH * 0.55f - 40.dp.toPx()), cornerRadius = CornerRadius(8.dp.toPx()), style = androidx.compose.ui.graphics.drawscope.Fill)
-                                        drawRoundRect(color = borderColor, topLeft = Offset(20.dp.toPx(), pageH * 0.35f + 40.dp.toPx()), size = Size(pageW * 0.45f - 30.dp.toPx(), pageH * 0.55f - 40.dp.toPx()), cornerRadius = CornerRadius(8.dp.toPx()), style = DrawStroke(width = 2f))
-                                        drawRoundRect(color = cardBg, topLeft = Offset(pageW * 0.45f + 10.dp.toPx(), 20.dp.toPx()), size = Size(pageW * 0.55f - 30.dp.toPx(), pageH - 40.dp.toPx()), cornerRadius = CornerRadius(8.dp.toPx()), style = androidx.compose.ui.graphics.drawscope.Fill)
-                                        drawRoundRect(color = borderColor, topLeft = Offset(pageW * 0.45f + 10.dp.toPx(), 20.dp.toPx()), size = Size(pageW * 0.55f - 30.dp.toPx(), pageH - 40.dp.toPx()), cornerRadius = CornerRadius(8.dp.toPx()), style = DrawStroke(width = 2f))
-                                        drawIntoCanvas { canvas ->
-                                            val titlePaint = android.graphics.Paint().apply { color = android.graphics.Color.DKGRAY; textSize = 32f; isFakeBoldText = true; isAntiAlias = true }
-                                            canvas.nativeCanvas.drawText("Agenda", 20.dp.toPx() + 20f, 20.dp.toPx() + 40f, titlePaint)
-                                            canvas.nativeCanvas.drawText("Action Items", 20.dp.toPx() + 20f, pageH * 0.35f + 40.dp.toPx() + 40f, titlePaint)
-                                            canvas.nativeCanvas.drawText("Meeting Minutes", pageW * 0.45f + 10.dp.toPx() + 20f, 20.dp.toPx() + 40f, titlePaint)
+                                        "ruled" -> {
+                                            val lineSpacing = 40.dp.toPx()
+                                            val ruledColor = if (isDarkTheme) Color(0xFF64748B).copy(alpha = 0.6f) else Color(0xFF94A3B8).copy(alpha = 0.75f)
+                                            for (ry in lineSpacing.toInt()..pageH.toInt() step lineSpacing.toInt()) {
+                                                drawLine(ruledColor, start = Offset(0f, ry.toFloat()), end = Offset(pageW, ry.toFloat()), strokeWidth = 1f)
+                                            }
+                                        }
+                                        "cornell" -> {
+                                            val splitX = pageW * 0.28f
+                                            val summaryY = pageH * 0.82f
+                                            val lineColor = if (isDarkTheme) Color(0xFF3B82F6).copy(alpha = 0.3f) else Color(0xFFBBDEFB).copy(alpha = 0.4f)
+                                            val divisionColor = if (isDarkTheme) Color(0xFF64748B) else Color(0xFF90A4AE)
+                                            val lineSpacing = 28.dp.toPx()
+                                            for (cy in lineSpacing.toInt()..summaryY.toInt() step lineSpacing.toInt()) {
+                                                drawLine(lineColor, start = Offset(splitX, cy.toFloat()), end = Offset(pageW, cy.toFloat()), strokeWidth = 1f)
+                                            }
+                                            drawLine(divisionColor, start = Offset(splitX, 0f), end = Offset(splitX, summaryY), strokeWidth = 3f)
+                                            drawLine(divisionColor, start = Offset(0f, summaryY), end = Offset(pageW, summaryY), strokeWidth = 3f)
+                                            drawIntoCanvas { canvas ->
+                                                val paint = android.graphics.Paint().apply {
+                                                    color = android.graphics.Color.GRAY
+                                                    textSize = 36f
+                                                    isAntiAlias = true
+                                                }
+                                                canvas.nativeCanvas.drawText("Cue / Keywords", 30f, 60f, paint)
+                                                canvas.nativeCanvas.drawText("Notes Canvas", splitX + 30f, 60f, paint)
+                                                canvas.nativeCanvas.drawText("Summary block", 30f, summaryY + 50f, paint)
+                                            }
+                                        }
+                                        "meeting" -> {
+                                            val cardBg = Color.White
+                                            val borderColor = Color.LightGray.copy(alpha = 0.5f)
+                                            drawRoundRect(color = cardBg, topLeft = Offset(20.dp.toPx(), 20.dp.toPx()), size = Size(pageW * 0.45f - 30.dp.toPx(), pageH * 0.35f), cornerRadius = CornerRadius(8.dp.toPx()), style = androidx.compose.ui.graphics.drawscope.Fill)
+                                            drawRoundRect(color = borderColor, topLeft = Offset(20.dp.toPx(), 20.dp.toPx()), size = Size(pageW * 0.45f - 30.dp.toPx(), pageH * 0.35f), cornerRadius = CornerRadius(8.dp.toPx()), style = DrawStroke(width = 2f))
+                                            drawRoundRect(color = cardBg, topLeft = Offset(20.dp.toPx(), pageH * 0.35f + 40.dp.toPx()), size = Size(pageW * 0.45f - 30.dp.toPx(), pageH * 0.55f - 40.dp.toPx()), cornerRadius = CornerRadius(8.dp.toPx()), style = androidx.compose.ui.graphics.drawscope.Fill)
+                                            drawRoundRect(color = borderColor, topLeft = Offset(20.dp.toPx(), pageH * 0.35f + 40.dp.toPx()), size = Size(pageW * 0.45f - 30.dp.toPx(), pageH * 0.55f - 40.dp.toPx()), cornerRadius = CornerRadius(8.dp.toPx()), style = DrawStroke(width = 2f))
+                                            drawRoundRect(color = cardBg, topLeft = Offset(pageW * 0.45f + 10.dp.toPx(), 20.dp.toPx()), size = Size(pageW * 0.55f - 30.dp.toPx(), pageH - 40.dp.toPx()), cornerRadius = CornerRadius(8.dp.toPx()), style = androidx.compose.ui.graphics.drawscope.Fill)
+                                            drawRoundRect(color = borderColor, topLeft = Offset(pageW * 0.45f + 10.dp.toPx(), 20.dp.toPx()), size = Size(pageW * 0.55f - 30.dp.toPx(), pageH - 40.dp.toPx()), cornerRadius = CornerRadius(8.dp.toPx()), style = DrawStroke(width = 2f))
+                                            drawIntoCanvas { canvas ->
+                                                val titlePaint = android.graphics.Paint().apply { color = android.graphics.Color.DKGRAY; textSize = 32f; isFakeBoldText = true; isAntiAlias = true }
+                                                canvas.nativeCanvas.drawText("Agenda", 20.dp.toPx() + 20f, 20.dp.toPx() + 40f, titlePaint)
+                                                canvas.nativeCanvas.drawText("Action Items", 20.dp.toPx() + 20f, pageH * 0.35f + 40.dp.toPx() + 40f, titlePaint)
+                                                canvas.nativeCanvas.drawText("Meeting Minutes", pageW * 0.45f + 10.dp.toPx() + 20f, 20.dp.toPx() + 40f, titlePaint)
+                                            }
                                         }
                                     }
                                 }
@@ -1144,48 +1149,48 @@ fun DrawingCanvas(
                         }
                     }
                 }
-                // 1.5 Draw Images
+                // 1.5 Draw Images (with viewport culling)
                 images.forEach { img ->
-                    imageBitmaps[img.uri]?.let { bmp ->
-                        val imgPage = img.page.coerceIn(1, pdfPageCount)
-                        val renderX = fromNormalizedX(img.x, imgPage)
-                        val renderY = fromNormalizedY(img.y, imgPage)
-                        val renderW = (img.width / 600f) * getPageWidth(imgPage)
-                        val renderH = (img.height / getNormH(imgPage)) * getPageHeight(imgPage)
+                    val imgPage = img.page.coerceIn(1, pdfPageCount)
+                    val pageTop = getPageTop(imgPage)
+                    val pageH = getPageHeight(imgPage)
+                    if (pageTop + pageH >= visibleTop && pageTop <= visibleBottom) {
+                        imageBitmaps[img.uri]?.let { bmp ->
+                            val renderX = fromNormalizedX(img.x, imgPage)
+                            val renderY = fromNormalizedY(img.y, imgPage)
+                            val renderW = (img.width / 600f) * getPageWidth(imgPage)
+                            val renderH = (img.height / getNormH(imgPage)) * getPageHeight(imgPage)
 
-                        drawImage(
-                            image = bmp,
-                            dstOffset = androidx.compose.ui.unit.IntOffset(renderX.toInt(), renderY.toInt()),
-                            dstSize = androidx.compose.ui.unit.IntSize(renderW.toInt(), renderH.toInt())
-                        )
-                        if (selectedImageIndex == images.indexOf(img)) {
-                            drawRect(
-                                color = Color.Blue,
-                                topLeft = Offset(renderX, renderY),
-                                size = Size(renderW, renderH),
-                                style = DrawStroke(2f)
-                            )
-                            drawCircle(
-                                color = Color.Blue,
-                                radius = 15f,
-                                center = Offset(renderX + renderW, renderY + renderH)
-                            )
+                            if (renderY + renderH >= visibleTop && renderY <= visibleBottom) {
+                                drawImage(
+                                    image = bmp,
+                                    dstOffset = androidx.compose.ui.unit.IntOffset(renderX.toInt(), renderY.toInt()),
+                                    dstSize = androidx.compose.ui.unit.IntSize(renderW.toInt(), renderH.toInt())
+                                )
+                                if (selectedImageIndex == images.indexOf(img)) {
+                                    drawRect(
+                                        color = Color.Blue,
+                                        topLeft = Offset(renderX, renderY),
+                                        size = Size(renderW, renderH),
+                                        style = DrawStroke(2f)
+                                    )
+                                    drawCircle(
+                                        color = Color.Blue,
+                                        radius = 15f,
+                                        center = Offset(renderX + renderW, renderY + renderH)
+                                    )
+                                }
+                            }
                         }
                     }
                 }
 
-                                val drawSingleStroke: (com.example.data.Stroke, Boolean, Float) -> Unit = { stroke, isLassoed, alphaMult ->
+                val drawSingleStroke: (com.example.data.Stroke, Boolean, Float) -> Unit = { stroke, isLassoed, alphaMult ->
                     if (!stroke.isHidden) {
                         val strokePage = stroke.page.coerceIn(1, pdfPageCount)
-                        val isVisible = if (pdfPageCount > 1) {
-                            val pTop = getPageTop(strokePage)
-                            val pH = getPageHeight(strokePage)
-                            val visibleStart = -offset.y / scale
-                            val visibleEnd = (-offset.y + heightPx) / scale
-                            pTop + pH >= visibleStart && pTop <= visibleEnd
-                        } else {
-                            true
-                        }
+                        val pTop = getPageTop(strokePage)
+                        val pH = getPageHeight(strokePage)
+                        val isVisible = pTop + pH >= visibleTop && pTop <= visibleBottom
 
                         if (isVisible) {
                             val rawPoints = stroke.points
@@ -1223,17 +1228,35 @@ fun DrawingCanvas(
                                 val color = androidx.compose.ui.graphics.Color(strokeColorInt).copy(alpha = baseAlpha * alphaMult)
                                 val width = stroke.width
                                 
-                                val path = androidx.compose.ui.graphics.Path()
-                                val firstPt = points.first()
-                                val lx = fromNormalizedX(firstPt.x, strokePage)
-                                val ly = fromNormalizedY(firstPt.y, strokePage)
-                                path.moveTo(lx, ly)
-
-                                for (i in 1 until points.size) {
-                                    val pt = points[i]
-                                    val pX = fromNormalizedX(pt.x, strokePage)
-                                    val pY = fromNormalizedY(pt.y, strokePage)
-                                    path.lineTo(pX, pY)
+                                // Cached path lookup for completed strokes to avoid re-constructing Path every frame
+                                val path = if (!isLassoed) {
+                                    strokePathCache.getOrPut(stroke) {
+                                        val p = androidx.compose.ui.graphics.Path()
+                                        val firstPt = points.first()
+                                        val lx = fromNormalizedX(firstPt.x, strokePage)
+                                        val ly = fromNormalizedY(firstPt.y, strokePage)
+                                        p.moveTo(lx, ly)
+                                        for (i in 1 until points.size) {
+                                            val pt = points[i]
+                                            val pX = fromNormalizedX(pt.x, strokePage)
+                                            val pY = fromNormalizedY(pt.y, strokePage)
+                                            p.lineTo(pX, pY)
+                                        }
+                                        p
+                                    }
+                                } else {
+                                    val p = androidx.compose.ui.graphics.Path()
+                                    val firstPt = points.first()
+                                    val lx = fromNormalizedX(firstPt.x, strokePage)
+                                    val ly = fromNormalizedY(firstPt.y, strokePage)
+                                    p.moveTo(lx, ly)
+                                    for (i in 1 until points.size) {
+                                        val pt = points[i]
+                                        val pX = fromNormalizedX(pt.x, strokePage)
+                                        val pY = fromNormalizedY(pt.y, strokePage)
+                                        p.lineTo(pX, pY)
+                                    }
+                                    p
                                 }
 
                                 if (stroke.fillShape && stroke.fillOpacity > 0f) {
@@ -1349,17 +1372,30 @@ fun DrawingCanvas(
                     }
                 }
 
-                // 2. Draw Highlighter Layer (Renders BEHIND ink pens)
-                strokes.filter { it.toolType == "highlighter" }.forEach { drawSingleStroke(it, false, 1f) }
+                // 2. Draw Highlighter Layer (Renders BEHIND ink pens) using index loops without list allocation
+                for (i in strokes.indices) {
+                    val s = strokes[i]
+                    if (s.toolType == "highlighter") {
+                        drawSingleStroke(s, false, 1f)
+                    }
+                }
 
                 // 3. Draw Ink Layer (Pens, Erasers paths, Lasso guides)
-                strokes.filter { it.toolType != "highlighter" }.forEach { drawSingleStroke(it, false, 1f) }
+                for (i in strokes.indices) {
+                    val s = strokes[i]
+                    if (s.toolType != "highlighter") {
+                        drawSingleStroke(s, false, 1f)
+                    }
+                }
             }
         } // End of first Canvas (background and completed strokes)
 
-        Canvas(modifier = Modifier.fillMaxSize()) {
+        Canvas(modifier = Modifier.fillMaxSize().graphicsLayer { clip = true }) {
             val isMultiPage = templateType == "pdf" || templateType == "docx" || pdfPageCount > 1
             val isNormalizedCoords = true
+            val visibleTop = (-offset.y / scale) - 200f
+            val visibleBottom = ((-offset.y + heightPx) / scale) + 200f
+
             withTransform({
                 translate(offset.x, offset.y)
                 scale(scale, scale, pivot = Offset(size.width / 2f, 0f))
@@ -1367,15 +1403,9 @@ fun DrawingCanvas(
                 val drawSingleStroke: (com.example.data.Stroke, Boolean, Float) -> Unit = { stroke, isLassoed, alphaMult ->
                     if (!stroke.isHidden) {
                         val strokePage = stroke.page.coerceIn(1, pdfPageCount)
-                        val isVisible = if (pdfPageCount > 1) {
-                            val pTop = getPageTop(strokePage)
-                            val pH = getPageHeight(strokePage)
-                            val visibleStart = -offset.y / scale
-                            val visibleEnd = (-offset.y + heightPx) / scale
-                            pTop + pH >= visibleStart && pTop <= visibleEnd
-                        } else {
-                            true
-                        }
+                        val pTop = getPageTop(strokePage)
+                        val pH = getPageHeight(strokePage)
+                        val isVisible = pTop + pH >= visibleTop && pTop <= visibleBottom
 
                         if (isVisible) {
                             val rawPoints = stroke.points
@@ -1498,18 +1528,25 @@ fun DrawingCanvas(
                 } // End of drawSingleStroke in second Canvas
 
                 // Draw active highlighters
-                lassoSelectedStrokes.filter { it.toolType == "highlighter" }.forEach { drawSingleStroke(it, true, 1f) }
+                for (i in lassoSelectedStrokes.indices) {
+                    val s = lassoSelectedStrokes[i]
+                    if (s.toolType == "highlighter") drawSingleStroke(s, true, 1f)
+                }
                 currentStroke?.let { if (it.toolType == "highlighter") drawSingleStroke(it, false, 1f) }
 
                 // Draw active inks and fading strokes
                 val now = System.currentTimeMillis()
-                fadingStrokes.forEach { fs ->
+                for (i in fadingStrokes.indices) {
+                    val fs = fadingStrokes[i]
                     val age = now - fs.createdAt
                     val alpha = if (fs.durationMs > 0) 1f - (age.toFloat() / fs.durationMs.toFloat()).coerceIn(0f, 1f) else 1f
                     drawSingleStroke(fs.stroke, false, alpha)
                 }
 
-                lassoSelectedStrokes.filter { it.toolType != "highlighter" }.forEach { drawSingleStroke(it, true, 1f) }
+                for (i in lassoSelectedStrokes.indices) {
+                    val s = lassoSelectedStrokes[i]
+                    if (s.toolType != "highlighter") drawSingleStroke(s, true, 1f)
+                }
                 currentStroke?.let { if (it.toolType != "highlighter") drawSingleStroke(it, false, 1f) }
 
                 // 4. Draw Lasso Bounding Selector and Handles (if selection is active)

@@ -328,6 +328,195 @@ fun NoteinApp(
             onDismissRequest = { viewModel.closeGoogleSearch() }
         )
     }
+
+    if (viewModel.showUpdatePromptDialog) {
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissUpdatePromptDialog() },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.SystemUpdate,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(32.dp)
+                )
+            },
+            title = {
+                Text(
+                    text = "Update Available (v${viewModel.updateVersionName})",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp
+                )
+            },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "A new version of NovaNotes is ready to install! Enjoy performance improvements, stylus responsiveness, and new features.",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    if (viewModel.updateNotes.isNotEmpty()) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text(
+                                    text = "What's New:",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = viewModel.updateNotes,
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                    }
+
+                    if (viewModel.updateProgress != null) {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(
+                                text = "Downloading update: ${(viewModel.updateProgress!! * 100).toInt()}%",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            LinearProgressIndicator(
+                                progress = { viewModel.updateProgress!! },
+                                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(4.dp))
+                            )
+                        }
+                    }
+
+                    if (viewModel.updateError != null) {
+                        Text(
+                            text = viewModel.updateError!!,
+                            color = MaterialTheme.colorScheme.error,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                val context = androidx.compose.ui.platform.LocalContext.current
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = {
+                            val targetUrl = if (viewModel.updateApkUrl.isNotBlank()) viewModel.updateApkUrl else "https://github.com/rampritchoudhary16281/NovaNotes/releases"
+                            try {
+                                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(targetUrl))
+                                context.startActivity(intent)
+                            } catch (e: Exception) {
+                                android.util.Log.e("OTAUpdate", "Could not open browser", e)
+                            }
+                        },
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text("Open GitHub", fontSize = 12.sp)
+                    }
+
+                    Button(
+                        onClick = {
+                            viewModel.markPendingUpdate(viewModel.updateNotes)
+                            viewModel.downloadAndInstallApk()
+                            val targetUrl = if (viewModel.updateApkUrl.isNotBlank()) viewModel.updateApkUrl else "https://github.com/rampritchoudhary16281/NovaNotes/releases"
+                            try {
+                                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(targetUrl))
+                                context.startActivity(intent)
+                            } catch (e: Exception) {
+                                android.util.Log.e("OTAUpdate", "Could not open browser", e)
+                            }
+                        },
+                        enabled = viewModel.updateProgress == null,
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Update Now", fontSize = 12.sp)
+                    }
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = { viewModel.dismissUpdatePromptDialog() },
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text("Remind Later")
+                }
+            }
+        )
+    }
+
+    if (viewModel.showChangelogDialog) {
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissChangelogDialog() },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.NewReleases,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(36.dp)
+                )
+            },
+            title = {
+                Text(
+                    text = "🎉 What's New in NovaNotes v${viewModel.changelogVersionName}",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp
+                )
+            },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "Your app has been successfully updated! Here is the change log and list of improvements in this release:",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Text(
+                                text = "Release Notes & Highlights:",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = viewModel.changelogNotes,
+                                fontSize = 12.sp,
+                                lineHeight = 18.sp,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { viewModel.dismissChangelogDialog() },
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text("Got It, Explore!")
+                }
+            }
+        )
+    }
 }
 
 @Composable
