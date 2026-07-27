@@ -109,11 +109,20 @@ object GoogleDriveBackupHelper {
     /**
      * Saves connected account information to SharedPreferences for persistent authentication.
      */
-    fun saveConnectedAccount(context: Context, name: String?, email: String?) {
+    fun saveConnectedAccount(context: Context, name: String?, email: String?, photoUrl: String? = null) {
         val prefs = context.getSharedPreferences("google_drive_backup_prefs", Context.MODE_PRIVATE)
+        val currentName = prefs.getString("account_name", "") ?: ""
+        val currentEmail = prefs.getString("account_email", "") ?: ""
+        val currentPhoto = prefs.getString("account_photo_url", "") ?: ""
+
+        val finalName = if (!name.isNullOrBlank()) name else currentName
+        val finalEmail = if (!email.isNullOrBlank()) email else currentEmail
+        val finalPhoto = if (!photoUrl.isNullOrBlank()) photoUrl else currentPhoto
+
         prefs.edit()
-            .putString("account_name", name ?: "Google Account")
-            .putString("account_email", email ?: "rampritchoudhary16281@gmail.com")
+            .putString("account_name", finalName)
+            .putString("account_email", finalEmail)
+            .putString("account_photo_url", finalPhoto)
             .putBoolean("is_signed_in", true)
             .apply()
     }
@@ -123,9 +132,9 @@ object GoogleDriveBackupHelper {
      */
     fun getSavedAccountEmail(context: Context): String {
         val account = getLastSignedInAccount(context)
-        if (account?.email != null) return account.email!!
+        if (!account?.email.isNullOrBlank()) return account!!.email!!
         val prefs = context.getSharedPreferences("google_drive_backup_prefs", Context.MODE_PRIVATE)
-        return prefs.getString("account_email", "rampritchoudhary16281@gmail.com") ?: "rampritchoudhary16281@gmail.com"
+        return prefs.getString("account_email", "") ?: ""
     }
 
     /**
@@ -133,9 +142,22 @@ object GoogleDriveBackupHelper {
      */
     fun getSavedAccountName(context: Context): String {
         val account = getLastSignedInAccount(context)
-        if (account?.displayName != null) return account.displayName!!
+        if (!account?.displayName.isNullOrBlank()) return account!!.displayName!!
         val prefs = context.getSharedPreferences("google_drive_backup_prefs", Context.MODE_PRIVATE)
-        return prefs.getString("account_name", "Ramprit Choudhary") ?: "Ramprit Choudhary"
+        val saved = prefs.getString("account_name", "") ?: ""
+        return if (saved.isNotBlank()) saved else if (isSignedIn(context)) "Google Account" else "Guest User"
+    }
+
+    /**
+     * Gets the saved account photo URL from preferences or active account.
+     */
+    fun getSavedPhotoUrl(context: Context): String {
+        val account = getLastSignedInAccount(context)
+        if (account?.photoUrl != null && account.photoUrl.toString().isNotBlank()) {
+            return account.photoUrl.toString()
+        }
+        val prefs = context.getSharedPreferences("google_drive_backup_prefs", Context.MODE_PRIVATE)
+        return prefs.getString("account_photo_url", "") ?: ""
     }
 
     /**
@@ -152,7 +174,12 @@ object GoogleDriveBackupHelper {
      */
     fun clearSavedAccount(context: Context) {
         val prefs = context.getSharedPreferences("google_drive_backup_prefs", Context.MODE_PRIVATE)
-        prefs.edit().clear().apply()
+        prefs.edit()
+            .remove("account_name")
+            .remove("account_email")
+            .remove("account_photo_url")
+            .putBoolean("is_signed_in", false)
+            .apply()
     }
 
     /**

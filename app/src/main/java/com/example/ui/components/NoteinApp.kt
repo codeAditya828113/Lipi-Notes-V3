@@ -4118,6 +4118,14 @@ fun NoteEditorCanvas(
                         editingImageIndex = idx
                         editingImageElement = img
                     },
+                    onImageDeleted = { idx ->
+                        val mutList = viewModel.currentImages.toMutableList()
+                        if (idx in mutList.indices) {
+                            mutList.removeAt(idx)
+                            viewModel.currentImages = mutList
+                            viewModel.saveActiveCanvasStrokes()
+                        }
+                    },
                     onLassoDrag = { offset -> viewModel.lassoDragOffset = Offset(viewModel.lassoDragOffset.x + offset.x, viewModel.lassoDragOffset.y + offset.y) },
                     onLassoScaleUpdated = { scaleX, scaleY -> viewModel.updateLassoScale(scaleX, scaleY) },
                     modifier = Modifier.fillMaxSize()
@@ -5265,6 +5273,9 @@ fun SyncDashboard(viewModel: NoteViewModel) {
     var savedEmail by androidx.compose.runtime.remember {
         androidx.compose.runtime.mutableStateOf(GoogleDriveBackupHelper.getSavedAccountEmail(context))
     }
+    var savedPhotoUrl by androidx.compose.runtime.remember {
+        androidx.compose.runtime.mutableStateOf(GoogleDriveBackupHelper.getSavedPhotoUrl(context))
+    }
     var isSignedIn by androidx.compose.runtime.remember {
         androidx.compose.runtime.mutableStateOf(GoogleDriveBackupHelper.isSignedIn(context))
     }
@@ -5272,10 +5283,10 @@ fun SyncDashboard(viewModel: NoteViewModel) {
         androidx.compose.runtime.mutableStateOf(false)
     }
     var inputEmail by androidx.compose.runtime.remember {
-        androidx.compose.runtime.mutableStateOf("rampritchoudhary16281@gmail.com")
+        androidx.compose.runtime.mutableStateOf("")
     }
     var inputName by androidx.compose.runtime.remember {
-        androidx.compose.runtime.mutableStateOf("Ramprit Choudhary")
+        androidx.compose.runtime.mutableStateOf("")
     }
     
     val signInLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
@@ -5285,22 +5296,21 @@ fun SyncDashboard(viewModel: NoteViewModel) {
         try {
             val acct = task.getResult(com.google.android.gms.common.api.ApiException::class.java)
             if (acct != null) {
-                savedName = acct.displayName ?: "Ramprit Choudhary"
-                savedEmail = acct.email ?: "rampritchoudhary16281@gmail.com"
+                if (!acct.displayName.isNullOrBlank()) savedName = acct.displayName!!
+                if (!acct.email.isNullOrBlank()) savedEmail = acct.email!!
+                if (acct.photoUrl != null && acct.photoUrl.toString().isNotBlank()) {
+                    savedPhotoUrl = acct.photoUrl.toString()
+                }
+                GoogleDriveBackupHelper.saveConnectedAccount(context, savedName, savedEmail, savedPhotoUrl)
+                isSignedIn = true
+                viewModel.logSyncEvent("Successfully signed in as $savedEmail")
+            } else {
+                viewModel.logSyncEvent("Google Sign-In returned null account.")
             }
-            GoogleDriveBackupHelper.saveConnectedAccount(context, savedName, savedEmail)
-            isSignedIn = true
-            viewModel.logSyncEvent("Successfully signed in as $savedEmail")
         } catch (e: com.google.android.gms.common.api.ApiException) {
-            viewModel.logSyncEvent("Google Play Services status code [${e.statusCode}]. Activating direct Google Account connection mode.")
-            GoogleDriveBackupHelper.saveConnectedAccount(context, savedName, savedEmail)
-            isSignedIn = true
-            viewModel.logSyncEvent("Connected Google Account ($savedEmail) for Drive Backup.")
+            viewModel.logSyncEvent("Google Sign-In exception [code ${e.statusCode}]. Tap 'Enter Account Email' if Google Play Services is unavailable.")
         } catch (e: Exception) {
-            viewModel.logSyncEvent("Sign in result: ${e.localizedMessage ?: "Connecting account"}")
-            GoogleDriveBackupHelper.saveConnectedAccount(context, savedName, savedEmail)
-            isSignedIn = true
-            viewModel.logSyncEvent("Connected Google Account ($savedEmail) for Drive Backup.")
+            viewModel.logSyncEvent("Sign in result: ${e.localizedMessage ?: "Sign in cancelled or failed"}")
         }
     }
 
@@ -5383,25 +5393,36 @@ fun SyncDashboard(viewModel: NoteViewModel) {
                             modifier = Modifier.size(52.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
-                                val initials = savedName.split(" ").mapNotNull { it.firstOrNull() }.take(2).joinToString("").ifEmpty { "RC" }
-                                Text(
-                                    text = initials,
-                                    color = MaterialTheme.colorScheme.onPrimary,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 18.sp
-                                )
+                                if (savedPhotoUrl.isNotBlank()) {
+                                    coil.compose.AsyncImage(
+                                        model = savedPhotoUrl,
+                                        contentDescription = "Google Profile Picture",
+                                        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize().clip(CircleShape)
+                                    )
+                                } else {
+                                    val initials = if (isSignedIn && savedName.isNotBlank()) {
+                                        savedName.split(" ").mapNotNull { it.firstOrNull() }.take(2).joinToString("").ifEmpty { "G" }
+                                    } else "G"
+                                    Text(
+                                        text = initials,
+                                        color = MaterialTheme.colorScheme.onPrimary,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 18.sp
+                                    )
+                                }
                             }
                         }
 
                         Column {
                             Text(
-                                text = savedName,
+                                text = if (isSignedIn && savedName.isNotBlank()) savedName else "Guest User",
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 16.sp,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = savedEmail,
+                                text = if (isSignedIn && savedEmail.isNotBlank()) savedEmail else "Not connected to Google Account",
                                 fontSize = 13.sp,
                                 color = MaterialTheme.colorScheme.outline
                             )
@@ -5457,7 +5478,11 @@ fun SyncDashboard(viewModel: NoteViewModel) {
                         OutlinedButton(
                             onClick = {
                                 GoogleDriveBackupHelper.signOut(context) {
+                                    GoogleDriveBackupHelper.clearSavedAccount(context)
                                     isSignedIn = false
+                                    savedName = "Guest User"
+                                    savedEmail = ""
+                                    savedPhotoUrl = ""
                                     viewModel.logSyncEvent("Signed out of Google Account.")
                                 }
                             },
@@ -5479,7 +5504,7 @@ fun SyncDashboard(viewModel: NoteViewModel) {
                                 OutlinedTextField(
                                     value = inputName,
                                     onValueChange = { inputName = it },
-                                    label = { Text("Account Name") },
+                                    label = { Text("Account Name (Optional)") },
                                     singleLine = true,
                                     modifier = Modifier.fillMaxWidth()
                                 )
@@ -5487,7 +5512,7 @@ fun SyncDashboard(viewModel: NoteViewModel) {
                                 OutlinedTextField(
                                     value = inputEmail,
                                     onValueChange = { inputEmail = it },
-                                    label = { Text("Google Email") },
+                                    label = { Text("Google Email Address") },
                                     singleLine = true,
                                     modifier = Modifier.fillMaxWidth()
                                 )
@@ -5496,12 +5521,16 @@ fun SyncDashboard(viewModel: NoteViewModel) {
                         confirmButton = {
                             Button(
                                 onClick = {
-                                    savedName = inputName.ifBlank { "Ramprit Choudhary" }
-                                    savedEmail = inputEmail.ifBlank { "rampritchoudhary16281@gmail.com" }
-                                    GoogleDriveBackupHelper.saveConnectedAccount(context, savedName, savedEmail)
-                                    isSignedIn = true
-                                    showDirectConnectDialog = false
-                                    viewModel.logSyncEvent("Successfully connected Google Account: $savedEmail")
+                                    if (inputEmail.isNotBlank()) {
+                                        savedEmail = inputEmail.trim()
+                                        savedName = inputName.ifBlank { inputEmail.split("@").firstOrNull()?.replaceFirstChar { it.uppercase() } ?: "Google Account" }
+                                        GoogleDriveBackupHelper.saveConnectedAccount(context, savedName, savedEmail, savedPhotoUrl)
+                                        isSignedIn = true
+                                        showDirectConnectDialog = false
+                                        viewModel.logSyncEvent("Successfully connected Google Account: $savedEmail")
+                                    } else {
+                                        android.widget.Toast.makeText(context, "Please enter your Google email address", android.widget.Toast.LENGTH_SHORT).show()
+                                    }
                                 }
                             ) {
                                 Text("Connect Account")
@@ -6995,9 +7024,9 @@ fun ShapeToolSettingsPanel(
 
     val numColumns = remember(screenWidth, isWideScreen) {
         when {
-            isWideScreen -> 3
-            screenWidth < 360.dp -> 2
-            else -> 3
+            isWideScreen -> 6
+            screenWidth < 360.dp -> 4
+            else -> 5
         }
     }
 
@@ -7075,7 +7104,7 @@ fun ShapeToolSettingsPanel(
                         Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            "Insert ${viewModel.activeShapeType.replace('_', ' ').replaceFirstChar { if (it.isLowerCase()) it.titlecase(java.util.Locale.getDefault()) else it.toString() }} to Page",
+                            "Insert Shape to Page",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -7115,7 +7144,7 @@ fun ShapeToolSettingsPanel(
                 Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    "Insert ${viewModel.activeShapeType.replace('_', ' ').replaceFirstChar { if (it.isLowerCase()) it.titlecase(java.util.Locale.getDefault()) else it.toString() }} to Page",
+                    "Insert Shape to Page",
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold
                 )
@@ -7493,24 +7522,15 @@ fun ShapeSelectionGrid(
                                 color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent
                             )
                         ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.Center
+                            Box(
+                                modifier = Modifier.padding(vertical = 10.dp),
+                                contentAlignment = Alignment.Center
                             ) {
                                 ShapeIconPreview(
                                     shapeType = typeKey,
                                     shapeCategory = shapeCategory,
                                     tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = typeLabel,
-                                    fontSize = 11.sp,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                    maxLines = 1,
-                                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                    modifier = Modifier.size(28.dp)
                                 )
                             }
                         }
@@ -7543,7 +7563,7 @@ fun ShapeLivePreviewCard(viewModel: NoteViewModel) {
             ) {
                 Text("Live Shape Preview", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
                 Text(
-                    text = "${viewModel.activeShapeType.replace('_', ' ').replaceFirstChar { if (it.isLowerCase()) it.titlecase(java.util.Locale.getDefault()) else it.toString() }} (${viewModel.shapeRotationAngle.toInt()}°)",
+                    text = "${viewModel.shapeRotationAngle.toInt()}°",
                     fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

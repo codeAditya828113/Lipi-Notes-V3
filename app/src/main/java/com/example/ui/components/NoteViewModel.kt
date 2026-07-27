@@ -686,10 +686,10 @@ class NoteViewModel(
             val finalized = lassoSelectedStrokes.map { stroke ->
                 stroke.copy(
                     points = stroke.points.map { pt ->
-                        val translatedX = pt.x + lassoDragOffset.x
-                        val translatedY = pt.y + lassoDragOffset.y
-                        val finalX = if (bbox != null && lassoScaleX != 1f) cx + (translatedX - cx) * lassoScaleX else translatedX
-                        val finalY = if (bbox != null && lassoScaleY != 1f) cy + (translatedY - cy) * lassoScaleY else translatedY
+                        val scaledX = if (bbox != null && lassoScaleX != 1f) cx + (pt.x - cx) * lassoScaleX else pt.x
+                        val scaledY = if (bbox != null && lassoScaleY != 1f) cy + (pt.y - cy) * lassoScaleY else pt.y
+                        val finalX = scaledX + lassoDragOffset.x
+                        val finalY = scaledY + lassoDragOffset.y
                         pt.copy(x = finalX, y = finalY)
                     }
                 )
@@ -2535,8 +2535,9 @@ class NoteViewModel(
             logSyncEvent("Initiating Cloud Sync pipeline with Google Drive APIs...")
             
             if (!GoogleDriveBackupHelper.isSignedIn(application)) {
-                logSyncEvent("Notice: Auto-connecting Google Account for backup...")
-                GoogleDriveBackupHelper.saveConnectedAccount(application, "Ramprit Choudhary", "rampritchoudhary16281@gmail.com")
+                logSyncEvent("Google Drive account is not connected. Please sign in via Cloud Backup settings to enable sync.")
+                isSyncing = false
+                return@launch
             }
 
             val accountEmail = GoogleDriveBackupHelper.getSavedAccountEmail(application)

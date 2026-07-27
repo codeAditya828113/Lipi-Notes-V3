@@ -102,6 +102,12 @@ fun ResponsiveSidebar(
             }
 
             // 2. User Account Card (Custom Dynamic Session)
+            val context = androidx.compose.ui.platform.LocalContext.current
+            val isSignedIn = GoogleDriveBackupHelper.isSignedIn(context)
+            val accountName = GoogleDriveBackupHelper.getSavedAccountName(context)
+            val accountEmail = GoogleDriveBackupHelper.getSavedAccountEmail(context)
+            val photoUrl = GoogleDriveBackupHelper.getSavedPhotoUrl(context)
+
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -124,18 +130,30 @@ fun ResponsiveSidebar(
                         modifier = Modifier.size(32.dp)
                     ) {
                         Box(contentAlignment = Alignment.Center) {
-                            Text(
-                                text = "RC",
-                                color = MaterialTheme.colorScheme.onPrimary,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp
-                            )
+                            if (isSignedIn && photoUrl.isNotBlank()) {
+                                coil.compose.AsyncImage(
+                                    model = photoUrl,
+                                    contentDescription = "Profile Picture",
+                                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize().clip(CircleShape)
+                                )
+                            } else {
+                                val initials = if (isSignedIn && accountName.isNotBlank()) {
+                                    accountName.split(" ").mapNotNull { it.firstOrNull() }.take(2).joinToString("").ifEmpty { "G" }
+                                } else "G"
+                                Text(
+                                    text = initials,
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp
+                                )
+                            }
                         }
                     }
                     Spacer(modifier = Modifier.width(10.dp))
                     Column {
                         Text(
-                            text = "Ramprit Choudhary",
+                            text = if (isSignedIn) accountName else "Guest User",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -147,11 +165,11 @@ fun ResponsiveSidebar(
                                 modifier = Modifier
                                     .size(6.dp)
                                     .clip(CircleShape)
-                                    .background(Color(0xFF4CAF50)) // Connected green dot
+                                    .background(if (isSignedIn) Color(0xFF4CAF50) else Color.Gray)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = "rampritchoudhary16281@gmail.com",
+                                text = if (isSignedIn && accountEmail.isNotBlank()) accountEmail else "Tap to Sign In",
                                 fontSize = 10.sp,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
                                 maxLines = 1,

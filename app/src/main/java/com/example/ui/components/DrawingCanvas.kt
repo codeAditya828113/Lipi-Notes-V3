@@ -61,11 +61,14 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.Text
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.material3.*
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.RotateRight
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.ui.Alignment
 import com.example.data.Point
 import com.example.data.Stroke
@@ -110,6 +113,7 @@ fun DrawingCanvas(
     isRulerActive: Boolean = false,
     onShapeLongPressed: (Stroke) -> Unit = {},
     onImageLongPressed: (Int, com.example.data.ImageElement) -> Unit = {_,_->},
+    onImageDeleted: (Int) -> Unit = {},
     onLassoDrag: (Offset) -> Unit = {},
     onLassoScaleUpdated: (Float, Float) -> Unit = {_,_->}
 ) {
@@ -133,6 +137,8 @@ fun DrawingCanvas(
 
     // Multi-touch tracking states
     var activeLassoInteraction by remember { mutableStateOf<String?>(null) } // "move", "resize"
+    var activeLassoCorner by remember { mutableStateOf<String?>(null) } // "top_left", "top_right", "bottom_left", "bottom_right"
+    var initialLassoTouchPoint by remember { mutableStateOf<Offset?>(null) }
     var lastLassoTouchPoint by remember { mutableStateOf<Offset?>(null) }
     var initialLassoScaleX by remember { mutableStateOf(1f) }
     var initialLassoScaleY by remember { mutableStateOf(1f) }
@@ -143,6 +149,7 @@ fun DrawingCanvas(
     var imageDragOffset by remember { mutableStateOf(Offset.Zero) }
     var imageResizeScale by remember { mutableStateOf(1f) }
     var activeImageInteraction by remember { mutableStateOf<String?>(null) } // "drag", "resize", null
+    var activeImageCorner by remember { mutableStateOf<String?>(null) } // "top_left", "top_right", "bottom_left", "bottom_right"
 
     val coroutineScope = rememberCoroutineScope()
     var longPressJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
@@ -474,11 +481,15 @@ fun DrawingCanvas(
                         return@pointerInteropFilter true
                     }
 
-                    // Image Interaction (Select, Move, Resize, Delete via LongPress / Corner drag)
+                    // Image Interaction (Select, Move, Resize via 4 Corner Handles)
                     if (action == MotionEvent.ACTION_DOWN) {
-                        // Find if an image is touched
                         var touchedImageIndex: Int? = null
                         var isResize = false
+                        var touchedCorner: String? = null
+
+                        val worldX = (x - widthPx / 2f - offset.x) / scale + widthPx / 2f
+                        val worldY = (y - offset.y) / scale
+
                         for (i in images.indices.reversed()) {
                             val img = images[i]
                             val imgPage = img.page.coerceIn(1, pdfPageCount)
@@ -486,161 +497,107 @@ fun DrawingCanvas(
                             val renderY = fromNormalizedY(img.y, imgPage)
                             val renderW = (img.width / 600f) * getPageWidth(imgPage)
                             val renderH = (img.height / getNormH(imgPage)) * getPageHeight(imgPage)
-                            
-                            // apply canvas offset and scale to touch point to get world coordinates
-                            val worldX = (x - widthPx / 2f - offset.x) / scale + widthPx / 2f
-                            val worldY = (y - offset.y) / scale
-                            
-                            // Check resize handle (bottom right corner 40x40 area)
-                            val handleSize = 40f
-                            if (worldX >= renderX + renderW - handleSize && worldX <= renderX + renderW + handleSize &&
-                                worldY >= renderY + renderH - handleSize && worldY <= renderY + renderH + handleSize) {
-                                touchedImageIndex = i
-                                isResize = true
-                                break
-                            } else if (worldX >= renderX && worldX <= renderX + renderW &&
-                                worldY >= renderY && worldY <= renderY + renderH) {
-                                touchedImageIndex = i
-                                isResize = false
-                                break
+
+                            val handleRadius = 45f
+
+                            val isTL = kotlin.math.hypot(worldX - renderX, worldY - renderY) <= handleRadius
+                            val isTR = kotlin.math.hypot(worldX - (renderX + renderW), worldY - renderY) <= handleRadius
+                            val isBL = kotlin.math.hypot(worldX - renderX, worldY - (renderY + renderH)) <= handleRadius
+                            val isBR = kotlin.math.hypot(worldX - (renderX + renderW), worldY - (renderY + renderH)) <= handleRadius
+
+                            if (isTL) {
+                                touchedImageIndex = i; isResize = true; touchedCorner = "top_left"; break
+                            } else if (isTR) {
+                                touchedImageIndex = i; isResize = true; touchedCorner = "top_right"; break
+                            } else if (isBL) {
+                                touchedImageIndex = i; isResize = true; touchedCorner = "bottom_left"; break
+                            } else if (isBR) {
+                                touchedImageIndex = i; isResize = true; touchedCorner = "bottom_right"; break
+                            } else if (worldX >= renderX && worldX <= renderX + renderW && worldY >= renderY && worldY <= renderY + renderH) {
+                                touchedImageIndex = i; isResize = false; break
                             }
                         }
-                        
+
                         if (touchedImageIndex != null) {
+                            selectedImageIndex = touchedImageIndex
                             if (isResize) {
-                                selectedImageIndex = touchedImageIndex
                                 activeImageInteraction = "resize"
-                                lastFingerDragPoint = Offset(x, y)
-                                return@pointerInteropFilter true
-                            }
-                            
-                            if (selectedImageIndex == touchedImageIndex) {
-                                // Already selected, drag immediately
-                                activeImageInteraction = "drag"
+                                activeImageCorner = touchedCorner
                                 lastFingerDragPoint = Offset(x, y)
                                 return@pointerInteropFilter true
                             } else {
-                                // Potential long press
-                                potentialImageIndex = touchedImageIndex
+                                activeImageInteraction = "drag"
+                                activeImageCorner = null
                                 lastFingerDragPoint = Offset(x, y)
-                                
-                                // Compute stroke start parameters manually for delayed execution
-                                val pivotX = widthPx / 2f
-                                val mappedX = (x - pivotX - offset.x) / scale + pivotX
-                                val mappedY = (y - offset.y) / scale
-                                
-                                val touchedPage = if (isMultiPage) {
-                                    var pageIdx = 1
-                                    var accumulatedHeight = 0f
-                                    for (p in 1..pdfPageCount) {
-                                        val pH = getPageHeight(p)
-                                        if (mappedY >= accumulatedHeight && mappedY < accumulatedHeight + pH) {
-                                            pageIdx = p
-                                            break
-                                        }
-                                        accumulatedHeight += pH
-                                        if (p == pdfPageCount) {
-                                            pageIdx = pdfPageCount
-                                        }
-                                    }
-                                    pageIdx.coerceIn(1, pdfPageCount)
-                                } else {
-                                    pdfPage
-                                }
-                                val finalX = toNormalizedX(mappedX, touchedPage)
-                                val finalY = toNormalizedY(mappedY, touchedPage)
-                                val toolType = motionEvent.getToolType(0)
-                                val pressure = if (toolType == MotionEvent.TOOL_TYPE_STYLUS) motionEvent.pressure else 1.0f
-                                
-                                pendingStrokeDownPoint = com.example.data.Point(finalX, finalY, pressure)
-                                pendingStrokeTouchedPage = touchedPage
-                                
-                                longPressJob?.cancel()
-                                longPressJob = coroutineScope.launch {
-                                    kotlinx.coroutines.delay(400)
-                                    if (potentialImageIndex == touchedImageIndex && touchedImageIndex != null) {
-                                        selectedImageIndex = touchedImageIndex
-                                        activeImageInteraction = "drag"
-                                        val img = images.getOrNull(touchedImageIndex!!)
-                                        if (img != null) {
-                                            onImageLongPressed(touchedImageIndex!!, img)
-                                        }
-                                        potentialImageIndex = null
-                                        pendingStrokeDownPoint = null
-                                    }
-                                }
                                 return@pointerInteropFilter true
                             }
-                        } else {
-                            potentialImageIndex = null
+                        } else if (lassoSelectedStrokes.isEmpty()) {
                             selectedImageIndex = null
                         }
                     }
-                    
-                    if (potentialImageIndex != null && action == MotionEvent.ACTION_MOVE) {
-                        val lastPoint = lastFingerDragPoint ?: Offset(x, y)
-                        val dx = x - lastPoint.x
-                        val dy = y - lastPoint.y
-                        if (kotlin.math.hypot(dx, dy) > 10f) {
-                            // Moved too much before long press triggered - fallback to drawing
-                            potentialImageIndex = null
-                            longPressJob?.cancel()
-                            
-                            if (pendingStrokeDownPoint != null) {
-                                view.parent?.requestDisallowInterceptTouchEvent(true)
-                                isZooming = false
-                                strokeStartedPage = pendingStrokeTouchedPage
-                                onPageSelected(pendingStrokeTouchedPage)
-                                onStrokeStarted(pendingStrokeDownPoint!!)
-                                pendingStrokeDownPoint = null
-                            }
-                            // DO NOT return true, fall through to ACTION_MOVE drawing logic!
-                        } else {
-                            return@pointerInteropFilter true
-                        }
-                    }
-                    if (potentialImageIndex != null && (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL)) {
-                        potentialImageIndex = null
-                        longPressJob?.cancel()
-                        if (pendingStrokeDownPoint != null) {
-                            view.parent?.requestDisallowInterceptTouchEvent(true)
-                            strokeStartedPage = pendingStrokeTouchedPage
-                            onPageSelected(pendingStrokeTouchedPage)
-                            onStrokeStarted(pendingStrokeDownPoint!!)
-                            onStrokeEnded()
-                            pendingStrokeDownPoint = null
-                        }
-                        return@pointerInteropFilter true
-                    }
-                    
+
                     if (selectedImageIndex != null && activeImageInteraction != null) {
                         val i = selectedImageIndex!!
                         if (action == MotionEvent.ACTION_MOVE) {
                             val lastPoint = lastFingerDragPoint ?: Offset(x, y)
                             val dx = (x - lastPoint.x) / scale
                             val dy = (y - lastPoint.y) / scale
-                            val img = images[i]
-                            val imgPage = img.page.coerceIn(1, pdfPageCount)
-                            val pW = getPageWidth(imgPage)
-                            val pH = getPageHeight(imgPage)
-                            
-                            val virtualDx = (dx / pW) * 600f
-                            val virtualDy = (dy / pH) * getNormH(imgPage)
-                            
-                            if (activeImageInteraction == "drag") {
-                                onImageUpdated(i, img.copy(x = img.x + virtualDx, y = img.y + virtualDy))
-                            } else if (activeImageInteraction == "resize") {
-                                onImageUpdated(i, img.copy(width = maxOf(50f, img.width + virtualDx), height = maxOf(50f, img.height + virtualDy)))
+                            val img = images.getOrNull(i)
+                            if (img != null) {
+                                val imgPage = img.page.coerceIn(1, pdfPageCount)
+                                val pW = getPageWidth(imgPage)
+                                val pH = getPageHeight(imgPage)
+
+                                val virtualDx = (dx / pW) * 600f
+                                val virtualDy = (dy / pH) * getNormH(imgPage)
+
+                                if (activeImageInteraction == "drag") {
+                                    onImageUpdated(i, img.copy(x = img.x + virtualDx, y = img.y + virtualDy))
+                                } else if (activeImageInteraction == "resize") {
+                                    var newW = img.width
+                                    var newH = img.height
+                                    var newX = img.x
+                                    var newY = img.y
+
+                                    when (activeImageCorner) {
+                                        "bottom_right" -> {
+                                            newW = maxOf(50f, img.width + virtualDx)
+                                            newH = maxOf(50f, img.height + virtualDy)
+                                        }
+                                        "bottom_left" -> {
+                                            newW = maxOf(50f, img.width - virtualDx)
+                                            newH = maxOf(50f, img.height + virtualDy)
+                                            newX = img.x + (img.width - newW)
+                                        }
+                                        "top_right" -> {
+                                            newW = maxOf(50f, img.width + virtualDx)
+                                            newH = maxOf(50f, img.height - virtualDy)
+                                            newY = img.y + (img.height - newH)
+                                        }
+                                        "top_left" -> {
+                                            newW = maxOf(50f, img.width - virtualDx)
+                                            newH = maxOf(50f, img.height - virtualDy)
+                                            newX = img.x + (img.width - newW)
+                                            newY = img.y + (img.height - newH)
+                                        }
+                                        else -> {
+                                            newW = maxOf(50f, img.width + virtualDx)
+                                            newH = maxOf(50f, img.height + virtualDy)
+                                        }
+                                    }
+                                    onImageUpdated(i, img.copy(x = newX, y = newY, width = newW, height = newH))
+                                }
                             }
                             lastFingerDragPoint = Offset(x, y)
                         } else if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
                             activeImageInteraction = null
+                            activeImageCorner = null
                             lastFingerDragPoint = null
                         }
                         return@pointerInteropFilter true
                     }
 
-                    // Active Lasso Shape Interaction (Move or Resize via Corner Handles)
+                    // Active Lasso Shape Interaction (Move or Resize via 4 Corner Handles)
                     if (lassoSelectedStrokes.isNotEmpty() && lassoBoundingBox != null) {
                         val box = lassoBoundingBox!!
                         val cX = (box.left + box.right) / 2f
@@ -658,18 +615,20 @@ fun DrawingCanvas(
 
                         if (action == MotionEvent.ACTION_DOWN) {
                             val handleRadius = 45f
-                            val isCorner = kotlin.math.hypot(touchPxX - leftPx, touchPxY - topPx) <= handleRadius ||
-                                           kotlin.math.hypot(touchPxX - rightPx, touchPxY - topPx) <= handleRadius ||
-                                           kotlin.math.hypot(touchPxX - leftPx, touchPxY - bottomPx) <= handleRadius ||
-                                           kotlin.math.hypot(touchPxX - rightPx, touchPxY - bottomPx) <= handleRadius
+                            val isTL = kotlin.math.hypot(touchPxX - leftPx, touchPxY - topPx) <= handleRadius
+                            val isTR = kotlin.math.hypot(touchPxX - rightPx, touchPxY - topPx) <= handleRadius
+                            val isBL = kotlin.math.hypot(touchPxX - leftPx, touchPxY - bottomPx) <= handleRadius
+                            val isBR = kotlin.math.hypot(touchPxX - rightPx, touchPxY - bottomPx) <= handleRadius
 
-                            if (isCorner) {
+                            if (isTL || isTR || isBL || isBR) {
                                 activeLassoInteraction = "resize"
+                                activeLassoCorner = if (isTL) "top_left" else if (isTR) "top_right" else if (isBL) "bottom_left" else "bottom_right"
+                                initialLassoTouchPoint = Offset(touchPxX, touchPxY)
                                 lastLassoTouchPoint = Offset(touchPxX, touchPxY)
                                 initialLassoScaleX = lassoScaleX
                                 initialLassoScaleY = lassoScaleY
                                 return@pointerInteropFilter true
-                            } else if (touchPxX in (leftPx - 15f)..(rightPx + 15f) && touchPxY in (topPx - 15f)..(bottomPx + 15f)) {
+                            } else if (touchPxX in (leftPx - 20f)..(rightPx + 20f) && touchPxY in (topPx - 20f)..(bottomPx + 20f)) {
                                 activeLassoInteraction = "move"
                                 lastLassoTouchPoint = Offset(touchPxX, touchPxY)
                                 return@pointerInteropFilter true
@@ -686,25 +645,34 @@ fun DrawingCanvas(
                                 onLassoDrag(Offset(normDx, normDy))
                                 lastLassoTouchPoint = Offset(x, y)
                             } else if (activeLassoInteraction == "resize") {
-                                val centerPxX = (leftPx + rightPx) / 2f
-                                val centerPxY = (topPx + bottomPx) / 2f
-                                val initialDist = kotlin.math.hypot(lastPoint.x - centerPxX, lastPoint.y - centerPxY).coerceAtLeast(10f)
-                                val currentDist = kotlin.math.hypot(x - centerPxX, y - centerPxY)
-                                val factor = currentDist / initialDist
-                                val newScaleX = (initialLassoScaleX * factor).coerceIn(0.15f, 6f)
-                                val newScaleY = (initialLassoScaleY * factor).coerceIn(0.15f, 6f)
+                                val initPt = initialLassoTouchPoint ?: Offset(x, y)
+                                val pivotPxX = if (activeLassoCorner == "top_left" || activeLassoCorner == "bottom_left") rightPx else leftPx
+                                val pivotPxY = if (activeLassoCorner == "top_left" || activeLassoCorner == "top_right") bottomPx else topPx
+
+                                val initialDistX = kotlin.math.abs(initPt.x - pivotPxX).coerceAtLeast(10f)
+                                val initialDistY = kotlin.math.abs(initPt.y - pivotPxY).coerceAtLeast(10f)
+                                val currentDistX = kotlin.math.abs(x - pivotPxX)
+                                val currentDistY = kotlin.math.abs(y - pivotPxY)
+
+                                val scaleXFactor = currentDistX / initialDistX
+                                val scaleYFactor = currentDistY / initialDistY
+
+                                val newScaleX = (initialLassoScaleX * scaleXFactor).coerceIn(0.1f, 10f)
+                                val newScaleY = (initialLassoScaleY * scaleYFactor).coerceIn(0.1f, 10f)
                                 onLassoScaleUpdated(newScaleX, newScaleY)
                                 lastLassoTouchPoint = Offset(x, y)
                             }
                             return@pointerInteropFilter true
                         } else if ((action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) && activeLassoInteraction != null) {
                             activeLassoInteraction = null
+                            activeLassoCorner = null
+                            initialLassoTouchPoint = null
                             lastLassoTouchPoint = null
                             return@pointerInteropFilter true
                         }
                     }
 
-                    // Check Long Press on Canvas Shapes/Strokes to select & customize
+                    // Check Long Press / Touch on Canvas Shapes/Strokes to select & customize
                     if (action == MotionEvent.ACTION_DOWN) {
                         val pivotX = widthPx / 2f
                         val mappedX = (x - pivotX - offset.x) / scale + pivotX
@@ -718,30 +686,13 @@ fun DrawingCanvas(
                             val margin = 35f
                             if (worldX >= bbox.left - margin && worldX <= bbox.right + margin &&
                                 worldY >= bbox.top - margin && worldY <= bbox.bottom + margin) {
-                                if (s.toolType == "shapes" || s.fillShape) {
-                                    matched = s
-                                    break
-                                }
+                                matched = s
+                                break
                             }
                         }
 
                         if (matched != null) {
-                            potentialShapeStroke = matched
-                            lastShapeTouchPoint = Offset(x, y)
-                            val toolType = motionEvent.getToolType(0)
-                            val pressure = if (toolType == MotionEvent.TOOL_TYPE_STYLUS) motionEvent.pressure else 1.0f
-                            pendingStrokeDownPoint = com.example.data.Point(worldX, worldY, pressure)
-                            pendingStrokeTouchedPage = pdfPage
-
-                            longPressJob?.cancel()
-                            longPressJob = coroutineScope.launch {
-                                kotlinx.coroutines.delay(350)
-                                if (potentialShapeStroke == matched) {
-                                    onShapeLongPressed(matched)
-                                    potentialShapeStroke = null
-                                    pendingStrokeDownPoint = null
-                                }
-                            }
+                            onShapeLongPressed(matched)
                             return@pointerInteropFilter true
                         }
                     }
@@ -1188,17 +1139,35 @@ fun DrawingCanvas(
                                     colorFilter = filter
                                 )
                                 if (selectedImageIndex == images.indexOf(img)) {
+                                    val selectColor = Color(0xFF2196F3)
                                     drawRect(
-                                        color = Color.Blue,
+                                        color = selectColor,
                                         topLeft = Offset(renderX, renderY),
                                         size = Size(renderW, renderH),
-                                        style = DrawStroke(2f)
+                                        style = DrawStroke(
+                                            width = 2.dp.toPx(),
+                                            pathEffect = PathEffect.dashPathEffect(floatArrayOf(15f, 10f), 0f)
+                                        )
                                     )
-                                    drawCircle(
-                                        color = Color.Blue,
-                                        radius = 15f,
-                                        center = Offset(renderX + renderW, renderY + renderH)
+                                    val handleRadius = 6.dp.toPx()
+                                    val corners = listOf(
+                                        Offset(renderX, renderY),
+                                        Offset(renderX + renderW, renderY),
+                                        Offset(renderX, renderY + renderH),
+                                        Offset(renderX + renderW, renderY + renderH)
                                     )
+                                    corners.forEach { corner ->
+                                        drawCircle(
+                                            color = selectColor,
+                                            radius = handleRadius,
+                                            center = corner
+                                        )
+                                        drawCircle(
+                                            color = Color.White,
+                                            radius = handleRadius - 2.dp.toPx(),
+                                            center = corner
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -1843,6 +1812,74 @@ fun DrawingCanvas(
                                     tint = if (isZoomLocked) Color(0xFF3B82F6) else Color.White,
                                     modifier = Modifier.size(18.dp)
                                 )
+                            }
+                        }
+                    }
+                }
+
+                // Floating Photo Action Bar when an image is selected
+                if (selectedImageIndex != null && selectedImageIndex!! in images.indices) {
+                    val selImg = images[selectedImageIndex!!]
+                    val selIdx = selectedImageIndex!!
+                    Card(
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(top = 16.dp),
+                        elevation = CardDefaults.cardElevation(8.dp),
+                        shape = RoundedCornerShape(20.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Text(
+                                text = "Photo",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.padding(horizontal = 4.dp)
+                            )
+
+                            Button(
+                                onClick = {
+                                    onImageLongPressed(selIdx, selImg)
+                                },
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Edit", fontSize = 11.sp)
+                            }
+
+                            OutlinedButton(
+                                onClick = {
+                                    val newRot = (selImg.rotation + 90f) % 360f
+                                    onImageUpdated(selIdx, selImg.copy(rotation = newRot))
+                                },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Icon(Icons.Default.RotateRight, contentDescription = null, modifier = Modifier.size(14.dp))
+                            }
+
+                            IconButton(
+                                onClick = {
+                                    onImageDeleted(selIdx)
+                                    selectedImageIndex = null
+                                },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(Icons.Default.Delete, contentDescription = "Delete Photo", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+                            }
+
+                            IconButton(
+                                onClick = { selectedImageIndex = null },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(Icons.Default.Close, contentDescription = "Deselect", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
                             }
                         }
                     }

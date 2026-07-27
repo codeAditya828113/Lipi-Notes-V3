@@ -108,8 +108,14 @@ fun NovaDashboard(
                             fontSize = 14.sp,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                         )
+                        val context = androidx.compose.ui.platform.LocalContext.current
+                        val isSignedIn = GoogleDriveBackupHelper.isSignedIn(context)
+                        val userFirstName = if (isSignedIn) {
+                            GoogleDriveBackupHelper.getSavedAccountName(context).split(" ").firstOrNull() ?: ""
+                        } else ""
+                        val greetingText = if (userFirstName.isNotBlank()) "$greeting, $userFirstName" else greeting
                         Text(
-                            text = "$greeting, Ramprit",
+                            text = greetingText,
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant

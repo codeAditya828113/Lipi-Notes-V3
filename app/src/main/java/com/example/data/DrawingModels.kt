@@ -105,10 +105,11 @@ data class ImageElement(
     val cropLeft: Float = 0f,
     val cropTop: Float = 0f,
     val cropRight: Float = 0f,
-    val cropBottom: Float = 0f
+    val cropBottom: Float = 0f,
+    val rotation: Float = 0f
 ) {
     fun serialize(): String {
-        return "$uri|$x|$y|$width|$height|$page|$filter|$cropLeft|$cropTop|$cropRight|$cropBottom"
+        return "$uri|$x|$y|$width|$height|$page|$filter|$cropLeft|$cropTop|$cropRight|$cropBottom|$rotation"
     }
 }
 
