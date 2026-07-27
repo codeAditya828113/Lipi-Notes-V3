@@ -196,9 +196,10 @@ fun DrawingCanvas(
         }
     }
 
-    val actualBgColor = if (isDarkTheme && canvasBgColor == Color(0xFFFFFFFF)) Color(0xFF121620) else canvasBgColor
+    val actualBgColor = if (isDarkTheme && canvasBgColor == Color(0xFFFFFFFF)) Color(0xFF1E293B) else canvasBgColor
     val isDarkPaperCanvas = isDarkTheme || (0.299f * actualBgColor.red + 0.587f * actualBgColor.green + 0.114f * actualBgColor.blue) < 0.45f
-    BoxWithConstraints(modifier = modifier.background(actualBgColor)) {
+    val deskBgColor = if (isDarkTheme) Color(0xFF0F172A) else Color(0xFFE2E8F0)
+    BoxWithConstraints(modifier = modifier.background(deskBgColor)) {
         val density = LocalDensity.current
         val widthPx = with(density) { maxWidth.toPx() }.toInt().coerceAtLeast(1)
         val heightPx = with(density) { maxHeight.toPx() }.toInt().coerceAtLeast(1)
@@ -359,10 +360,12 @@ fun DrawingCanvas(
         val getPageLeft: (Int) -> Float = { p ->
             (widthPx.toFloat() - getPageWidth(p)) / 2f
         }
+        val pageGap = with(density) { 20.dp.toPx() }
+        val pageTopMargin = with(density) { 16.dp.toPx() }
         val getPageTop: (Int) -> Float = { p ->
-            var top = 0f
+            var top = pageTopMargin
             for (i in 1 until p) {
-                top += getPageHeight(i)
+                top += getPageHeight(i) + pageGap
             }
             top
         }
@@ -400,21 +403,24 @@ fun DrawingCanvas(
         // Smooth animate scroll when pdfPage changes externally (e.g. Next/Prev button, jump dialog, or add page)
         LaunchedEffect(pdfPage, pdfPageCount, heightPx) {
             if (pdfPage != lastHandledPdfPage) {
-                val targetY = -getPageTop(pdfPage)
-                val startY = offset.y
-                if (kotlin.math.abs(targetY - startY) > 4f) {
-                    flingJob?.cancel()
-                    animatedPageScrollJob?.cancel()
-                    animatedPageScrollJob = coroutineScope.launch {
-                        val anim = androidx.compose.animation.core.Animatable(startY)
-                        anim.animateTo(
-                            targetValue = targetY,
-                            animationSpec = androidx.compose.animation.core.tween(
-                                durationMillis = 380,
-                                easing = androidx.compose.animation.core.FastOutSlowInEasing
-                            )
-                        ) {
-                            offset = Offset(offset.x, value)
+                if (!isWritingStartedOnPage) {
+                    val targetY = -getPageTop(pdfPage) + pageTopMargin
+                    val startY = offset.y
+                    val diffY = kotlin.math.abs(targetY - startY)
+                    if (diffY > 4f) {
+                        flingJob?.cancel()
+                        animatedPageScrollJob?.cancel()
+                        animatedPageScrollJob = coroutineScope.launch {
+                            val anim = androidx.compose.animation.core.Animatable(startY)
+                            anim.animateTo(
+                                targetValue = targetY,
+                                animationSpec = androidx.compose.animation.core.tween(
+                                    durationMillis = 380,
+                                    easing = androidx.compose.animation.core.FastOutSlowInEasing
+                                )
+                            ) {
+                                offset = Offset(offset.x, value)
+                            }
                         }
                     }
                 }
@@ -427,11 +433,11 @@ fun DrawingCanvas(
             val pageHVal = getPageHeight(1)
             if (pageHVal > 0f) {
                 var pageIdx = 1
-                var accumulatedHeight = 0f
+                var accumulatedHeight = pageTopMargin
                 val centerY = -offset.y + heightPx / 2f
                 for (p in 1..pdfPageCount) {
-                    val pH = getPageHeight(p)
-                    if (centerY >= accumulatedHeight && centerY < accumulatedHeight + pH) {
+                    val pH = getPageHeight(p) + pageGap
+                    if (centerY >= accumulatedHeight - pageGap / 2f && centerY < accumulatedHeight + pH - pageGap / 2f) {
                         pageIdx = p
                         break
                     }
@@ -944,10 +950,10 @@ fun DrawingCanvas(
                     // Map to local PDF coordinate space to support vertical scrolling & rotation/split-screen perfectly
                     val touchedPage = if (isMultiPage) {
                         var pageIdx = 1
-                        var accumulatedHeight = 0f
+                        var accumulatedHeight = pageTopMargin
                         for (p in 1..pdfPageCount) {
-                            val pH = getPageHeight(p)
-                            if (snappedY >= accumulatedHeight && snappedY < accumulatedHeight + pH) {
+                            val pH = getPageHeight(p) + pageGap
+                            if (snappedY >= accumulatedHeight - pageGap / 2f && snappedY < accumulatedHeight + pH - pageGap / 2f) {
                                 pageIdx = p
                                 break
                             }
@@ -977,6 +983,7 @@ fun DrawingCanvas(
                             view.parent?.requestDisallowInterceptTouchEvent(true)
                             isZooming = false
                             strokeStartedPage = touchedPage
+                            lastHandledPdfPage = touchedPage
                             onPageSelected(touchedPage)
                             
                             val startX = toNormalizedX(snappedX, touchedPage).coerceIn(0f, 600f)
@@ -1064,123 +1071,167 @@ fun DrawingCanvas(
                 val visibleTop = (-offset.y / scale) - 200f
                 val visibleBottom = ((-offset.y + heightPx) / scale) + 200f
 
-                // 1. Draw Template/PDF Background First
-                when (templateType) {
-                    "pdf", "docx" -> {
-                        for (p in 1..pdfPageCount) {
-                            val top = getPageTop(p)
-                            val pH = getPageHeight(p)
-                            if (top + pH >= visibleTop && top <= visibleBottom) {
-                                val bitmap = pdfBitmaps[p]
-                                val pW = getPageWidth(p)
-                                val left = getPageLeft(p)
-                                if (bitmap != null && !bitmap.isRecycled) {
-                                    drawImage(
-                                        image = bitmap.asImageBitmap(),
-                                        dstOffset = androidx.compose.ui.unit.IntOffset(left.toInt(), top.toInt()),
-                                        dstSize = androidx.compose.ui.unit.IntSize(pW.toInt(), pH.toInt()),
-                                        colorFilter = if (isDarkTheme) {
-                                            androidx.compose.ui.graphics.ColorFilter.colorMatrix(
-                                                androidx.compose.ui.graphics.ColorMatrix(floatArrayOf(
-                                                    -1f, 0f, 0f, 0f, 255f,
-                                                    0f, -1f, 0f, 0f, 255f,
-                                                    0f, 0f, -1f, 0f, 255f,
-                                                    0f, 0f, 0f, 1f, 0f
-                                                ))
-                                            )
-                                        } else null
-                                    )
-                                } else {
-                                    drawRect(color = actualBgColor, topLeft = Offset(left, top), size = Size(pW, pH))
-                                }
-                            }
-                        }
-                    }
-                    else -> {
-                        for (p in 1..pdfPageCount) {
-                            val topOffset = getPageTop(p)
-                            val pageH = getPageHeight(p)
-                            if (topOffset + pageH >= visibleTop && topOffset <= visibleBottom) {
-                                val pageW = getPageWidth(p)
-                                val pageL = getPageLeft(p)
+                // 1. Draw Template/PDF Background with 3D Real Paper Depth
+                for (p in 1..pdfPageCount) {
+                    val topOffset = getPageTop(p)
+                    val pageH = getPageHeight(p)
+                    if (topOffset + pageH >= visibleTop && topOffset <= visibleBottom) {
+                        val pageW = getPageWidth(p)
+                        val pageL = getPageLeft(p)
 
-                                drawRect(
-                                    color = actualBgColor,
-                                    topLeft = Offset(pageL, topOffset),
-                                    size = Size(pageW, pageH)
+                        // 3D Drop Shadows on Desk Surface
+                        drawIntoCanvas { canvas ->
+                            val dropShadowPaint = android.graphics.Paint().apply {
+                                color = android.graphics.Color.TRANSPARENT
+                                setShadowLayer(
+                                    24f,
+                                    0f,
+                                    10f,
+                                    if (isDarkTheme) android.graphics.Color.argb(160, 0, 0, 0)
+                                    else android.graphics.Color.argb(55, 15, 23, 42)
                                 )
+                                isAntiAlias = true
+                            }
+                            canvas.nativeCanvas.drawRoundRect(
+                                pageL + 2f, topOffset + 2f, pageL + pageW - 2f, topOffset + pageH - 2f,
+                                12f, 12f,
+                                dropShadowPaint
+                            )
 
-                                withTransform({ translate(pageL, topOffset) }) {
-                                    when (templateType) {
-                                        "grid" -> {
-                                            val gridSpacing = 30.dp.toPx()
-                                            val gridColor = if (isDarkTheme) Color.White.copy(alpha = 0.12f) else Color.LightGray.copy(alpha = 0.35f)
-                                            for (gx in 0..pageW.toInt() step gridSpacing.toInt()) {
-                                                drawLine(gridColor, start = Offset(gx.toFloat(), 0f), end = Offset(gx.toFloat(), pageH), strokeWidth = 1f)
-                                            }
-                                            for (gy in 0..pageH.toInt() step gridSpacing.toInt()) {
-                                                drawLine(gridColor, start = Offset(0f, gy.toFloat()), end = Offset(pageW, gy.toFloat()), strokeWidth = 1f)
+                            val ambientShadowPaint = android.graphics.Paint().apply {
+                                color = android.graphics.Color.TRANSPARENT
+                                setShadowLayer(
+                                    8f, 0f, 2f,
+                                    if (isDarkTheme) android.graphics.Color.argb(90, 0, 0, 0)
+                                    else android.graphics.Color.argb(25, 30, 41, 59)
+                                )
+                                isAntiAlias = true
+                            }
+                            canvas.nativeCanvas.drawRoundRect(
+                                pageL, topOffset, pageL + pageW, topOffset + pageH,
+                                12f, 12f,
+                                ambientShadowPaint
+                            )
+                        }
+
+                        // Paper Surface Background
+                        val paperBg = if (templateType == "pdf" || templateType == "docx") Color.White else actualBgColor
+                        drawRoundRect(
+                            color = paperBg,
+                            topLeft = Offset(pageL, topOffset),
+                            size = Size(pageW, pageH),
+                            cornerRadius = CornerRadius(6.dp.toPx())
+                        )
+
+                        // PDF/DOCX or Template grid content
+                        if (templateType == "pdf" || templateType == "docx") {
+                            val bitmap = pdfBitmaps[p]
+                            if (bitmap != null && !bitmap.isRecycled) {
+                                drawImage(
+                                    image = bitmap.asImageBitmap(),
+                                    dstOffset = androidx.compose.ui.unit.IntOffset(pageL.toInt(), topOffset.toInt()),
+                                    dstSize = androidx.compose.ui.unit.IntSize(pageW.toInt(), pageH.toInt()),
+                                    colorFilter = if (isDarkTheme) {
+                                        androidx.compose.ui.graphics.ColorFilter.colorMatrix(
+                                            androidx.compose.ui.graphics.ColorMatrix(floatArrayOf(
+                                                -1f, 0f, 0f, 0f, 255f,
+                                                0f, -1f, 0f, 0f, 255f,
+                                                0f, 0f, -1f, 0f, 255f,
+                                                0f, 0f, 0f, 1f, 0f
+                                            ))
+                                        )
+                                    } else null
+                                )
+                            }
+                        } else {
+                            withTransform({ translate(pageL, topOffset) }) {
+                                when (templateType) {
+                                    "grid" -> {
+                                        val gridSpacing = 30.dp.toPx()
+                                        val gridColor = if (isDarkTheme) Color.White.copy(alpha = 0.12f) else Color.LightGray.copy(alpha = 0.35f)
+                                        for (gx in 0..pageW.toInt() step gridSpacing.toInt()) {
+                                            drawLine(gridColor, start = Offset(gx.toFloat(), 0f), end = Offset(gx.toFloat(), pageH), strokeWidth = 1f)
+                                        }
+                                        for (gy in 0..pageH.toInt() step gridSpacing.toInt()) {
+                                            drawLine(gridColor, start = Offset(0f, gy.toFloat()), end = Offset(pageW, gy.toFloat()), strokeWidth = 1f)
+                                        }
+                                    }
+                                    "dotted" -> {
+                                        val dotSpacing = 24.dp.toPx()
+                                        val dotColor = if (isDarkTheme) Color.White.copy(alpha = 0.2f) else Color.Gray.copy(alpha = 0.45f)
+                                        val dotRadius = 1.5.dp.toPx()
+                                        for (gx in dotSpacing.toInt()..pageW.toInt() step dotSpacing.toInt()) {
+                                            for (gy in dotSpacing.toInt()..pageH.toInt() step dotSpacing.toInt()) {
+                                                drawCircle(color = dotColor, radius = dotRadius, center = Offset(gx.toFloat(), gy.toFloat()))
                                             }
                                         }
-                                        "dotted" -> {
-                                            val dotSpacing = 24.dp.toPx()
-                                            val dotColor = if (isDarkTheme) Color.White.copy(alpha = 0.2f) else Color.Gray.copy(alpha = 0.45f)
-                                            val dotRadius = 1.5.dp.toPx()
-                                            for (gx in dotSpacing.toInt()..pageW.toInt() step dotSpacing.toInt()) {
-                                                for (gy in dotSpacing.toInt()..pageH.toInt() step dotSpacing.toInt()) {
-                                                    drawCircle(color = dotColor, radius = dotRadius, center = Offset(gx.toFloat(), gy.toFloat()))
-                                                }
-                                            }
+                                    }
+                                    "ruled" -> {
+                                        val lineSpacing = 40.dp.toPx()
+                                        val ruledColor = if (isDarkTheme) Color(0xFF64748B).copy(alpha = 0.6f) else Color(0xFF94A3B8).copy(alpha = 0.75f)
+                                        for (ry in lineSpacing.toInt()..pageH.toInt() step lineSpacing.toInt()) {
+                                            drawLine(ruledColor, start = Offset(0f, ry.toFloat()), end = Offset(pageW, ry.toFloat()), strokeWidth = 1f)
                                         }
-                                        "ruled" -> {
-                                            val lineSpacing = 40.dp.toPx()
-                                            val ruledColor = if (isDarkTheme) Color(0xFF64748B).copy(alpha = 0.6f) else Color(0xFF94A3B8).copy(alpha = 0.75f)
-                                            for (ry in lineSpacing.toInt()..pageH.toInt() step lineSpacing.toInt()) {
-                                                drawLine(ruledColor, start = Offset(0f, ry.toFloat()), end = Offset(pageW, ry.toFloat()), strokeWidth = 1f)
-                                            }
+                                    }
+                                    "cornell" -> {
+                                        val splitX = pageW * 0.28f
+                                        val summaryY = pageH * 0.82f
+                                        val lineColor = if (isDarkTheme) Color(0xFF3B82F6).copy(alpha = 0.3f) else Color(0xFFBBDEFB).copy(alpha = 0.4f)
+                                        val divisionColor = if (isDarkTheme) Color(0xFF64748B) else Color(0xFF90A4AE)
+                                        val lineSpacing = 28.dp.toPx()
+                                        for (cy in lineSpacing.toInt()..summaryY.toInt() step lineSpacing.toInt()) {
+                                            drawLine(lineColor, start = Offset(splitX, cy.toFloat()), end = Offset(pageW, cy.toFloat()), strokeWidth = 1f)
                                         }
-                                        "cornell" -> {
-                                            val splitX = pageW * 0.28f
-                                            val summaryY = pageH * 0.82f
-                                            val lineColor = if (isDarkTheme) Color(0xFF3B82F6).copy(alpha = 0.3f) else Color(0xFFBBDEFB).copy(alpha = 0.4f)
-                                            val divisionColor = if (isDarkTheme) Color(0xFF64748B) else Color(0xFF90A4AE)
-                                            val lineSpacing = 28.dp.toPx()
-                                            for (cy in lineSpacing.toInt()..summaryY.toInt() step lineSpacing.toInt()) {
-                                                drawLine(lineColor, start = Offset(splitX, cy.toFloat()), end = Offset(pageW, cy.toFloat()), strokeWidth = 1f)
+                                        drawLine(divisionColor, start = Offset(splitX, 0f), end = Offset(splitX, summaryY), strokeWidth = 3f)
+                                        drawLine(divisionColor, start = Offset(0f, summaryY), end = Offset(pageW, summaryY), strokeWidth = 3f)
+                                        drawIntoCanvas { canvas ->
+                                            val paint = android.graphics.Paint().apply {
+                                                color = android.graphics.Color.GRAY
+                                                textSize = 36f
+                                                isAntiAlias = true
                                             }
-                                            drawLine(divisionColor, start = Offset(splitX, 0f), end = Offset(splitX, summaryY), strokeWidth = 3f)
-                                            drawLine(divisionColor, start = Offset(0f, summaryY), end = Offset(pageW, summaryY), strokeWidth = 3f)
-                                            drawIntoCanvas { canvas ->
-                                                val paint = android.graphics.Paint().apply {
-                                                    color = android.graphics.Color.GRAY
-                                                    textSize = 36f
-                                                    isAntiAlias = true
-                                                }
-                                                canvas.nativeCanvas.drawText("Cue / Keywords", 30f, 60f, paint)
-                                                canvas.nativeCanvas.drawText("Notes Canvas", splitX + 30f, 60f, paint)
-                                                canvas.nativeCanvas.drawText("Summary block", 30f, summaryY + 50f, paint)
-                                            }
+                                            canvas.nativeCanvas.drawText("Cue / Keywords", 30f, 60f, paint)
+                                            canvas.nativeCanvas.drawText("Notes Canvas", splitX + 30f, 60f, paint)
+                                            canvas.nativeCanvas.drawText("Summary block", 30f, summaryY + 50f, paint)
                                         }
-                                        "meeting" -> {
-                                            val cardBg = Color.White
-                                            val borderColor = Color.LightGray.copy(alpha = 0.5f)
-                                            drawRoundRect(color = cardBg, topLeft = Offset(20.dp.toPx(), 20.dp.toPx()), size = Size(pageW * 0.45f - 30.dp.toPx(), pageH * 0.35f), cornerRadius = CornerRadius(8.dp.toPx()), style = androidx.compose.ui.graphics.drawscope.Fill)
-                                            drawRoundRect(color = borderColor, topLeft = Offset(20.dp.toPx(), 20.dp.toPx()), size = Size(pageW * 0.45f - 30.dp.toPx(), pageH * 0.35f), cornerRadius = CornerRadius(8.dp.toPx()), style = DrawStroke(width = 2f))
-                                            drawRoundRect(color = cardBg, topLeft = Offset(20.dp.toPx(), pageH * 0.35f + 40.dp.toPx()), size = Size(pageW * 0.45f - 30.dp.toPx(), pageH * 0.55f - 40.dp.toPx()), cornerRadius = CornerRadius(8.dp.toPx()), style = androidx.compose.ui.graphics.drawscope.Fill)
-                                            drawRoundRect(color = borderColor, topLeft = Offset(20.dp.toPx(), pageH * 0.35f + 40.dp.toPx()), size = Size(pageW * 0.45f - 30.dp.toPx(), pageH * 0.55f - 40.dp.toPx()), cornerRadius = CornerRadius(8.dp.toPx()), style = DrawStroke(width = 2f))
-                                            drawRoundRect(color = cardBg, topLeft = Offset(pageW * 0.45f + 10.dp.toPx(), 20.dp.toPx()), size = Size(pageW * 0.55f - 30.dp.toPx(), pageH - 40.dp.toPx()), cornerRadius = CornerRadius(8.dp.toPx()), style = androidx.compose.ui.graphics.drawscope.Fill)
-                                            drawRoundRect(color = borderColor, topLeft = Offset(pageW * 0.45f + 10.dp.toPx(), 20.dp.toPx()), size = Size(pageW * 0.55f - 30.dp.toPx(), pageH - 40.dp.toPx()), cornerRadius = CornerRadius(8.dp.toPx()), style = DrawStroke(width = 2f))
-                                            drawIntoCanvas { canvas ->
-                                                val titlePaint = android.graphics.Paint().apply { color = android.graphics.Color.DKGRAY; textSize = 32f; isFakeBoldText = true; isAntiAlias = true }
-                                                canvas.nativeCanvas.drawText("Agenda", 20.dp.toPx() + 20f, 20.dp.toPx() + 40f, titlePaint)
-                                                canvas.nativeCanvas.drawText("Action Items", 20.dp.toPx() + 20f, pageH * 0.35f + 40.dp.toPx() + 40f, titlePaint)
-                                                canvas.nativeCanvas.drawText("Meeting Minutes", pageW * 0.45f + 10.dp.toPx() + 20f, 20.dp.toPx() + 40f, titlePaint)
-                                            }
+                                    }
+                                    "meeting" -> {
+                                        val cardBg = Color.White
+                                        val borderColor = Color.LightGray.copy(alpha = 0.5f)
+                                        drawRoundRect(color = cardBg, topLeft = Offset(20.dp.toPx(), 20.dp.toPx()), size = Size(pageW * 0.45f - 30.dp.toPx(), pageH * 0.35f), cornerRadius = CornerRadius(8.dp.toPx()), style = androidx.compose.ui.graphics.drawscope.Fill)
+                                        drawRoundRect(color = borderColor, topLeft = Offset(20.dp.toPx(), 20.dp.toPx()), size = Size(pageW * 0.45f - 30.dp.toPx(), pageH * 0.35f), cornerRadius = CornerRadius(8.dp.toPx()), style = DrawStroke(width = 2f))
+                                        drawRoundRect(color = cardBg, topLeft = Offset(20.dp.toPx(), pageH * 0.35f + 40.dp.toPx()), size = Size(pageW * 0.45f - 30.dp.toPx(), pageH * 0.55f - 40.dp.toPx()), cornerRadius = CornerRadius(8.dp.toPx()), style = androidx.compose.ui.graphics.drawscope.Fill)
+                                        drawRoundRect(color = borderColor, topLeft = Offset(20.dp.toPx(), pageH * 0.35f + 40.dp.toPx()), size = Size(pageW * 0.45f - 30.dp.toPx(), pageH * 0.55f - 40.dp.toPx()), cornerRadius = CornerRadius(8.dp.toPx()), style = DrawStroke(width = 2f))
+                                        drawRoundRect(color = cardBg, topLeft = Offset(pageW * 0.45f + 10.dp.toPx(), 20.dp.toPx()), size = Size(pageW * 0.55f - 30.dp.toPx(), pageH - 40.dp.toPx()), cornerRadius = CornerRadius(8.dp.toPx()), style = androidx.compose.ui.graphics.drawscope.Fill)
+                                        drawRoundRect(color = borderColor, topLeft = Offset(pageW * 0.45f + 10.dp.toPx(), 20.dp.toPx()), size = Size(pageW * 0.55f - 30.dp.toPx(), pageH - 40.dp.toPx()), cornerRadius = CornerRadius(8.dp.toPx()), style = DrawStroke(width = 2f))
+                                        drawIntoCanvas { canvas ->
+                                            val titlePaint = android.graphics.Paint().apply { color = android.graphics.Color.DKGRAY; textSize = 32f; isFakeBoldText = true; isAntiAlias = true }
+                                            canvas.nativeCanvas.drawText("Agenda", 20.dp.toPx() + 20f, 20.dp.toPx() + 40f, titlePaint)
+                                            canvas.nativeCanvas.drawText("Action Items", 20.dp.toPx() + 20f, pageH * 0.35f + 40.dp.toPx() + 40f, titlePaint)
+                                            canvas.nativeCanvas.drawText("Meeting Minutes", pageW * 0.45f + 10.dp.toPx() + 20f, 20.dp.toPx() + 40f, titlePaint)
                                         }
                                     }
                                 }
                             }
                         }
+
+                        // Paper Edge Highlight & Border Definition
+                        val paperEdgeColor = if (isDarkPaperCanvas) Color.White.copy(alpha = 0.12f) else Color.Black.copy(alpha = 0.08f)
+                        drawRoundRect(
+                            color = paperEdgeColor,
+                            topLeft = Offset(pageL, topOffset),
+                            size = Size(pageW, pageH),
+                            cornerRadius = CornerRadius(6.dp.toPx()),
+                            style = DrawStroke(width = 1.dp.toPx())
+                        )
+
+                        val topHighlightColor = if (isDarkPaperCanvas) Color.White.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.7f)
+                        drawLine(
+                            color = topHighlightColor,
+                            start = Offset(pageL + 8.dp.toPx(), topOffset + 1.5f),
+                            end = Offset(pageL + pageW - 8.dp.toPx(), topOffset + 1.5f),
+                            strokeWidth = 2f
+                        )
                     }
                 }
                 // 1.5 Draw Images (with viewport culling)

@@ -14,16 +14,20 @@ android {
   compileSdk { version = release(36) { minorApiLevel = 1 } }
 
   val runNumber = providers.environmentVariable("GITHUB_RUN_NUMBER")
-    .map { it.toIntOrNull() ?: 1 }
-    .orElse(1)
+    .map { it.toIntOrNull() ?: 2 }
+    .orElse(2)
+    .get()
+  val customVersionCode = providers.environmentVariable("VERSION_CODE")
+    .map { it.toIntOrNull() ?: runNumber }
+    .orElse(runNumber)
     .get()
 
   defaultConfig {
     applicationId = "com.aistudio.novanotes.fcbecc"
     minSdk = 24
     targetSdk = 36
-    versionCode = runNumber
-    versionName = "1.0.$runNumber"
+    versionCode = customVersionCode
+    versionName = "1.0.$customVersionCode"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -31,10 +35,19 @@ android {
   signingConfigs {
     create("release") {
       val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks"
-      storeFile = file(keystorePath)
-      storePassword = System.getenv("STORE_PASSWORD")
-      keyAlias = "upload"
-      keyPassword = System.getenv("KEY_PASSWORD")
+      val keystoreFile = file(keystorePath)
+      if (keystoreFile.exists()) {
+        storeFile = keystoreFile
+        storePassword = System.getenv("STORE_PASSWORD")
+        keyAlias = "upload"
+        keyPassword = System.getenv("KEY_PASSWORD")
+      } else {
+        // Fallback to debug.keystore so debug and release builds use identical signature for in-place updates
+        storeFile = file("${rootDir}/debug.keystore")
+        storePassword = "android"
+        keyAlias = "androiddebugkey"
+        keyPassword = "android"
+      }
     }
     create("debugConfig") {
       storeFile = file("${rootDir}/debug.keystore")

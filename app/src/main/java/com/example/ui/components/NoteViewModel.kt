@@ -805,6 +805,58 @@ class NoteViewModel(
     var dailyTaskGoalTarget by mutableIntStateOf(3)
     private var lastStudyDateString = ""
 
+    // Theme Mode
+    var themeMode by mutableStateOf(sharedPrefs.getString("theme_mode", "system") ?: "system")
+        private set
+
+    fun updateThemeMode(mode: String) {
+        themeMode = mode
+        sharedPrefs.edit().putString("theme_mode", mode).apply()
+        logSyncEvent("Theme changed to $mode")
+    }
+
+    // OTA Update States
+    var updateChecking by mutableStateOf(false)
+        private set
+    var updateError by mutableStateOf<String?>(null)
+        private set
+    var updateProgress by mutableStateOf<Float?>(null)
+        private set
+    var updateStatusMessage by mutableStateOf("Ready to check for updates")
+        private set
+    var updateAvailable by mutableStateOf(false)
+        private set
+    var updateNotes by mutableStateOf("")
+        private set
+    var updateVersionName by mutableStateOf("")
+        private set
+    var updateVersionCode by mutableStateOf(0)
+        private set
+    var updateApkUrl by mutableStateOf("")
+        private set
+    var updateReleaseUrl by mutableStateOf("")
+        private set
+    var updateDownloadedFile by mutableStateOf<File?>(null)
+        private set
+    var showUpdatePromptDialog by mutableStateOf(false)
+        private set
+    var showChangelogDialog by mutableStateOf(false)
+        private set
+    var changelogNotes by mutableStateOf("")
+        private set
+    var changelogVersionName by mutableStateOf("")
+        private set
+
+    // Configurable Update URL (GitHub/raw gist or direct update.json)
+    var updateUrlSetting by mutableStateOf(
+        sharedPrefs.getString("ota_update_url", "https://raw.githubusercontent.com/codeAditya828113/Lipi-Notes-V3/main/update.json")?.let {
+            if (it.contains("rampritchoudhary16281/NovaNotes")) {
+                "https://raw.githubusercontent.com/codeAditya828113/Lipi-Notes-V3/main/update.json"
+            } else it
+        } ?: "https://raw.githubusercontent.com/codeAditya828113/Lipi-Notes-V3/main/update.json"
+    )
+        private set
+
     init {
         startAutoSaveLoop()
         startFadingLoop()
@@ -876,48 +928,6 @@ class NoteViewModel(
 
 
 
-    // Theme Mode
-    var themeMode by mutableStateOf(sharedPrefs.getString("theme_mode", "system") ?: "system")
-        private set
-
-    fun updateThemeMode(mode: String) {
-        themeMode = mode
-        sharedPrefs.edit().putString("theme_mode", mode).apply()
-        logSyncEvent("Theme changed to $mode")
-    }
-
-    // OTA Update States
-    var updateChecking by mutableStateOf(false)
-        private set
-    var updateError by mutableStateOf<String?>(null)
-        private set
-    var updateProgress by mutableStateOf<Float?>(null)
-        private set
-    var updateStatusMessage by mutableStateOf("Ready to check for updates")
-        private set
-    var updateAvailable by mutableStateOf(false)
-        private set
-    var updateNotes by mutableStateOf("")
-        private set
-    var updateVersionName by mutableStateOf("")
-        private set
-    var updateVersionCode by mutableStateOf(0)
-        private set
-    var updateApkUrl by mutableStateOf("")
-        private set
-    var updateReleaseUrl by mutableStateOf("")
-        private set
-    var updateDownloadedFile by mutableStateOf<File?>(null)
-        private set
-    var showUpdatePromptDialog by mutableStateOf(false)
-        private set
-    var showChangelogDialog by mutableStateOf(false)
-        private set
-    var changelogNotes by mutableStateOf("")
-        private set
-    var changelogVersionName by mutableStateOf("")
-        private set
-
     fun dismissUpdatePromptDialog() {
         showUpdatePromptDialog = false
     }
@@ -963,16 +973,6 @@ class NoteViewModel(
     fun triggerUpdateDialog() {
         showUpdatePromptDialog = true
     }
-
-    // Configurable Update URL (GitHub/raw gist or direct update.json)
-    var updateUrlSetting by mutableStateOf(
-        sharedPrefs.getString("ota_update_url", "https://raw.githubusercontent.com/codeAditya828113/Lipi-Notes-V3/main/update.json")?.let {
-            if (it.contains("rampritchoudhary16281/NovaNotes")) {
-                "https://raw.githubusercontent.com/codeAditya828113/Lipi-Notes-V3/main/update.json"
-            } else it
-        } ?: "https://raw.githubusercontent.com/codeAditya828113/Lipi-Notes-V3/main/update.json"
-    )
-        private set
 
     fun saveUpdateUrlSetting(url: String) {
         updateUrlSetting = url
@@ -1265,8 +1265,8 @@ class NoteViewModel(
                     }
 
                     val fileLength = connection.contentLength
-                    val cacheDir = application.cacheDir
-                    val apkFile = File(cacheDir, "update.apk")
+                    val updateDir = application.getExternalCacheDir() ?: application.cacheDir
+                    val apkFile = File(updateDir, "update.apk")
                     if (apkFile.exists()) {
                         apkFile.delete()
                     }
@@ -1306,6 +1306,24 @@ class NoteViewModel(
     fun installApk(file: File) {
         try {
             val context = application.applicationContext
+            
+            // On Android 8.0+ (API 26+), verify if CAN_REQUEST_PACKAGE_INSTALLS is granted
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                if (!context.packageManager.canRequestPackageInstalls()) {
+                    val settingsIntent = android.content.Intent(
+                        android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                        android.net.Uri.parse("package:${context.packageName}")
+                    ).apply {
+                        addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(settingsIntent)
+                    updateStatusMessage = "Please allow 'Install unknown apps' permission for Nova Notes, then tap Install again."
+                    updateError = "Permission required: Allow unknown app sources"
+                    logSyncEvent("Requested unknown app sources permission")
+                    return
+                }
+            }
+
             val apkUri = androidx.core.content.FileProvider.getUriForFile(
                 context,
                 "${context.packageName}.fileprovider",
@@ -1315,10 +1333,26 @@ class NoteViewModel(
                 setDataAndType(apkUri, "application/vnd.android.package-archive")
                 addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP)
             }
+
+            // Explicitly grant URI read permission to all matching package installer handlers
+            val resolveInfoList = context.packageManager.queryIntentActivities(
+                intent,
+                android.content.pm.PackageManager.MATCH_DEFAULT_ONLY
+            )
+            for (resolveInfo in resolveInfoList) {
+                val pkgName = resolveInfo.activityInfo.packageName
+                context.grantUriPermission(
+                    pkgName,
+                    apkUri,
+                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            }
+
             context.startActivity(intent)
             updateStatusMessage = "Installation prompt launched!"
-            logSyncEvent("Launched APK installer")
+            logSyncEvent("Launched APK installer successfully")
         } catch (e: Exception) {
             Log.e("OTAUpdate", "Error launching APK installation", e)
             updateError = "Failed to launch installer: ${e.localizedMessage}"
