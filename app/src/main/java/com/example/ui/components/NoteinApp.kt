@@ -2234,6 +2234,7 @@ fun NoteEditorCanvas(
     var showScribbleToTextDialog by remember { mutableStateOf(false) }
     var showHandwrittenSearchDialog by remember { mutableStateOf(false) }
     var showFullscreenTimerDialog by remember { mutableStateOf(false) }
+    var showJumpToPageDialog by remember { mutableStateOf(false) }
     var showHyperlinkDialog by remember { mutableStateOf(false) }
     var showLayersDialog by remember { mutableStateOf(false) }
     var showColorPickerDialogIndex by remember { mutableStateOf<Int?>(null) }
@@ -2905,6 +2906,72 @@ fun NoteEditorCanvas(
                 viewModel.updateNoteDesign(templateType, coverType, pageColor)
                 viewModel.updateCoverInfo(coverTitle, coverSubtitle, coverAuthor, coverExtra)
                 showTemplateSelectionModal = false
+            }
+        )
+    }
+
+    if (showJumpToPageDialog) {
+        var targetPageText by remember { mutableStateOf(viewModel.pdfPage.toString()) }
+        AlertDialog(
+            onDismissRequest = { showJumpToPageDialog = false },
+            title = {
+                Text(
+                    "Jump to Page",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        "Page ${viewModel.pdfPage} of ${viewModel.pdfPageCount}",
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    
+                    if (viewModel.pdfPageCount > 1) {
+                        Slider(
+                            value = viewModel.pdfPage.toFloat(),
+                            onValueChange = { newPage ->
+                                viewModel.setPDFPage(newPage.toInt().coerceIn(1, viewModel.pdfPageCount))
+                            },
+                            valueRange = 1f..viewModel.pdfPageCount.toFloat(),
+                            steps = (viewModel.pdfPageCount - 2).coerceAtLeast(0)
+                        )
+                    }
+                    
+                    OutlinedTextField(
+                        value = targetPageText,
+                        onValueChange = { targetPageText = it },
+                        label = { Text("Go to Page Number") },
+                        singleLine = true,
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val parsed = targetPageText.toIntOrNull()
+                        if (parsed != null && parsed in 1..viewModel.pdfPageCount) {
+                            viewModel.setPDFPage(parsed)
+                        }
+                        showJumpToPageDialog = false
+                    }
+                ) {
+                    Text("Go")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showJumpToPageDialog = false }) {
+                    Text("Cancel")
+                }
             }
         )
     }
@@ -4275,47 +4342,78 @@ fun NoteEditorCanvas(
 
                 // PDF/DOCX multipage indicator overlay and Add Page controls
                 
-                    Row(
+                    Surface(
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
-                            .padding(bottom = 80.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            .padding(bottom = 76.dp),
+                        shape = RoundedCornerShape(24.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.92f),
+                        shadowElevation = 6.dp
                     ) {
-                        Card(
-                            elevation = CardDefaults.cardElevation(4.dp),
-                            shape = RoundedCornerShape(16.dp),
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f)
-                            )
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            Text(
-                                "Page ${viewModel.pdfPage} of ${viewModel.pdfPageCount}",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
-                            )
-                        }
+                            IconButton(
+                                onClick = {
+                                    if (viewModel.pdfPage > 1) {
+                                        viewModel.setPDFPage(viewModel.pdfPage - 1)
+                                    }
+                                },
+                                enabled = viewModel.pdfPage > 1,
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.KeyboardArrowUp,
+                                    contentDescription = "Previous Page",
+                                    tint = if (viewModel.pdfPage > 1) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+                                )
+                            }
 
-                        Button(
-                            onClick = { viewModel.addPage() },
-                            shape = RoundedCornerShape(16.dp),
-                            elevation = ButtonDefaults.buttonElevation(4.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                            ),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                            modifier = Modifier.height(32.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Add,
-                                contentDescription = "Add Page",
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Add Page", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            Card(
+                                onClick = { showJumpToPageDialog = true },
+                                shape = RoundedCornerShape(16.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surface
+                                ),
+                                elevation = CardDefaults.cardElevation(0.dp)
+                            ) {
+                                Text(
+                                    "Page ${viewModel.pdfPage} of ${viewModel.pdfPageCount}",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                )
+                            }
+
+                            IconButton(
+                                onClick = {
+                                    if (viewModel.pdfPage < viewModel.pdfPageCount) {
+                                        viewModel.setPDFPage(viewModel.pdfPage + 1)
+                                    }
+                                },
+                                enabled = viewModel.pdfPage < viewModel.pdfPageCount,
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.KeyboardArrowDown,
+                                    contentDescription = "Next Page",
+                                    tint = if (viewModel.pdfPage < viewModel.pdfPageCount) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+                                )
+                            }
+
+                            IconButton(
+                                onClick = { viewModel.addPage() },
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Add,
+                                    contentDescription = "Add Page",
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
                         }
                     }
                 

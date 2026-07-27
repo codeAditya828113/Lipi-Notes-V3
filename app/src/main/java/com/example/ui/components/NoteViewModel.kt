@@ -986,21 +986,28 @@ class NoteViewModel(
         currentVersionName: String,
         currentVersionCode: Int
     ): Boolean {
-        if (remoteVersionCode > currentVersionCode) return true
         val cleanRemote = remoteVersionName.replace(Regex("[^0-9.]"), "").trim()
         val cleanCurrent = currentVersionName.replace(Regex("[^0-9.]"), "").trim()
+
         if (cleanRemote.isNotBlank() && cleanCurrent.isNotBlank()) {
             val rParts = cleanRemote.split(".").mapNotNull { it.toIntOrNull() }
             val cParts = cleanCurrent.split(".").mapNotNull { it.toIntOrNull() }
-            val maxLen = maxOf(rParts.size, cParts.size)
-            for (i in 0 until maxLen) {
-                val r = rParts.getOrElse(i) { 0 }
-                val c = cParts.getOrElse(i) { 0 }
-                if (r > c) return true
-                if (r < c) return false
+            if (rParts.isNotEmpty() && cParts.isNotEmpty()) {
+                val maxLen = maxOf(rParts.size, cParts.size)
+                for (i in 0 until maxLen) {
+                    val r = rParts.getOrElse(i) { 0 }
+                    val c = cParts.getOrElse(i) { 0 }
+                    if (r > c) return true
+                    if (r < c) return false
+                }
+                // If version names are semantically identical (e.g. 1.0.1 vs 1.0.1),
+                // the app is already updated to this version.
+                return false
             }
         }
-        return false
+
+        // Fallback to versionCode comparison only if version names could not be parsed
+        return remoteVersionCode > currentVersionCode
     }
 
     fun checkForUpdates(silent: Boolean = false) {
@@ -1067,9 +1074,9 @@ class NoteViewModel(
                                 parts[0].toInt() * 10000 + parts[1].toInt() * 100 + (if (parts.size > 2) parts[2].toInt() else 0)
                             } else if (parts.isNotEmpty() && parts[0].isNotEmpty()) {
                                 parts[0].toInt() * 10000
-                            } else com.example.BuildConfig.VERSION_CODE + 1
+                            } else com.example.BuildConfig.VERSION_CODE
                         } catch (e: Exception) {
-                            com.example.BuildConfig.VERSION_CODE + 1
+                            com.example.BuildConfig.VERSION_CODE
                         }
                         return JSONObject().apply {
                             put("versionCode", vCode)
@@ -2010,6 +2017,9 @@ class NoteViewModel(
                 )
             }
         } else {
+            if (lassoSelectedStrokes.isNotEmpty()) {
+                clearLassoSelection()
+            }
             var strokeColor = activeColor
             val darkPaper = isDarkPaper()
             if (activeToolType != "highlighter" && activeToolType != "laser" && activeToolType != "eraser" && activeToolType != "tape") {
@@ -2191,19 +2201,8 @@ class NoteViewModel(
                         stroke
                     }
 
-                    if (stroke.toolType == "shapes" || (smartShapesEnabled && (stroke.toolType == "pen" || stroke.toolType == "highlighter") && finalStroke != stroke)) {
-                        clearLassoSelection() // commit any prior selection
-                        saveToUndoStack()
-                        lassoSelectedStrokes = listOf(finalStroke)
-                        lassoBoundingBox = SmartInkEngine.getBoundingBox(finalStroke)
-                        lassoDragOffset = Offset.Zero
-                        lassoScaleX = 1f
-                        lassoScaleY = 1f
-                        logSyncEvent("Auto-selected generated shape.")
-                    } else {
-                        currentStrokes = currentStrokes + finalStroke
-                        saveActiveCanvasStrokes()
-                    }
+                    currentStrokes = currentStrokes + finalStroke
+                    saveActiveCanvasStrokes()
                 }
                 activeStroke = null
             }

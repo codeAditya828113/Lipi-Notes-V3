@@ -182,6 +182,12 @@ fun DrawingCanvas(
     var lastStylusDownY by remember { mutableStateOf(0f) }
     var isWritingStartedOnPage by remember { mutableStateOf(false) }
 
+    // Smooth inertia fling & animated page jump states
+    var flingJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    var animatedPageScrollJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    var lastHandledPdfPage by remember { mutableStateOf(pdfPage) }
+    val velocityTracker = remember { android.view.VelocityTracker.obtain() }
+
     // Reset translation if switched back to fixed page mode (unless it's a PDF note, which scrolls)
     LaunchedEffect(canvasMode) {
         if (canvasMode == "fixed" && templateType != "pdf" && templateType != "docx") {
@@ -391,13 +397,52 @@ fun DrawingCanvas(
             (ny / getNormH(p)) * pH + pTop
         }
 
-        // Sync visible page center to viewmodel selection
+        // Smooth animate scroll when pdfPage changes externally (e.g. Next/Prev button, jump dialog, or add page)
+        LaunchedEffect(pdfPage, pdfPageCount, heightPx) {
+            if (pdfPage != lastHandledPdfPage) {
+                val targetY = -getPageTop(pdfPage)
+                val startY = offset.y
+                if (kotlin.math.abs(targetY - startY) > 4f) {
+                    flingJob?.cancel()
+                    animatedPageScrollJob?.cancel()
+                    animatedPageScrollJob = coroutineScope.launch {
+                        val anim = androidx.compose.animation.core.Animatable(startY)
+                        anim.animateTo(
+                            targetValue = targetY,
+                            animationSpec = androidx.compose.animation.core.tween(
+                                durationMillis = 380,
+                                easing = androidx.compose.animation.core.FastOutSlowInEasing
+                            )
+                        ) {
+                            offset = Offset(offset.x, value)
+                        }
+                    }
+                }
+                lastHandledPdfPage = pdfPage
+            }
+        }
+
+        // Sync visible page center to viewmodel selection during scrolling
         LaunchedEffect(offset.y, pdfPageCount) {
             val pageHVal = getPageHeight(1)
             if (pageHVal > 0f) {
-                val visiblePage = ((-offset.y + heightPx / 2f) / pageHVal).toInt() + 1
-                val coercedPage = visiblePage.coerceIn(1, pdfPageCount)
-                onPageSelected(coercedPage)
+                var pageIdx = 1
+                var accumulatedHeight = 0f
+                val centerY = -offset.y + heightPx / 2f
+                for (p in 1..pdfPageCount) {
+                    val pH = getPageHeight(p)
+                    if (centerY >= accumulatedHeight && centerY < accumulatedHeight + pH) {
+                        pageIdx = p
+                        break
+                    }
+                    accumulatedHeight += pH
+                    if (p == pdfPageCount) pageIdx = pdfPageCount
+                }
+                val coercedPage = pageIdx.coerceIn(1, pdfPageCount)
+                if (coercedPage != lastHandledPdfPage) {
+                    lastHandledPdfPage = coercedPage
+                    onPageSelected(coercedPage)
+                }
             }
         }
 
@@ -672,63 +717,6 @@ fun DrawingCanvas(
                         }
                     }
 
-                    // Check Long Press / Touch on Canvas Shapes/Strokes to select & customize
-                    if (action == MotionEvent.ACTION_DOWN) {
-                        val pivotX = widthPx / 2f
-                        val mappedX = (x - pivotX - offset.x) / scale + pivotX
-                        val mappedY = (y - offset.y) / scale
-                        val worldX = toNormalizedX(mappedX, pdfPage)
-                        val worldY = toNormalizedY(mappedY, pdfPage)
-
-                        var matched: Stroke? = null
-                        for (s in strokes.reversed()) {
-                            val bbox = SmartInkEngine.getBoundingBox(s) ?: continue
-                            val margin = 35f
-                            if (worldX >= bbox.left - margin && worldX <= bbox.right + margin &&
-                                worldY >= bbox.top - margin && worldY <= bbox.bottom + margin) {
-                                matched = s
-                                break
-                            }
-                        }
-
-                        if (matched != null) {
-                            onShapeLongPressed(matched)
-                            return@pointerInteropFilter true
-                        }
-                    }
-
-                    if (potentialShapeStroke != null && action == MotionEvent.ACTION_MOVE) {
-                        val lastPoint = lastShapeTouchPoint ?: Offset(x, y)
-                        if (kotlin.math.hypot(x - lastPoint.x, y - lastPoint.y) > 12f) {
-                            longPressJob?.cancel()
-                            potentialShapeStroke = null
-                            if (pendingStrokeDownPoint != null) {
-                                view.parent?.requestDisallowInterceptTouchEvent(true)
-                                isZooming = false
-                                strokeStartedPage = pendingStrokeTouchedPage
-                                onPageSelected(pendingStrokeTouchedPage)
-                                onStrokeStarted(pendingStrokeDownPoint!!)
-                                pendingStrokeDownPoint = null
-                            }
-                        } else {
-                            return@pointerInteropFilter true
-                        }
-                    }
-
-                    if (potentialShapeStroke != null && (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL)) {
-                        longPressJob?.cancel()
-                        potentialShapeStroke = null
-                        if (pendingStrokeDownPoint != null) {
-                            view.parent?.requestDisallowInterceptTouchEvent(true)
-                            strokeStartedPage = pendingStrokeTouchedPage
-                            onPageSelected(pendingStrokeTouchedPage)
-                            onStrokeStarted(pendingStrokeDownPoint!!)
-                            onStrokeEnded()
-                            pendingStrokeDownPoint = null
-                        }
-                        return@pointerInteropFilter true
-                    }
-
                     // Multi-touch gesture processing for ALL templates to allow zooming & vertical scrolling
                     if (motionEvent.pointerCount >= 2) {
                         if (isWritingStartedOnPage) {
@@ -737,6 +725,10 @@ fun DrawingCanvas(
                         }
                         when (action) {
                             MotionEvent.ACTION_POINTER_DOWN, MotionEvent.ACTION_DOWN -> {
+                                flingJob?.cancel()
+                                animatedPageScrollJob?.cancel()
+                                try { velocityTracker.clear() } catch (e: Exception) {}
+                                try { velocityTracker.addMovement(motionEvent) } catch (e: Exception) {}
                                 val x0 = motionEvent.getX(0)
                                 val y0 = motionEvent.getY(0)
                                 val x1 = motionEvent.getX(1)
@@ -748,6 +740,7 @@ fun DrawingCanvas(
                                 isZooming = true
                             }
                             MotionEvent.ACTION_MOVE -> {
+                                try { velocityTracker.addMovement(motionEvent) } catch (e: Exception) {}
                                 if (isZooming && motionEvent.pointerCount >= 2) {
                                     val x0 = motionEvent.getX(0)
                                     val y0 = motionEvent.getY(0)
@@ -775,8 +768,45 @@ fun DrawingCanvas(
                                     )
                                 }
                             }
-                            MotionEvent.ACTION_POINTER_UP -> {
+                            MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                                 isZooming = false
+                                try {
+                                    velocityTracker.addMovement(motionEvent)
+                                    velocityTracker.computeCurrentVelocity(1000)
+                                    val vx = velocityTracker.xVelocity
+                                    val vy = velocityTracker.yVelocity
+                                    if (kotlin.math.hypot(vx, vy) > 120f) {
+                                        flingJob?.cancel()
+                                        flingJob = coroutineScope.launch {
+                                            var curVx = vx
+                                            var curVy = vy
+                                            var lastTime = System.currentTimeMillis()
+                                            while (kotlin.math.hypot(curVx, curVy) > 25f) {
+                                                delay(16)
+                                                val now = System.currentTimeMillis()
+                                                val dt = ((now - lastTime) / 1000f).coerceIn(0.001f, 0.05f)
+                                                lastTime = now
+
+                                                var totalHeight = 0f
+                                                for (p in 1..pdfPageCount) {
+                                                    totalHeight += getPageHeight(p)
+                                                }
+                                                val maxScrollY = -((totalHeight * scale - heightPx + 200f).coerceAtLeast(0f))
+                                                val maxScrollX = ((scale - 1f) * widthPx / 2f + 100f).coerceAtLeast(0f)
+
+                                                val nextX = (offset.x + curVx * dt).coerceIn(-maxScrollX, maxScrollX)
+                                                val nextY = (offset.y + curVy * dt).coerceIn(maxScrollY, 0f)
+
+                                                if (nextX == -maxScrollX || nextX == maxScrollX) curVx = 0f
+                                                if (nextY == maxScrollY || nextY == 0f) curVy = 0f
+
+                                                offset = Offset(nextX, nextY)
+                                                curVx *= 0.91f
+                                                curVy *= 0.91f
+                                            }
+                                        }
+                                    }
+                                } catch (e: Exception) {}
                             }
                         }
                         return@pointerInteropFilter true
@@ -838,10 +868,15 @@ fun DrawingCanvas(
                         when (action) {
                             MotionEvent.ACTION_DOWN -> {
                                 view.parent?.requestDisallowInterceptTouchEvent(true)
+                                flingJob?.cancel()
+                                animatedPageScrollJob?.cancel()
+                                try { velocityTracker.clear() } catch (e: Exception) {}
+                                try { velocityTracker.addMovement(motionEvent) } catch (e: Exception) {}
                                 lastFingerDragPoint = Offset(x, y)
                             }
                             MotionEvent.ACTION_MOVE -> {
                                 view.parent?.requestDisallowInterceptTouchEvent(true)
+                                try { velocityTracker.addMovement(motionEvent) } catch (e: Exception) {}
                                 val lastPoint = lastFingerDragPoint
                                 if (lastPoint != null) {
                                     val dx = x - lastPoint.x
@@ -863,6 +898,43 @@ fun DrawingCanvas(
                                 }
                             }
                             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                                try {
+                                    velocityTracker.addMovement(motionEvent)
+                                    velocityTracker.computeCurrentVelocity(1000)
+                                    val vx = velocityTracker.xVelocity
+                                    val vy = velocityTracker.yVelocity
+                                    if (kotlin.math.hypot(vx, vy) > 120f) {
+                                        flingJob?.cancel()
+                                        flingJob = coroutineScope.launch {
+                                            var curVx = vx
+                                            var curVy = vy
+                                            var lastTime = System.currentTimeMillis()
+                                            while (kotlin.math.hypot(curVx, curVy) > 25f) {
+                                                delay(16)
+                                                val now = System.currentTimeMillis()
+                                                val dt = ((now - lastTime) / 1000f).coerceIn(0.001f, 0.05f)
+                                                lastTime = now
+
+                                                var totalHeight = 0f
+                                                for (p in 1..pdfPageCount) {
+                                                    totalHeight += getPageHeight(p)
+                                                }
+                                                val maxScrollY = -((totalHeight * scale - heightPx + 200f).coerceAtLeast(0f))
+                                                val maxScrollX = ((scale - 1f) * widthPx / 2f + 100f).coerceAtLeast(0f)
+
+                                                val nextX = (offset.x + curVx * dt).coerceIn(-maxScrollX, maxScrollX)
+                                                val nextY = (offset.y + curVy * dt).coerceIn(maxScrollY, 0f)
+
+                                                if (nextX == -maxScrollX || nextX == maxScrollX) curVx = 0f
+                                                if (nextY == maxScrollY || nextY == 0f) curVy = 0f
+
+                                                offset = Offset(nextX, nextY)
+                                                curVx *= 0.91f
+                                                curVy *= 0.91f
+                                            }
+                                        }
+                                    }
+                                } catch (e: Exception) {}
                                 lastFingerDragPoint = null
                             }
                         }
