@@ -1358,7 +1358,41 @@ fun DrawingCanvas(
                                     )
                                 } else null
 
-                                if (stroke.toolType == "pencil") {
+                                if (stroke.toolType == "laser") {
+                                    val spotPt = points.last()
+                                    val sx = fromNormalizedX(spotPt.x, strokePage)
+                                    val sy = fromNormalizedY(spotPt.y, strokePage)
+                                    val spotCenter = androidx.compose.ui.geometry.Offset(sx, sy)
+                                    val baseRadius = (width * 1.5f).coerceAtLeast(14f)
+
+                                    drawCircle(
+                                        color = color.copy(alpha = 0.35f * color.alpha),
+                                        radius = baseRadius * 2.2f,
+                                        center = spotCenter
+                                    )
+                                    drawCircle(
+                                        color = color.copy(alpha = 0.85f * color.alpha),
+                                        radius = baseRadius * 1.1f,
+                                        center = spotCenter
+                                    )
+                                    drawCircle(
+                                        color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.95f * color.alpha),
+                                        radius = baseRadius * 0.45f,
+                                        center = spotCenter
+                                    )
+
+                                    if (points.size > 1) {
+                                        drawPath(
+                                            path = path,
+                                            color = color,
+                                            style = androidx.compose.ui.graphics.drawscope.Stroke(
+                                                width = width,
+                                                cap = androidx.compose.ui.graphics.StrokeCap.Round,
+                                                join = androidx.compose.ui.graphics.StrokeJoin.Round
+                                            )
+                                        )
+                                    }
+                                } else if (stroke.toolType == "pencil") {
                                     // Pencil texture simulation with overlapping strokes
                                     val pencilAlpha = 0.5f * (color.alpha)
                                     val drawColor = color.copy(alpha = pencilAlpha)
@@ -1559,7 +1593,41 @@ fun DrawingCanvas(
                                     )
                                 } else null
 
-                                if (stroke.toolType == "pencil") {
+                                if (stroke.toolType == "laser") {
+                                    val spotPt = points.last()
+                                    val sx = fromNormalizedX(spotPt.x, strokePage)
+                                    val sy = fromNormalizedY(spotPt.y, strokePage)
+                                    val spotCenter = androidx.compose.ui.geometry.Offset(sx, sy)
+                                    val baseRadius = (width * 1.5f).coerceAtLeast(14f)
+
+                                    drawCircle(
+                                        color = color.copy(alpha = 0.35f * color.alpha),
+                                        radius = baseRadius * 2.2f,
+                                        center = spotCenter
+                                    )
+                                    drawCircle(
+                                        color = color.copy(alpha = 0.85f * color.alpha),
+                                        radius = baseRadius * 1.1f,
+                                        center = spotCenter
+                                    )
+                                    drawCircle(
+                                        color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.95f * color.alpha),
+                                        radius = baseRadius * 0.45f,
+                                        center = spotCenter
+                                    )
+
+                                    if (points.size > 1) {
+                                        drawPath(
+                                            path = path,
+                                            color = color,
+                                            style = androidx.compose.ui.graphics.drawscope.Stroke(
+                                                width = width,
+                                                cap = androidx.compose.ui.graphics.StrokeCap.Round,
+                                                join = androidx.compose.ui.graphics.StrokeJoin.Round
+                                            )
+                                        )
+                                    }
+                                } else if (stroke.toolType == "pencil") {
                                     val pencilAlpha = 0.5f * (color.alpha)
                                     val drawColor = color.copy(alpha = pencilAlpha)
                                     val baseStyle = androidx.compose.ui.graphics.drawscope.Stroke(

@@ -2392,31 +2392,128 @@ fun NoteEditorCanvas(
                             }
                         }
                     
-                    Text("Tool Thickness", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Row(
-                        horizontalArrangement = Arrangement.SpaceEvenly,
-                        modifier = Modifier.fillMaxWidth()
+                    val minThickness = when (viewModel.activeToolType) {
+                        "highlighter" -> 5f
+                        "eraser" -> 5f
+                        "tape" -> 10f
+                        else -> 1f
+                    }
+                    val maxThickness = when (viewModel.activeToolType) {
+                        "highlighter" -> 80f
+                        "eraser" -> 120f
+                        "tape" -> 80f
+                        "laser" -> 60f
+                        "pencil" -> 35f
+                        else -> 50f
+                    }
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+                            .padding(12.dp)
                     ) {
-                        listOf(4f, 8f, 12f, 16f, 22f).forEach { width ->
-                            val isSelected = viewModel.activeWidth == width
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text("Brush / Tool Thickness", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                Text(
+                                    "${String.format("%.1f", viewModel.activeWidth)} px",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                            
                             Box(
                                 modifier = Modifier
-                                    .size(40.dp)
+                                    .size(44.dp)
                                     .clip(CircleShape)
-                                    .background(if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
-                                    .clickable { viewModel.activeWidth = width }
-                                    .border(1.dp, if (isSelected) MaterialTheme.colorScheme.primary else Color.Gray, CircleShape),
+                                    .background(MaterialTheme.colorScheme.surface)
+                                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape),
                                 contentAlignment = Alignment.Center
                             ) {
-                                val dotSize = when (width) {
-                                    4f -> 4.dp
-                                    8f -> 7.dp
-                                    12f -> 10.dp
-                                    16f -> 13.dp
-                                    else -> 16.dp
+                                val previewDp = (viewModel.activeWidth.dp * 0.65f).coerceIn(3.dp, 36.dp)
+                                val previewColor = if (viewModel.activeToolType == "eraser") Color.Gray else Color(viewModel.activeColor)
+                                Box(
+                                    modifier = Modifier
+                                        .size(previewDp)
+                                        .clip(CircleShape)
+                                        .background(previewColor)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            IconButton(
+                                onClick = {
+                                    viewModel.activeWidth = (viewModel.activeWidth - 1f).coerceAtLeast(minThickness)
+                                },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(Icons.Default.Remove, contentDescription = "Decrease Thickness", modifier = Modifier.size(18.dp))
+                            }
+
+                            androidx.compose.material3.Slider(
+                                value = viewModel.activeWidth.coerceIn(minThickness, maxThickness),
+                                onValueChange = { viewModel.activeWidth = it },
+                                valueRange = minThickness..maxThickness,
+                                modifier = Modifier.weight(1f)
+                            )
+
+                            IconButton(
+                                onClick = {
+                                    viewModel.activeWidth = (viewModel.activeWidth + 1f).coerceAtMost(maxThickness)
+                                },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = "Increase Thickness", modifier = Modifier.size(18.dp))
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        val presetChips = when (viewModel.activeToolType) {
+                            "highlighter", "tape" -> listOf(10f to "Thin", 20f to "Medium", 35f to "Thick", 50f to "Wide", 75f to "Max")
+                            "eraser" -> listOf(15f to "Small", 30f to "Medium", 50f to "Large", 80f to "X-Large", 110f to "Huge")
+                            "pencil" -> listOf(1.5f to "0.3mm", 3f to "0.5mm", 5f to "0.7mm", 8f to "1.0mm", 12f to "B2", 18f to "Shading")
+                            "laser" -> listOf(4f to "Fine", 8f to "Standard", 16f to "Spot", 25f to "Beacon", 40f to "Glow")
+                            else -> listOf(2f to "Fine", 4f to "Thin", 8f to "Medium", 14f to "Thick", 22f to "Heavy", 35f to "Max")
+                        }
+
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState())
+                        ) {
+                            presetChips.forEach { (widthVal, label) ->
+                                val isSelected = Math.abs(viewModel.activeWidth - widthVal) < 1.2f
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(16.dp))
+                                        .background(if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface)
+                                        .border(1.dp, if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(16.dp))
+                                        .clickable { viewModel.activeWidth = widthVal }
+                                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                                ) {
+                                    Text(
+                                        "$label (${widthVal.toInt()}px)",
+                                        fontSize = 11.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                        color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+                                    )
                                 }
-                                Box(modifier = Modifier.size(dotSize).background(Color.Black, CircleShape))
                             }
                         }
                     }
@@ -3918,30 +4015,36 @@ fun NoteEditorCanvas(
                         .background(Color(0xFFCBD5E1))
                 )
 
-                // Circular Thickness Selector with dots and labels
+                // Dynamic Circular Thickness Selector with dots and settings button
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    val thicknesses = listOf(
-                        4f to "0.50",
-                        10f to "0.70",
-                        22f to "1.00"
-                    )
-                    thicknesses.forEach { (width, label) ->
-                        val isSelected = viewModel.activeWidth == width
+                    val toolbarThicknesses = when (viewModel.activeToolType) {
+                        "highlighter", "tape" -> listOf(10f to "Thin", 25f to "Med", 50f to "Thick")
+                        "eraser" -> listOf(15f to "Small", 40f to "Med", 80f to "Large")
+                        "pencil" -> listOf(2f to "Fine", 5f to "Med", 12f to "Soft")
+                        "laser" -> listOf(4f to "Line", 16f to "Spot", 32f to "Glow")
+                        else -> listOf(2f to "Fine", 6f to "Med", 14f to "Thick")
+                    }
+
+                    toolbarThicknesses.forEach { (width, label) ->
+                        val isSelected = Math.abs(viewModel.activeWidth - width) < 1.5f
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.Center,
                             modifier = Modifier
                                 .clip(RoundedCornerShape(8.dp))
-                                .clickable { viewModel.activeWidth = width }
-                                .padding(6.dp)
+                                .combinedClickable(
+                                    onClick = { viewModel.activeWidth = width },
+                                    onDoubleClick = { showToolSettings = viewModel.activeToolType },
+                                    onLongClick = { showToolSettings = viewModel.activeToolType }
+                                )
+                                .padding(4.dp)
                         ) {
-                            // Circular Dot container
                             Box(
                                 modifier = Modifier
-                                    .size(32.dp)
+                                    .size(30.dp)
                                     .border(
                                         width = if (isSelected) 2.dp else 1.dp,
                                         color = if (isSelected) Color(0xFF3B82F6) else Color(0xFFCBD5E1),
@@ -3949,26 +4052,35 @@ fun NoteEditorCanvas(
                                     ),
                                 contentAlignment = Alignment.Center
                             ) {
-                                // Inner dot showing actual relative diameter
-                                val dotSizeDp = when (width) {
-                                    4f -> 3.dp
-                                    10f -> 6.dp
-                                    else -> 12.dp
-                                }
+                                val dotSizeDp = (width.dp * 0.4f).coerceIn(3.dp, 20.dp)
+                                val dotColor = if (viewModel.activeToolType == "eraser") Color.Gray else Color(viewModel.activeColor)
                                 Box(
                                     modifier = Modifier
                                         .size(dotSizeDp)
-                                        .background(Color(0xFF0F172A), CircleShape)
+                                        .background(dotColor, CircleShape)
                                 )
                             }
-                            Spacer(modifier = Modifier.height(4.dp))
+                            Spacer(modifier = Modifier.height(2.dp))
                             Text(
                                 text = label,
-                                fontSize = 11.sp,
+                                fontSize = 10.sp,
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                                 color = if (isSelected) Color(0xFF3B82F6) else Color(0xFF64748B)
                             )
                         }
+                    }
+
+                    // Direct Tune / Customize Thickness Button
+                    IconButton(
+                        onClick = { showToolSettings = viewModel.activeToolType },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Tune,
+                            contentDescription = "Customize Brush Thickness",
+                            tint = Color(0xFF3B82F6),
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
                 }
 

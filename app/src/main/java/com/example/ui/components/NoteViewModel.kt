@@ -2048,7 +2048,18 @@ class NoteViewModel(
         if (points.isEmpty()) return
         if (activeToolType == "laser" && laserMode == "spot") {
             val lastPoint = points.last()
-            activeStroke = activeStroke?.copy(points = listOf(lastPoint))
+            val current = activeStroke
+            activeStroke = if (current != null) {
+                current.copy(points = listOf(lastPoint))
+            } else {
+                Stroke(
+                    points = listOf(lastPoint),
+                    color = activeColor,
+                    width = activeWidth,
+                    toolType = "laser",
+                    page = pdfPage
+                )
+            }
             return
         }
         if (activeToolType == "eraser") {
