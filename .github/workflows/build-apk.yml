@@ -90,7 +90,7 @@ jobs:
       uses: softprops/action-gh-release@v2
       with:
         tag_name: v1.0.${{ github.run_number }}
-        name: NovaNotes v1.0.${{ github.run_number }}
+        name: Lipi-Notes-V3 v1.0.${{ github.run_number }}
         body: |
           Automated Release v1.0.${{ github.run_number }}
           • Performance optimizations & stability fixes

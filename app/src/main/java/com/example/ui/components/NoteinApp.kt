@@ -355,9 +355,9 @@ fun NoteinApp(
                 ) {
                     Text(
                         text = if (viewModel.updateAvailable) {
-                            "A new version of NovaNotes (v${viewModel.updateVersionName}) is available! Click 'Download APK' to open GitHub and automatically start downloading the update."
+                            "A new version of Lipi Notes (v${viewModel.updateVersionName}) is available! Click 'Download APK' to open GitHub and automatically start downloading the update."
                         } else {
-                            "You are currently running the latest version of NovaNotes (v${com.example.BuildConfig.VERSION_NAME}). You can re-download the latest release APK from GitHub anytime."
+                            "You are currently running the latest version of Lipi Notes (v${com.example.BuildConfig.VERSION_NAME}). You can re-download the latest release APK from GitHub anytime."
                         },
                         fontSize = 13.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -418,7 +418,11 @@ fun NoteinApp(
                 ) {
                     OutlinedButton(
                         onClick = {
-                            val targetUrl = "https://github.com/rampritchoudhary16281/NovaNotes/releases"
+                            val targetUrl = when {
+                                viewModel.updateReleaseUrl.isNotBlank() -> viewModel.updateReleaseUrl
+                                viewModel.updateApkUrl.isNotBlank() -> viewModel.updateApkUrl
+                                else -> "https://github.com/codeAditya828113/Lipi-Notes-V3"
+                            }
                             try {
                                 val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(targetUrl))
                                 context.startActivity(intent)
@@ -435,7 +439,11 @@ fun NoteinApp(
                         onClick = {
                             viewModel.markPendingUpdate(viewModel.updateNotes)
                             viewModel.downloadAndInstallApk()
-                            val targetUrl = if (viewModel.updateApkUrl.isNotBlank()) viewModel.updateApkUrl else "https://github.com/rampritchoudhary16281/NovaNotes/releases/latest"
+                            val targetUrl = when {
+                                viewModel.updateApkUrl.isNotBlank() -> viewModel.updateApkUrl
+                                viewModel.updateReleaseUrl.isNotBlank() -> viewModel.updateReleaseUrl
+                                else -> "https://github.com/codeAditya828113/Lipi-Notes-V3"
+                            }
                             try {
                                 val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(targetUrl))
                                 context.startActivity(intent)
@@ -478,7 +486,7 @@ fun NoteinApp(
             },
             title = {
                 Text(
-                    text = "🎉 What's New in NovaNotes v${viewModel.changelogVersionName}",
+                    text = "🎉 What's New in Lipi Notes v${viewModel.changelogVersionName}",
                     fontWeight = FontWeight.Bold,
                     fontSize = 18.sp
                 )
@@ -5687,7 +5695,7 @@ fun SyncDashboard(viewModel: NoteViewModel) {
                     Button(
                         onClick = {
                             val timeStamp = java.text.SimpleDateFormat("yyyyMMdd_HHmm", java.util.Locale.getDefault()).format(java.util.Date())
-                            createBackupLauncher.launch("NovaNotes_Backup_$timeStamp.json")
+                            createBackupLauncher.launch("LipiNotes_Backup_$timeStamp.json")
                         },
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(12.dp),

@@ -44,6 +44,7 @@ import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 
 
 
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -904,6 +905,8 @@ class NoteViewModel(
         private set
     var updateApkUrl by mutableStateOf("")
         private set
+    var updateReleaseUrl by mutableStateOf("")
+        private set
     var updateDownloadedFile by mutableStateOf<File?>(null)
         private set
     var showUpdatePromptDialog by mutableStateOf(false)
@@ -962,13 +965,42 @@ class NoteViewModel(
     }
 
     // Configurable Update URL (GitHub/raw gist or direct update.json)
-    var updateUrlSetting by mutableStateOf(sharedPrefs.getString("ota_update_url", "https://raw.githubusercontent.com/rampritchoudhary16281/NovaNotes/main/update.json") ?: "https://raw.githubusercontent.com/rampritchoudhary16281/NovaNotes/main/update.json")
+    var updateUrlSetting by mutableStateOf(
+        sharedPrefs.getString("ota_update_url", "https://raw.githubusercontent.com/codeAditya828113/Lipi-Notes-V3/main/update.json")?.let {
+            if (it.contains("rampritchoudhary16281/NovaNotes")) {
+                "https://raw.githubusercontent.com/codeAditya828113/Lipi-Notes-V3/main/update.json"
+            } else it
+        } ?: "https://raw.githubusercontent.com/codeAditya828113/Lipi-Notes-V3/main/update.json"
+    )
         private set
 
     fun saveUpdateUrlSetting(url: String) {
         updateUrlSetting = url
         sharedPrefs.edit().putString("ota_update_url", url).apply()
         logSyncEvent("Update URL updated: $url")
+    }
+
+    private fun isNewerVersion(
+        remoteVersionName: String,
+        remoteVersionCode: Int,
+        currentVersionName: String,
+        currentVersionCode: Int
+    ): Boolean {
+        if (remoteVersionCode > currentVersionCode) return true
+        val cleanRemote = remoteVersionName.replace(Regex("[^0-9.]"), "").trim()
+        val cleanCurrent = currentVersionName.replace(Regex("[^0-9.]"), "").trim()
+        if (cleanRemote.isNotBlank() && cleanCurrent.isNotBlank()) {
+            val rParts = cleanRemote.split(".").mapNotNull { it.toIntOrNull() }
+            val cParts = cleanCurrent.split(".").mapNotNull { it.toIntOrNull() }
+            val maxLen = maxOf(rParts.size, cParts.size)
+            for (i in 0 until maxLen) {
+                val r = rParts.getOrElse(i) { 0 }
+                val c = cParts.getOrElse(i) { 0 }
+                if (r > c) return true
+                if (r < c) return false
+            }
+        }
+        return false
     }
 
     fun checkForUpdates(silent: Boolean = false) {
@@ -983,114 +1015,169 @@ class NoteViewModel(
         viewModelScope.launch {
             try {
                 val result = withContext(Dispatchers.IO) {
-                    fun fetchJsonObject(urlString: String): JSONObject? {
+                    val githubRegex = Regex("""(?:github\.com|raw\.githubusercontent\.com)/([^/]+)/([^/]+)""")
+                    val match = githubRegex.find(updateUrlSetting)
+                    val repoOwner = if (match != null && match.groupValues.size >= 3) match.groupValues[1] else "codeAditya828113"
+                    val repoName = if (match != null && match.groupValues.size >= 3) match.groupValues[2].replace(".git", "") else "Lipi-Notes-V3"
+
+                    fun fetchText(urlString: String): String? {
                         return try {
                             val conn = URL(urlString).openConnection() as HttpURLConnection
                             conn.connectTimeout = 8000
                             conn.readTimeout = 8000
-                            conn.setRequestProperty("User-Agent", "NovaNotesApp/1.0 (Android)")
+                            conn.setRequestProperty("User-Agent", "LipiNotesApp/1.0 (Android)")
                             conn.setRequestProperty("Accept", "application/json")
                             val code = conn.responseCode
                             if (code == HttpURLConnection.HTTP_OK) {
-                                val content = conn.inputStream.bufferedReader().use { it.readText() }
-                                JSONObject(content)
-                            } else {
-                                null
-                            }
+                                conn.inputStream.bufferedReader().use { it.readText() }
+                            } else null
                         } catch (e: Exception) {
                             null
                         }
                     }
 
-                    // 1. Try raw update.json URL
-                    var json = fetchJsonObject(updateUrlSetting)
-
-                    // 2. Fallback to GitHub Releases API if update.json fails or returned null
-                    if (json == null || !json.has("apkUrl")) {
-                        val ghRelease = fetchJsonObject("https://api.github.com/repos/rampritchoudhary16281/NovaNotes/releases/latest")
-                        if (ghRelease != null) {
-                            val rawTag = ghRelease.optString("tag_name", "1.0").trim()
-                            val tagName = rawTag.replace("v", "").trim()
-                            val body = ghRelease.optString("body", "• Performance optimizations\n• Stylus responsiveness\n• New canvas & feature updates")
-                            val htmlUrl = ghRelease.optString("html_url", "https://github.com/rampritchoudhary16281/NovaNotes/releases/latest")
-                            val assets = ghRelease.optJSONArray("assets")
-                            var apkDownloadUrl = ""
-                            if (assets != null && assets.length() > 0) {
-                                for (i in 0 until assets.length()) {
-                                    val asset = assets.getJSONObject(i)
-                                    val name = asset.optString("name", "")
-                                    if (name.endsWith(".apk", ignoreCase = true)) {
-                                        apkDownloadUrl = asset.optString("browser_download_url", "")
-                                        break
-                                    }
+                    fun parseReleaseObject(ghRelease: JSONObject): JSONObject {
+                        val rawTag = ghRelease.optString("tag_name", "").ifBlank { ghRelease.optString("name", "1.0") }.trim()
+                        val tagName = rawTag.replace("v", "").trim()
+                        val body = ghRelease.optString("body", "• Performance optimizations\n• Stylus responsiveness\n• Feature updates and bug fixes")
+                        val htmlUrl = ghRelease.optString("html_url", "https://github.com/$repoOwner/$repoName")
+                        val assets = ghRelease.optJSONArray("assets")
+                        var apkDownloadUrl = ""
+                        if (assets != null && assets.length() > 0) {
+                            for (i in 0 until assets.length()) {
+                                val asset = assets.getJSONObject(i)
+                                val name = asset.optString("name", "")
+                                if (name.endsWith(".apk", ignoreCase = true)) {
+                                    apkDownloadUrl = asset.optString("browser_download_url", "")
+                                    break
                                 }
                             }
-                            if (apkDownloadUrl.isBlank()) {
-                                apkDownloadUrl = if (rawTag.isNotBlank()) {
-                                    "https://github.com/rampritchoudhary16281/NovaNotes/releases/download/$rawTag/app-release.apk"
-                                } else {
-                                    "https://github.com/rampritchoudhary16281/NovaNotes/releases/latest"
-                                }
+                        }
+                        if (apkDownloadUrl.isBlank()) {
+                            apkDownloadUrl = if (rawTag.isNotBlank()) {
+                                "https://github.com/$repoOwner/$repoName/releases/download/$rawTag/app-release.apk"
+                            } else {
+                                "https://github.com/$repoOwner/$repoName"
                             }
-                            val vCode = try {
-                                val cleanTag = tagName.replace(Regex("[^0-9.]"), "")
-                                val parts = cleanTag.split(".")
-                                if (parts.size >= 2) {
-                                    parts[0].toInt() * 100 + parts[1].toInt() * 10 + (if (parts.size > 2) parts[2].toInt() else 0)
-                                } else if (parts.isNotEmpty() && parts[0].isNotEmpty()) {
-                                    parts[0].toInt() * 100
-                                } else com.example.BuildConfig.VERSION_CODE + 1
-                            } catch (e: Exception) {
-                                com.example.BuildConfig.VERSION_CODE + 1
-                            }
-                            json = JSONObject().apply {
-                                put("versionCode", vCode)
-                                put("versionName", tagName.ifBlank { "1.0" })
-                                put("apkUrl", apkDownloadUrl)
-                                put("releaseNotes", body)
-                                put("htmlUrl", htmlUrl)
-                            }
+                        }
+                        val vCode = try {
+                            val cleanTag = tagName.replace(Regex("[^0-9.]"), "")
+                            val parts = cleanTag.split(".")
+                            if (parts.size >= 2) {
+                                parts[0].toInt() * 10000 + parts[1].toInt() * 100 + (if (parts.size > 2) parts[2].toInt() else 0)
+                            } else if (parts.isNotEmpty() && parts[0].isNotEmpty()) {
+                                parts[0].toInt() * 10000
+                            } else com.example.BuildConfig.VERSION_CODE + 1
+                        } catch (e: Exception) {
+                            com.example.BuildConfig.VERSION_CODE + 1
+                        }
+                        return JSONObject().apply {
+                            put("versionCode", vCode)
+                            put("versionName", tagName.ifBlank { "1.0" })
+                            put("apkUrl", apkDownloadUrl)
+                            put("releaseNotes", body)
+                            put("htmlUrl", htmlUrl)
                         }
                     }
 
-                    json
+                    var jsonResult: JSONObject? = null
+
+                    // 1. Try updateUrlSetting if it returns valid JSON with versionName or apkUrl
+                    val directText = fetchText(updateUrlSetting)
+                    if (!directText.isNullOrBlank()) {
+                        try {
+                            val rawObj = JSONObject(directText)
+                            if (rawObj.has("apkUrl") || rawObj.has("versionName")) {
+                                jsonResult = rawObj
+                            }
+                        } catch (e: Exception) {
+                            // Ignore if directText is not a valid JSON object
+                        }
+                    }
+
+                    // 2. Query GitHub Releases Latest API
+                    if (jsonResult == null) {
+                        val text = fetchText("https://api.github.com/repos/$repoOwner/$repoName/releases/latest")
+                        if (!text.isNullOrBlank()) {
+                            try {
+                                jsonResult = parseReleaseObject(JSONObject(text))
+                            } catch (e: Exception) {}
+                        }
+                    }
+
+                    // 3. Fallback to GitHub Releases List API if latest is 404
+                    if (jsonResult == null) {
+                        val text = fetchText("https://api.github.com/repos/$repoOwner/$repoName/releases")
+                        if (!text.isNullOrBlank()) {
+                            try {
+                                val arr = JSONArray(text)
+                                if (arr.length() > 0) {
+                                    jsonResult = parseReleaseObject(arr.getJSONObject(0))
+                                }
+                            } catch (e: Exception) {}
+                        }
+                    }
+
+                    // 4. Fallback to GitHub Tags API
+                    if (jsonResult == null) {
+                        val text = fetchText("https://api.github.com/repos/$repoOwner/$repoName/tags")
+                        if (!text.isNullOrBlank()) {
+                            try {
+                                val arr = JSONArray(text)
+                                if (arr.length() > 0) {
+                                    val tagObj = arr.getJSONObject(0)
+                                    val tagName = tagObj.optString("name", "1.0")
+                                    jsonResult = parseReleaseObject(JSONObject().apply {
+                                        put("tag_name", tagName)
+                                        put("html_url", "https://github.com/$repoOwner/$repoName")
+                                    })
+                                }
+                            } catch (e: Exception) {}
+                        }
+                    }
+
+                    jsonResult
                 }
 
                 if (result != null) {
                     val remoteVersionCode = result.optInt("versionCode", 1)
                     val remoteVersionName = result.optString("versionName", com.example.BuildConfig.VERSION_NAME)
-                    val apkUrl = result.optString("apkUrl", "https://github.com/rampritchoudhary16281/NovaNotes/releases/latest")
+                    val apkUrl = result.optString("apkUrl", "")
+                    val htmlUrl = result.optString("htmlUrl", "https://github.com/codeAditya828113/Lipi-Notes-V3")
                     val releaseNotes = result.optString("releaseNotes", "• Performance optimizations\n• Feature updates and bug fixes")
 
-                    val currentVersionCode = com.example.BuildConfig.VERSION_CODE
-                    if (remoteVersionCode > currentVersionCode) {
+                    val isNewer = isNewerVersion(
+                        remoteVersionName = remoteVersionName,
+                        remoteVersionCode = remoteVersionCode,
+                        currentVersionName = com.example.BuildConfig.VERSION_NAME,
+                        currentVersionCode = com.example.BuildConfig.VERSION_CODE
+                    )
+
+                    updateVersionName = remoteVersionName
+                    updateVersionCode = remoteVersionCode
+                    updateReleaseUrl = htmlUrl.ifBlank { "https://github.com/codeAditya828113/Lipi-Notes-V3" }
+                    updateApkUrl = if (apkUrl.isNotBlank()) apkUrl else updateReleaseUrl
+                    updateNotes = releaseNotes
+
+                    if (isNewer) {
                         updateAvailable = true
-                        updateVersionName = remoteVersionName
-                        updateVersionCode = remoteVersionCode
-                        updateApkUrl = if (apkUrl.isNotBlank()) apkUrl else "https://github.com/rampritchoudhary16281/NovaNotes/releases/latest"
-                        updateNotes = releaseNotes
                         updateStatusMessage = "New version v$remoteVersionName available!"
                         showUpdatePromptDialog = true
                         sendUpdateNotification(remoteVersionName, releaseNotes)
                         logSyncEvent("Update available: v$remoteVersionName")
                     } else {
                         updateAvailable = false
-                        updateVersionName = remoteVersionName.ifBlank { com.example.BuildConfig.VERSION_NAME }
-                        updateApkUrl = if (apkUrl.isNotBlank()) apkUrl else "https://github.com/rampritchoudhary16281/NovaNotes/releases/latest"
-                        updateNotes = releaseNotes
-                        updateStatusMessage = "App is up to date (v${com.example.BuildConfig.VERSION_NAME})"
+                        updateStatusMessage = "You are running the latest version (v${com.example.BuildConfig.VERSION_NAME})"
                         logSyncEvent("App is up to date")
                         if (!silent) {
                             showUpdatePromptDialog = true
                         }
                     }
                 } else {
-                    // Smooth fallback when no remote JSON or release tag found
                     updateAvailable = false
-                    updateVersionName = com.example.BuildConfig.VERSION_NAME
-                    updateApkUrl = "https://github.com/rampritchoudhary16281/NovaNotes/releases/latest"
-                    updateStatusMessage = "App is up to date (v${com.example.BuildConfig.VERSION_NAME})"
-                    logSyncEvent("App is up to date")
+                    updateError = "Unable to fetch updates from $updateUrlSetting. Check URL in settings or network connection."
+                    updateStatusMessage = "Update check failed"
+                    logSyncEvent("Update check failed for $updateUrlSetting")
                     if (!silent) {
                         showUpdatePromptDialog = true
                     }
@@ -1098,9 +1185,8 @@ class NoteViewModel(
             } catch (e: Exception) {
                 Log.e("OTAUpdate", "Error checking for updates", e)
                 updateAvailable = false
-                updateVersionName = com.example.BuildConfig.VERSION_NAME
-                updateApkUrl = "https://github.com/rampritchoudhary16281/NovaNotes/releases/latest"
-                updateStatusMessage = "App is up to date (v${com.example.BuildConfig.VERSION_NAME})"
+                updateError = "Error checking for updates: ${e.localizedMessage}"
+                updateStatusMessage = "Update check failed"
                 if (!silent) {
                     showUpdatePromptDialog = true
                 }
@@ -1135,7 +1221,7 @@ class NoteViewModel(
             val builder = NotificationCompat.Builder(context, channelId)
                 .setSmallIcon(android.R.drawable.stat_sys_download_done)
                 .setContentTitle("🎉 Update Available: v$versionName")
-                .setContentText("A new version of NovaNotes is available! Tap to open.")
+                .setContentText("A new version of Lipi Notes is available! Tap to open.")
                 .setStyle(NotificationCompat.BigTextStyle().bigText("Version $versionName is available.\n\n$notes"))
                 .setPriority(NotificationCompat.PRIORITY_DEFAULT)
                 .setContentIntent(pendingIntent)
@@ -2732,7 +2818,7 @@ class NoteViewModel(
             val notesList = allNotes.value
             val backupRoot = JSONObject()
             backupRoot.put("version", 1)
-            backupRoot.put("app", "NovaNotes")
+            backupRoot.put("app", "Lipi Notes")
             backupRoot.put("exportedAt", System.currentTimeMillis())
             backupRoot.put("noteCount", notesList.size)
 
@@ -2866,11 +2952,11 @@ class NoteViewModel(
 
     fun createAutoLocalBackupFile(): File? {
         return try {
-            val backupDir = File(application.getExternalFilesDir(android.os.Environment.DIRECTORY_DOCUMENTS), "NovaNotes_Backups").apply {
+            val backupDir = File(application.getExternalFilesDir(android.os.Environment.DIRECTORY_DOCUMENTS), "LipiNotes_Backups").apply {
                 if (!exists()) mkdirs()
             }
             val timeStamp = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.getDefault()).format(java.util.Date())
-            val backupFile = File(backupDir, "NovaNotes_Backup_$timeStamp.json")
+            val backupFile = File(backupDir, "LipiNotes_Backup_$timeStamp.json")
 
             FileOutputStream(backupFile).use { os ->
                 exportLocalBackupToStream(os)
@@ -2886,7 +2972,7 @@ class NoteViewModel(
 
     fun listLocalBackupFiles(): List<File> {
         return try {
-            val backupDir = File(application.getExternalFilesDir(android.os.Environment.DIRECTORY_DOCUMENTS), "NovaNotes_Backups")
+            val backupDir = File(application.getExternalFilesDir(android.os.Environment.DIRECTORY_DOCUMENTS), "LipiNotes_Backups")
             if (backupDir.exists()) {
                 backupDir.listFiles { _, name -> name.endsWith(".json") }?.sortedByDescending { it.lastModified() } ?: emptyList()
             } else emptyList()
