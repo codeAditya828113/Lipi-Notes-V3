@@ -405,7 +405,7 @@ class NoteViewModel(
         }
 
      var isRulerActive by mutableStateOf(false)
-     var isFullscreen by mutableStateOf(true)
+     var isFullscreen by mutableStateOf(false)
  
      // Shape Customization States
      var shape3dDepth by mutableStateOf(0.35f)

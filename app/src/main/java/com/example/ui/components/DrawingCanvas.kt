@@ -339,9 +339,9 @@ fun DrawingCanvas(
                 originalSize.width * s
             } else {
                 if (widthPx > heightPx) {
-                    kotlin.math.min(widthPx.toFloat(), heightPx.toFloat() * (600f / 800f))
+                    kotlin.math.min(widthPx.toFloat() * 0.95f, heightPx.toFloat() * (600f / 800f))
                 } else {
-                    widthPx.toFloat()
+                    (widthPx.toFloat() * 0.92f).coerceAtMost(widthPx.toFloat() - with(density) { 32.dp.toPx() })
                 }
             }
         }
@@ -1090,6 +1090,10 @@ fun DrawingCanvas(
                 }
         ) {
             Canvas(modifier = Modifier.fillMaxSize().graphicsLayer { clip = true }) {
+            // Draw desk surface background color for contrast
+            val deskBgColor = if (isDarkTheme) Color(0xFF0F172A) else Color(0xFFE2E8F0)
+            drawRect(color = deskBgColor)
+
             // Apply canvas panning and zooming transformations if infinite mode is active, hand scroll is enabled, or scrollable PDF is shown
             val isMultiPage = templateType == "pdf" || templateType == "docx" || pdfPageCount > 1
             val isNormalizedCoords = true

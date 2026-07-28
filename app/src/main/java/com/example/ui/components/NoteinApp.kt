@@ -141,28 +141,6 @@ fun NoteinApp(
         viewModel.isFullscreen = false
     }
 
-    LaunchedEffect(viewModel.isFullscreen) {
-        val window = (context as? android.app.Activity)?.window
-        if (window != null) {
-            val controller = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
-            if (viewModel.isFullscreen) {
-                // Strict full view mode: Hide status & navigation bars, require swipe to show transiently
-                controller.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
-                controller.systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-                window.addFlags(android.view.WindowManager.LayoutParams.FLAG_FULLSCREEN)
-                window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
-                    window.attributes.layoutInDisplayCutoutMode = android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
-                }
-            } else {
-                // Normal Mode: Restore system bars & standard layout
-                controller.show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
-                window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_FULLSCREEN)
-                window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-            }
-        }
-    }
-
     ModalNavigationDrawer(
         drawerState = drawerState,
         gesturesEnabled = !isTablet,
@@ -3548,10 +3526,9 @@ fun NoteEditorCanvas(
                 onOpenMenu = onOpenMenu,
                 viewModel = viewModel
             )
-        }
 
-        // TIER 2: Two-Tier horizontal toolbar
-        Column(
+            // TIER 2: Two-Tier horizontal toolbar (Full-faced top toolbar - shown only when not in full view mode)
+            Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(MaterialTheme.colorScheme.surface)
@@ -3985,6 +3962,21 @@ fun NoteEditorCanvas(
                             modifier = Modifier.size(18.dp)
                         )
                     }
+
+                    // Fullscreen Mode Toggle Button
+                    IconButton(
+                        onClick = { viewModel.isFullscreen = !viewModel.isFullscreen },
+                        modifier = Modifier
+                            .size(32.dp)
+                            .testTag("tier2_fullscreen_toggle_button")
+                    ) {
+                        Icon(
+                            imageVector = if (viewModel.isFullscreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
+                            contentDescription = "Toggle Immersive Full View Mode",
+                            tint = Color(0xFF00B0FF),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
                 }
             }
 
@@ -4338,6 +4330,7 @@ fun NoteEditorCanvas(
                     }
                 }
             }
+        }
 
         // Active workspace (Canvas + AI Sidebar overlay)
         Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
@@ -4622,17 +4615,35 @@ fun NoteEditorCanvas(
 
                 // Floating Pen Section & Fullscreen Exit Controls
                 if (viewModel.isFullscreen) {
-                    // Floating Pen Section Overlay (Top-Center)
+                    // Top Bar Floating Controls
                     Box(
                         modifier = Modifier
-                            .fillMaxSize()
-                            .padding(top = 16.dp, start = 64.dp, end = 64.dp),
-                        contentAlignment = Alignment.TopCenter
+                            .fillMaxWidth()
+                            .padding(16.dp)
                     ) {
+                        // Exit Fullscreen (Top-Left)
+                        IconButton(
+                            onClick = { viewModel.isFullscreen = false },
+                            modifier = Modifier
+                                .align(Alignment.TopStart)
+                                .size(40.dp)
+                                .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                                .testTag("fullscreen_exit_floating")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.FullscreenExit,
+                                contentDescription = "Exit Immersive Fullscreen",
+                                tint = Color.White,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+
+                        // Floating Pen Section Overlay (Top-Center)
                         androidx.compose.animation.AnimatedVisibility(
                             visible = showFloatingPenSection,
                             enter = fadeIn() + slideInVertically(initialOffsetY = { -it / 2 }),
-                            exit = fadeOut() + slideOutVertically(targetOffsetY = { -it / 2 })
+                            exit = fadeOut() + slideOutVertically(targetOffsetY = { -it / 2 }),
+                            modifier = Modifier.align(Alignment.TopCenter)
                         ) {
                             FloatingPenSection(
                                 viewModel = viewModel,
@@ -4644,48 +4655,21 @@ fun NoteEditorCanvas(
                                 onCustomizeShadeClick = { showColorPickerDialogIndex = it }
                             )
                         }
-                    }
 
-                    // Floating Toggle Pen Palette FAB Button (Top-Right)
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(16.dp),
-                        contentAlignment = Alignment.TopEnd
-                    ) {
+                        // Toggle Pen Palette FAB Button (Top-Right)
                         FloatingActionButton(
                             onClick = { showFloatingPenSection = !showFloatingPenSection },
                             containerColor = MaterialTheme.colorScheme.primaryContainer,
                             contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                             shape = CircleShape,
-                            modifier = Modifier.size(48.dp).testTag("floating_pen_section_toggle")
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .size(44.dp)
+                                .testTag("floating_pen_section_toggle")
                         ) {
                             Icon(
                                 imageVector = if (showFloatingPenSection) Icons.Default.Close else Icons.Default.Brush,
                                 contentDescription = "Toggle Immersive Pen Palette",
-                                modifier = Modifier.size(22.dp)
-                            )
-                        }
-                    }
-
-                    // Floating Exit Fullscreen Button (Top-Left)
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(16.dp),
-                        contentAlignment = Alignment.TopStart
-                    ) {
-                        IconButton(
-                            onClick = { viewModel.isFullscreen = false },
-                            modifier = Modifier
-                                .size(40.dp)
-                                .background(Color.Black.copy(alpha = 0.4f), CircleShape)
-                                .testTag("fullscreen_exit_floating")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.FullscreenExit,
-                                contentDescription = "Exit Immersive Fullscreen",
-                                tint = Color.White,
                                 modifier = Modifier.size(20.dp)
                             )
                         }
