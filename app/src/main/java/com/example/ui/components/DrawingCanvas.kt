@@ -4,6 +4,7 @@ import androidx.compose.animation.*
 import android.view.MotionEvent
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
@@ -153,6 +154,8 @@ fun DrawingCanvas(
 
     val coroutineScope = rememberCoroutineScope()
     var longPressJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    var downTouchX by remember { mutableStateOf(0f) }
+    var downTouchY by remember { mutableStateOf(0f) }
     var potentialImageIndex by remember { mutableStateOf<Int?>(null) }
     var pendingStrokeDownPoint by remember { mutableStateOf<com.example.data.Point?>(null) }
     var pendingStrokeTouchedPage by remember { mutableStateOf(1) }
@@ -538,8 +541,10 @@ fun DrawingCanvas(
                         var isResize = false
                         var touchedCorner: String? = null
 
-                        val worldX = (x - widthPx / 2f - offset.x) / scale + widthPx / 2f
-                        val worldY = (y - offset.y) / scale
+                        val pivotX = widthPx / 2f
+                        val pivotY = heightPx / 2f
+                        val worldX = (x - pivotX - offset.x) / scale + pivotX
+                        val worldY = (y - pivotY - offset.y) / scale + pivotY
 
                         for (i in images.indices.reversed()) {
                             val img = images[i]
@@ -650,16 +655,17 @@ fun DrawingCanvas(
 
                     // Active Lasso Shape Interaction (Move or Resize via 4 Corner Handles)
                     if (lassoSelectedStrokes.isNotEmpty() && lassoBoundingBox != null) {
+                        val lassoTargetPage = lassoSelectedStrokes.firstOrNull()?.page?.coerceIn(1, pdfPageCount) ?: pdfPage
                         val box = lassoBoundingBox!!
                         val cX = (box.left + box.right) / 2f
                         val cY = (box.top + box.bottom) / 2f
                         val halfW = ((box.right - box.left) / 2f) * lassoScaleX
                         val halfH = ((box.bottom - box.top) / 2f) * lassoScaleY
 
-                        val leftPx = fromNormalizedX(cX - halfW + lassoDragOffset.x, pdfPage)
-                        val rightPx = fromNormalizedX(cX + halfW + lassoDragOffset.x, pdfPage)
-                        val topPx = fromNormalizedY(cY - halfH + lassoDragOffset.y, pdfPage)
-                        val bottomPx = fromNormalizedY(cY + halfH + lassoDragOffset.y, pdfPage)
+                        val leftPx = fromNormalizedX(cX - halfW + lassoDragOffset.x, lassoTargetPage)
+                        val rightPx = fromNormalizedX(cX + halfW + lassoDragOffset.x, lassoTargetPage)
+                        val topPx = fromNormalizedY(cY - halfH + lassoDragOffset.y, lassoTargetPage)
+                        val bottomPx = fromNormalizedY(cY + halfH + lassoDragOffset.y, lassoTargetPage)
 
                         val touchPxX = x
                         val touchPxY = y
@@ -689,10 +695,10 @@ fun DrawingCanvas(
                             if (activeLassoInteraction == "move") {
                                 val dxPx = x - lastPoint.x
                                 val dyPx = y - lastPoint.y
-                                val pageW = getPageWidth(pdfPage)
-                                val pageH = getPageHeight(pdfPage)
+                                val pageW = getPageWidth(lassoTargetPage)
+                                val pageH = getPageHeight(lassoTargetPage)
                                 val normDx = (dxPx / scale / pageW) * 600f
-                                val normDy = (dyPx / scale / pageH) * getNormH(pdfPage)
+                                val normDy = (dyPx / scale / pageH) * getNormH(lassoTargetPage)
                                 onLassoDrag(Offset(normDx, normDy))
                                 lastLassoTouchPoint = Offset(x, y)
                             } else if (activeLassoInteraction == "resize") {
@@ -820,8 +826,9 @@ fun DrawingCanvas(
 
                     // Map screen coordinates back to canvas space using scale and centered pivot
                     val pivotX = widthPx / 2f
+                    val pivotY = heightPx / 2f
                     val mappedX = (x - pivotX - offset.x) / scale + pivotX
-                    val mappedY = (y - offset.y) / scale
+                    val mappedY = (y - pivotY - offset.y) / scale + pivotY
 
                     // Snap mapped touch coordinate to ruler edge if close
                     var snappedX = mappedX
@@ -989,9 +996,29 @@ fun DrawingCanvas(
                             val startX = toNormalizedX(snappedX, touchedPage).coerceIn(0f, 600f)
                             val startY = toNormalizedY(snappedY, touchedPage).coerceIn(0f, getNormH(touchedPage))
                             onStrokeStarted(Point(startX, startY, pressure))
+
+                            downTouchX = x
+                            downTouchY = y
+                            longPressJob?.cancel()
+                            longPressJob = coroutineScope.launch {
+                                delay(500) // 500ms long press threshold
+                                val targetShape = strokes.lastOrNull { s ->
+                                    s.page == touchedPage && !s.isHidden && run {
+                                        val bbox = SmartInkEngine.getBoundingBox(s)
+                                        val expandedBox = Rect(bbox.left - 25f, bbox.top - 25f, bbox.right + 25f, bbox.bottom + 25f)
+                                        expandedBox.contains(Offset(startX, startY))
+                                    }
+                                }
+                                if (targetShape != null) {
+                                    onShapeLongPressed(targetShape)
+                                }
+                            }
                             true
                         }
                         MotionEvent.ACTION_MOVE -> {
+                            if (kotlin.math.hypot(x - downTouchX, y - downTouchY) > 15f) {
+                                longPressJob?.cancel()
+                            }
                             if (isWritingStartedOnPage) {
                                 view.parent?.requestDisallowInterceptTouchEvent(true)
                                 val pointsList = mutableListOf<Point>()
@@ -1004,8 +1031,9 @@ fun DrawingCanvas(
                                         try { motionEvent.getHistoricalPressure(activePointerIndex, i) } catch (e: Exception) { motionEvent.getHistoricalPressure(i) }
                                     } else 1.0f
                                     val pivotX = widthPx / 2f
+                                    val pivotY = heightPx / 2f
                                     val mHx = (hx - pivotX - offset.x) / scale + pivotX
-                                    val mHy = (hy - offset.y) / scale
+                                    val mHy = (hy - pivotY - offset.y) / scale + pivotY
                                     
                                     var snappedHx = mHx
                                     var snappedHy = mHy
@@ -1047,6 +1075,7 @@ fun DrawingCanvas(
                             true
                         }
                         MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                            longPressJob?.cancel()
                             if (isWritingStartedOnPage) {
                                 onStrokeEnded()
                                 isWritingStartedOnPage = false
@@ -1063,13 +1092,14 @@ fun DrawingCanvas(
             val isNormalizedCoords = true
             withTransform({
                 translate(offset.x, offset.y)
-                scale(scale, scale, pivot = Offset(size.width / 2f, 0f))
+                scale(scale, scale, pivot = Offset(size.width / 2f, size.height / 2f))
             }) {
                 var pdfOffset = Offset.Zero
 
                 // Compute visible range in page Y coordinates for frustum culling
-                val visibleTop = (-offset.y / scale) - 200f
-                val visibleBottom = ((-offset.y + heightPx) / scale) + 200f
+                val pivotY = heightPx / 2f
+                val visibleTop = pivotY + (-offset.y - pivotY) / scale - 300f
+                val visibleBottom = pivotY + (heightPx - offset.y - pivotY) / scale + 300f
 
                 // 1. Draw Template/PDF Background with 3D Real Paper Depth
                 for (p in 1..pdfPageCount) {
@@ -1543,12 +1573,13 @@ fun DrawingCanvas(
         Canvas(modifier = Modifier.fillMaxSize().graphicsLayer { clip = true }) {
             val isMultiPage = templateType == "pdf" || templateType == "docx" || pdfPageCount > 1
             val isNormalizedCoords = true
-            val visibleTop = (-offset.y / scale) - 200f
-            val visibleBottom = ((-offset.y + heightPx) / scale) + 200f
+            val pivotY = heightPx / 2f
+            val visibleTop = pivotY + (-offset.y - pivotY) / scale - 300f
+            val visibleBottom = pivotY + (heightPx - offset.y - pivotY) / scale + 300f
 
             withTransform({
                 translate(offset.x, offset.y)
-                scale(scale, scale, pivot = Offset(size.width / 2f, 0f))
+                scale(scale, scale, pivot = Offset(size.width / 2f, size.height / 2f))
             }) {
                 val drawSingleStroke: (com.example.data.Stroke, Boolean, Float) -> Unit = { stroke, isLassoed, alphaMult ->
                     if (!stroke.isHidden) {
@@ -1740,15 +1771,16 @@ fun DrawingCanvas(
                 // 4. Draw Lasso Bounding Selector and Handles (if selection is active)
                 lassoBoundingBox?.let { box ->
                     val selectColor = Color(0xFF2196F3)
+                    val lassoTargetPage = lassoSelectedStrokes.firstOrNull()?.page?.coerceIn(1, pdfPageCount) ?: pdfPage
                     val cX = (box.left + box.right) / 2f
                     val cY = (box.top + box.bottom) / 2f
                     val halfW = ((box.right - box.left) / 2f) * lassoScaleX
                     val halfH = ((box.bottom - box.top) / 2f) * lassoScaleY
                     val movedBox = Rect(
-                        left = fromNormalizedX(cX - halfW + lassoDragOffset.x, pdfPage),
-                        top = fromNormalizedY(cY - halfH + lassoDragOffset.y, pdfPage),
-                        right = fromNormalizedX(cX + halfW + lassoDragOffset.x, pdfPage),
-                        bottom = fromNormalizedY(cY + halfH + lassoDragOffset.y, pdfPage)
+                        left = fromNormalizedX(cX - halfW + lassoDragOffset.x, lassoTargetPage),
+                        top = fromNormalizedY(cY - halfH + lassoDragOffset.y, lassoTargetPage),
+                        right = fromNormalizedX(cX + halfW + lassoDragOffset.x, lassoTargetPage),
+                        bottom = fromNormalizedY(cY + halfH + lassoDragOffset.y, lassoTargetPage)
                     )
 
                     // Soft selection fill
@@ -1919,6 +1951,28 @@ fun DrawingCanvas(
         }
         } // Close the Box with pointerInteropFilter
         
+        // Persistent Page Number Badge (Top-End) - ALWAYS visible while writing and scrolling
+        if (pdfPageCount > 1 || templateType == "pdf" || templateType == "docx") {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 16.dp, end = 16.dp)
+                    .background(
+                        color = Color(0xFF1E293B).copy(alpha = 0.88f),
+                        shape = CircleShape
+                    )
+                    .border(1.dp, Color(0xFF475569), CircleShape)
+                    .padding(horizontal = 14.dp, vertical = 6.dp)
+            ) {
+                Text(
+                    text = "Page $pdfPage of $pdfPageCount",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+            }
+        }
+
         // 6. Floating Zoom Controls Overlay (aligned at bottom-start of the drawing canvas)
             Box(
                 modifier = Modifier
