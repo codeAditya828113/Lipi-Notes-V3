@@ -118,7 +118,8 @@ fun DrawingCanvas(
     onImageLongPressed: (Int, com.example.data.ImageElement) -> Unit = {_,_->},
     onImageDeleted: (Int) -> Unit = {},
     onLassoDrag: (Offset) -> Unit = {},
-    onLassoScaleUpdated: (Float, Float) -> Unit = {_,_->}
+    onLassoScaleUpdated: (Float, Float) -> Unit = {_,_->},
+    onScrollStateChanged: (Boolean) -> Unit = {}
 ) {
     val context = LocalContext.current
     val view = LocalView.current
@@ -178,6 +179,10 @@ fun DrawingCanvas(
             delay(2000)
             showZoomIndicator = false
         }
+    }
+
+    LaunchedEffect(showZoomIndicator) {
+        onScrollStateChanged(showZoomIndicator)
     }
 
     // Stylus double-tap / gesture and Finger panning states
@@ -763,12 +768,13 @@ fun DrawingCanvas(
                                     for (p in 1..pdfPageCount) {
                                         totalCanvasHeight += getPageHeight(p)
                                     }
-                                    val maxScrollY = -((totalCanvasHeight * scale - heightPx + 200f).coerceAtLeast(0f))
+                                    val maxPositiveY = ((scale - 1f) * heightPx / 2f + 100f).coerceAtLeast(0f)
+                                    val minNegativeY = -(((totalCanvasHeight - heightPx / 2f) * scale - heightPx / 2f + 200f).coerceAtLeast(0f))
                                     val maxScrollX = ((scale - 1f) * widthPx / 2f + 100f).coerceAtLeast(0f)
                                     
                                     offset = Offset(
                                         rawOffset.x.coerceIn(-maxScrollX, maxScrollX),
-                                        rawOffset.y.coerceIn(maxScrollY, 0f)
+                                        rawOffset.y.coerceIn(minNegativeY, maxPositiveY)
                                     )
                                 }
                             }
@@ -856,12 +862,13 @@ fun DrawingCanvas(
                                     for (p in 1..pdfPageCount) {
                                         totalHeight += getPageHeight(p)
                                     }
-                                    val maxScrollY = -((totalHeight * scale - heightPx + 200f).coerceAtLeast(0f))
+                                    val maxPositiveY = ((scale - 1f) * heightPx / 2f + 100f).coerceAtLeast(0f)
+                                    val minNegativeY = -(((totalHeight - heightPx / 2f) * scale - heightPx / 2f + 200f).coerceAtLeast(0f))
                                     val maxScrollX = ((scale - 1f) * widthPx / 2f + 100f).coerceAtLeast(0f)
                                     
                                     offset = Offset(
                                         rawOffset.x.coerceIn(-maxScrollX, maxScrollX),
-                                        rawOffset.y.coerceIn(maxScrollY, 0f)
+                                        rawOffset.y.coerceIn(minNegativeY, maxPositiveY)
                                     )
                                     lastFingerDragPoint = Offset(x, y)
                                 }
@@ -888,14 +895,15 @@ fun DrawingCanvas(
                                                 for (p in 1..pdfPageCount) {
                                                     totalHeight += getPageHeight(p)
                                                 }
-                                                val maxScrollY = -((totalHeight * scale - heightPx + 200f).coerceAtLeast(0f))
+                                                val maxPositiveY = ((scale - 1f) * heightPx / 2f + 100f).coerceAtLeast(0f)
+                                                val minNegativeY = -(((totalHeight - heightPx / 2f) * scale - heightPx / 2f + 200f).coerceAtLeast(0f))
                                                 val maxScrollX = ((scale - 1f) * widthPx / 2f + 100f).coerceAtLeast(0f)
 
                                                 val nextX = (offset.x + curVx * dt).coerceIn(-maxScrollX, maxScrollX)
-                                                val nextY = (offset.y + curVy * dt).coerceIn(maxScrollY, 0f)
+                                                val nextY = (offset.y + curVy * dt).coerceIn(minNegativeY, maxPositiveY)
 
                                                 if (nextX == -maxScrollX || nextX == maxScrollX) curVx = 0f
-                                                if (nextY == maxScrollY || nextY == 0f) curVy = 0f
+                                                if (nextY == minNegativeY || nextY == maxPositiveY) curVy = 0f
 
                                                 offset = Offset(nextX, nextY)
                                                 curVx *= 0.91f
@@ -1001,7 +1009,6 @@ fun DrawingCanvas(
                                     } catch (e: Exception) {}
                                 } else if (targetImgIdx != null && targetImgElem != null) {
                                     selectedImageIndex = targetImgIdx
-                                    onImageLongPressed(targetImgIdx, targetImgElem)
                                     activeImageInteraction = "drag"
                                     lastFingerDragPoint = Offset(downTouchX, downTouchY)
                                     try {
@@ -1967,13 +1974,15 @@ fun DrawingCanvas(
             h
         }
 
-        val maxScrollYVal = (totalCanvasHeight * scale - heightPx).coerceAtLeast(0f)
-        if (maxScrollYVal > 10f) {
+        val maxPositiveYScroll = ((scale - 1f) * heightPx / 2f + 100f).coerceAtLeast(0f)
+        val minNegativeYScroll = -(((totalCanvasHeight - heightPx / 2f) * scale - heightPx / 2f + 200f).coerceAtLeast(0f))
+        val scrollRangeYVal = (maxPositiveYScroll - minNegativeYScroll).coerceAtLeast(1f)
+        if (scale > 1.01f || (totalCanvasHeight - heightPx) > 10f) {
             val trackHeightPx = (heightPx.toFloat() - with(density) { 80.dp.toPx() }).coerceAtLeast(100f)
-            val thumbHeightPx = (trackHeightPx * (heightPx.toFloat() / (totalCanvasHeight * scale)))
+            val thumbHeightPx = (trackHeightPx * (heightPx.toFloat() / ((totalCanvasHeight * scale).coerceAtLeast(heightPx.toFloat()))))
                 .coerceIn(with(density) { 48.dp.toPx() }, trackHeightPx * 0.4f)
             val maxThumbOffsetPx = (trackHeightPx - thumbHeightPx).coerceAtLeast(1f)
-            val currentProgress = (-offset.y / maxScrollYVal).coerceIn(0f, 1f)
+            val currentProgress = ((maxPositiveYScroll - offset.y) / scrollRangeYVal).coerceIn(0f, 1f)
             val thumbTopPx = currentProgress * maxThumbOffsetPx
 
             Box(
@@ -2018,7 +2027,7 @@ fun DrawingCanvas(
                                     color = if (isDraggingScrollbar) Color(0xFF3B82F6) else Color(0xFF94A3B8).copy(alpha = 0.85f),
                                     shape = CircleShape
                                 )
-                                .pointerInput(maxScrollYVal, maxThumbOffsetPx) {
+                                .pointerInput(scrollRangeYVal, maxThumbOffsetPx) {
                                     detectVerticalDragGestures(
                                         onDragStart = { isDraggingScrollbar = true },
                                         onDragEnd = { isDraggingScrollbar = false },
@@ -2027,7 +2036,7 @@ fun DrawingCanvas(
                                             change.consume()
                                             showZoomIndicator = true
                                             val newProgress = ((thumbTopPx + dragAmount) / maxThumbOffsetPx).coerceIn(0f, 1f)
-                                            val targetY = -newProgress * maxScrollYVal
+                                            val targetY = maxPositiveYScroll - newProgress * scrollRangeYVal
                                             val maxScrollX = ((scale - 1f) * widthPx / 2f + 100f).coerceAtLeast(0f)
                                             offset = Offset(offset.x.coerceIn(-maxScrollX, maxScrollX), targetY)
                                         }

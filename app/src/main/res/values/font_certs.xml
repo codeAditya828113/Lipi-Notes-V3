@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <array name="com_google_android_gms_fonts_certs">
+        <item>@array/com_google_android_gms_fonts_certs_dev</item>
+        <item>@array/com_google_android_gms_fonts_certs_prod</item>
+    </array>
+    <string-array name="com_google_android_gms_fonts_certs_dev">
+        <item>
+            +EQvBAjG+OvuXFvG3D0JgqgqL5FpG2G4+5cW8bcPQmCqCovkWkbYbj7lxba774uR
+            R8l19/yHn/Xg/bJ5J/E0v2G1l4wX4uR9Yw7i9d2Hj+Y+g/5P3H0Vw7vHw/w+Qf5H+w8v3
+            D8H1B1l/9P3H8P/x7/1//j1w/w9A/y/b/2L3H+X/0B5f7y4Lz1V7x5/E8Q5L6Xz7P/v
+            2H5cW8bcPQmCqCovkWkbYbj7lxba774uRR8l19/yHn/Xg/bJ5J/E0v2G1l4wX4uR9Yw
+            7i9d2Hj+Y+g/5P3H0Vw7vHw/w+Qf5H+w8v3D8H1B1l/9P3H8P/x7/1//j1w/w9A/y/
+            b/2L3H+X/0B5f7y4Lz1V7x5/E8Q5L6Xz7P/v2H5cW8bcPQmCqCovkWkbYbj7lxba77
+            4uRR8l19/yHn/Xg/bJ5J/E0v2G1l4wX4uR9Yw7i9d2Hj+Y+g/5P3H0Vw7vHw/w+Qf5H
+            +w8v3D8H1B1l/9P3H8P/x7/1//j1w/w9A/y/b/2L3H+X/0B5f7y4Lz1V7x5/E8Q5L6
+            Xz7P/v2H5cW8bcPQmCqCovkWkbYbj7lxba774uRR8l19/yHn/Xg/bJ5J/E0v2G1l4w
+            X4uR9Yw7i9d2Hj+Y+g/5P3H0Vw7vHw/w+Qf5H+w8v3D8H1B1l/9P3H8P/x7/1//j1w
+            /w9A/y/b/2L3H+X/0B5f7y4Lz1V7x5/E8Q5L6Xz7P/v
+        </item>
+    </string-array>
+    <string-array name="com_google_android_gms_fonts_certs_prod">
+        <item>
+            +EQvBAjG+OvuXFvG3D0JgqgqL5FpG2G4+5cW8bcPQmCqCovkWkbYbj7lxba774uR
+            R8l19/yHn/Xg/bJ5J/E0v2G1l4wX4uR9Yw7i9d2Hj+Y+g/5P3H0Vw7vHw/w+Qf5H+w8v3
+            D8H1B1l/9P3H8P/x7/1//j1w/w9A/y/b/2L3H+X/0B5f7y4Lz1V7x5/E8Q5L6Xz7P/v
+            2H5cW8bcPQmCqCovkWkbYbj7lxba774uRR8l19/yHn/Xg/bJ5J/E0v2G1l4wX4uR9Yw
+            7i9d2Hj+Y+g/5P3H0Vw7vHw/w+Qf5H+w8v3D8H1B1l/9P3H8P/x7/1//j1w/w9A/y/
+            b/2L3H+X/0B5f7y4Lz1V7x5/E8Q5L6Xz7P/v2H5cW8bcPQmCqCovkWkbYbj7lxba77
+            4uRR8l19/yHn/Xg/bJ5J/E0v2G1l4wX4uR9Yw7i9d2Hj+Y+g/5P3H0Vw7vHw/w+Qf5H
+            +w8v3D8H1B1l/9P3H8P/x7/1//j1w/w9A/y/b/2L3H+X/0B5f7y4Lz1V7x5/E8Q5L6
+            Xz7P/v2H5cW8bcPQmCqCovkWkbYbj7lxba774uRR8l19/yHn/Xg/bJ5J/E0v2G1l4w
+            X4uR9Yw7i9d2Hj+Y+g/5P3H0Vw7vHw/w+Qf5H+w8v3D8H1B1l/9P3H8P/x7/1//j1w
+            /w9A/y/b/2L3H+X/0B5f7y4Lz1V7x5/E8Q5L6Xz7P/v
+        </item>
+    </string-array>
+</resources>

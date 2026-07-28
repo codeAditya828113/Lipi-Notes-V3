@@ -94,9 +94,9 @@ fun ResponsiveSidebar(
                     )
                     Text(
                         text = "by Aditya Kumar",
-                        fontSize = 10.sp,
-                        color = MaterialTheme.colorScheme.outline,
-                        fontWeight = FontWeight.Medium
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = FontWeight.SemiBold
                     )
                 }
             }
@@ -301,9 +301,9 @@ fun ResponsiveSidebar(
                             // Quick AI Filters
                             Text(
                                 text = "QUICK SMART INDEXES",
-                                fontSize = 9.sp,
+                                fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.outline,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(start = 2.dp, bottom = 4.dp)
                             )
 
@@ -379,7 +379,7 @@ fun ResponsiveSidebar(
                 text = "FOLDERS & LABELS",
                 fontSize = 10.sp,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.outline,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
             )
 
@@ -453,7 +453,7 @@ fun ResponsiveSidebar(
                         text = "INTEGRATIONS",
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.outline,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(start = 4.dp, bottom = 6.dp)
                     )
                 }
@@ -542,7 +542,7 @@ fun ResponsiveSidebar(
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text("Smart Shapes", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                    Text("Snap sketches to polygons", fontSize = 9.sp, color = MaterialTheme.colorScheme.outline)
+                                    Text("Snap sketches to polygons", fontSize = 10.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                                 Switch(
                                     checked = viewModel.smartShapesEnabled,
@@ -561,7 +561,7 @@ fun ResponsiveSidebar(
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text("Infinite Canvas", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                    Text("Unlimited draw workspace", fontSize = 9.sp, color = MaterialTheme.colorScheme.outline)
+                                    Text("Unlimited draw workspace", fontSize = 10.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                                 Switch(
                                     checked = viewModel.canvasMode == "infinite",
@@ -657,7 +657,7 @@ fun ResponsiveSidebar(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text("Pen Color", fontSize = 10.sp, color = MaterialTheme.colorScheme.outline)
+                                Text("Pen Color", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Box(
                                     modifier = Modifier
                                         .size(12.dp)
@@ -670,7 +670,7 @@ fun ResponsiveSidebar(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
                             ) {
-                                Text("Pen Thickness", fontSize = 10.sp, color = MaterialTheme.colorScheme.outline)
+                                Text("Pen Thickness", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Text("${viewModel.activeWidth.toInt()} px", fontSize = 10.sp, fontWeight = FontWeight.Bold)
                             }
 
@@ -698,7 +698,7 @@ fun ResponsiveSidebar(
                             Text(
                                 text = "Installed: v${com.example.BuildConfig.VERSION_NAME} (Build ${com.example.BuildConfig.VERSION_CODE})",
                                 fontSize = 9.sp,
-                                color = MaterialTheme.colorScheme.outline
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
 
                             Spacer(modifier = Modifier.height(6.dp))
@@ -739,7 +739,7 @@ fun ResponsiveSidebar(
                                 Text(
                                     text = "Supports JSON manifests or direct APK download links.",
                                     fontSize = 8.sp,
-                                    color = MaterialTheme.colorScheme.outline
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
 
