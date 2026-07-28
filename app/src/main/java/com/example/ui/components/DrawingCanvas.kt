@@ -566,16 +566,18 @@ fun DrawingCanvas(
                         }
 
                         if (touchedImageIndex != null) {
-                            selectedImageIndex = touchedImageIndex
-                            if (isResize) {
-                                activeImageInteraction = "resize"
-                                activeImageCorner = touchedCorner
-                                lastFingerDragPoint = Offset(x, y)
-                                return@pointerInteropFilter true
-                            } else {
-                                activeImageInteraction = "drag"
-                                activeImageCorner = null
-                                lastFingerDragPoint = Offset(x, y)
+                            if (selectedImageIndex == touchedImageIndex) {
+                                if (isResize) {
+                                    activeImageInteraction = "resize"
+                                    activeImageCorner = touchedCorner
+                                    lastFingerDragPoint = Offset(x, y)
+                                    return@pointerInteropFilter true
+                                } else {
+                                    activeImageInteraction = "drag"
+                                    activeImageCorner = null
+                                    lastFingerDragPoint = Offset(x, y)
+                                    return@pointerInteropFilter true
+                                }
                             }
                         } else if (lassoSelectedStrokes.isEmpty()) {
                             selectedImageIndex = null
