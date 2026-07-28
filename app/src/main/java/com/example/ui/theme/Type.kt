@@ -84,17 +84,17 @@ val Typography = Typography(
     ),
     bodyMedium = TextStyle(
         fontFamily = FontFamily.SansSerif,
-        fontWeight = FontWeight.Normal,
+        fontWeight = FontWeight.Medium,
         fontSize = 14.sp,
         lineHeight = 20.sp,
         letterSpacing = 0.25.sp
     ),
     bodySmall = TextStyle(
         fontFamily = FontFamily.SansSerif,
-        fontWeight = FontWeight.Light,
+        fontWeight = FontWeight.Medium,
         fontSize = 12.sp,
         lineHeight = 16.sp,
-        letterSpacing = 0.4.sp
+        letterSpacing = 0.3.sp
     ),
     // Label styles for buttons, badges, microcopy, and metadata
     labelLarge = TextStyle(

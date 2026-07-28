@@ -64,6 +64,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
@@ -758,24 +759,40 @@ fun DrawingCanvas(
                                     val currentSpacing = kotlin.math.hypot(x0 - x1, y0 - y1)
                                     val currentPivot = Offset((x0 + x1) / 2f, (y0 + y1) / 2f)
                                     
+                                    val viewportCenterY = heightPx / 2f
+                                    val viewportCenterX = widthPx / 2f
+
                                     if (initialSpacing > 0f && !isZoomLocked) {
-                                        scale = ((currentSpacing / initialSpacing) * initialScale).coerceIn(0.5f, 3.5f)
+                                        val newScale = ((currentSpacing / initialSpacing) * initialScale).coerceIn(0.5f, 3.5f)
+                                        val scaleRatio = if (initialScale > 0f) newScale / initialScale else 1f
+
+                                        // Vertical focal point zoom math
+                                        val rawOffsetY = currentPivot.y - viewportCenterY + (initialOffset.y + viewportCenterY - initialPivot.y) * scaleRatio
+
+                                        // Horizontal fixed-center zoom math:
+                                        // Keep page centered horizontally so left and right margins zoom in/out symmetrically
+                                        val rawOffsetX = if (newScale <= 1.05f) {
+                                            0f
+                                        } else {
+                                            // Allow slight horizontal shift relative to center if pinching off-center when zoomed in
+                                            (currentPivot.x - viewportCenterX) * 0.3f + initialOffset.x * scaleRatio
+                                        }
+
+                                        scale = newScale
+
+                                        var totalCanvasHeight = 0f
+                                        for (p in 1..pdfPageCount) {
+                                            totalCanvasHeight += getPageHeight(p)
+                                        }
+                                        val maxPositiveY = ((scale - 1f) * heightPx / 2f + 150f).coerceAtLeast(0f)
+                                        val minNegativeY = -(((totalCanvasHeight - heightPx / 2f) * scale - heightPx / 2f + 250f).coerceAtLeast(0f))
+                                        val maxScrollX = if (scale > 1.05f) ((scale - 1f) * widthPx / 2f).coerceAtLeast(0f) else 0f
+                                        
+                                        offset = Offset(
+                                            rawOffsetX.coerceIn(-maxScrollX, maxScrollX),
+                                            rawOffsetY.coerceIn(minNegativeY, maxPositiveY)
+                                        )
                                     }
-                                    
-                                    val rawOffset = initialOffset + (currentPivot - initialPivot)
-                                    
-                                    var totalCanvasHeight = 0f
-                                    for (p in 1..pdfPageCount) {
-                                        totalCanvasHeight += getPageHeight(p)
-                                    }
-                                    val maxPositiveY = ((scale - 1f) * heightPx / 2f + 100f).coerceAtLeast(0f)
-                                    val minNegativeY = -(((totalCanvasHeight - heightPx / 2f) * scale - heightPx / 2f + 200f).coerceAtLeast(0f))
-                                    val maxScrollX = ((scale - 1f) * widthPx / 2f + 100f).coerceAtLeast(0f)
-                                    
-                                    offset = Offset(
-                                        rawOffset.x.coerceIn(-maxScrollX, maxScrollX),
-                                        rawOffset.y.coerceIn(minNegativeY, maxPositiveY)
-                                    )
                                 }
                             }
                             MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
@@ -2048,112 +2065,173 @@ fun DrawingCanvas(
             }
         }
 
-        // Floating Zoom Controls & Lock State Overlay (Bottom-Start)
+        // Floating Zoom Percentage Pill & Controls Overlay (Center-Right / Middle-Right)
         Box(
             modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(start = 16.dp, bottom = 16.dp)
+                .align(Alignment.CenterEnd)
+                .padding(end = 16.dp)
         ) {
             if (isZoomLocked) {
-                // When locked: ONLY show a small lock icon in the corner
+                // When locked: show lock status pill
                 Surface(
                     onClick = { isZoomLocked = false },
                     shape = CircleShape,
-                    color = Color(0xFF1E293B).copy(alpha = 0.9f),
-                    shadowElevation = 6.dp,
+                    color = Color(0xFF0F172A).copy(alpha = 0.92f),
+                    shadowElevation = 8.dp,
                     border = BorderStroke(1.dp, Color(0xFF3B82F6)),
-                    modifier = Modifier.size(38.dp)
+                    modifier = Modifier.padding(vertical = 4.dp)
                 ) {
-                    Box(contentAlignment = Alignment.Center) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
                         Icon(
                             imageVector = Icons.Default.Lock,
-                            contentDescription = "Unlock Page",
+                            contentDescription = "Unlock Canvas Scale",
                             tint = Color(0xFF3B82F6),
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = "${(scale * 100).toInt()}%",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
                         )
                     }
                 }
             } else {
-                // When unlocked: Zoom controls appear ONLY when scrolling/zooming and disappear after 2s inactivity
+                // When unlocked: Floating zoom percentage pill appears during zoom/scroll or when hovered/tapped
                 AnimatedVisibility(
                     visible = showZoomIndicator,
-                    enter = fadeIn() + slideInVertically(initialOffsetY = { it / 2 }),
-                    exit = fadeOut() + slideOutVertically(targetOffsetY = { it / 2 })
+                    enter = fadeIn() + slideInHorizontally(initialOffsetX = { it / 2 }),
+                    exit = fadeOut() + slideOutHorizontally(targetOffsetX = { it / 2 })
                 ) {
+                    var showPresetsMenu by remember { mutableStateOf(false) }
+
                     Card(
                         shape = CircleShape,
                         colors = CardDefaults.cardColors(
-                            containerColor = Color(0xFF1E293B).copy(alpha = 0.9f),
+                            containerColor = Color(0xFF0F172A).copy(alpha = 0.92f),
                             contentColor = Color.White
                         ),
                         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-                        border = BorderStroke(1.dp, Color(0xFF475569))
+                        border = BorderStroke(1.dp, Color(0xFF334155))
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             IconButton(
                                 onClick = {
                                     scale = (scale - 0.15f).coerceIn(0.5f, 3.5f)
                                     showZoomIndicator = true
                                 },
-                                modifier = Modifier.size(32.dp)
+                                modifier = Modifier.size(28.dp)
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Remove,
                                     contentDescription = "Zoom Out",
                                     tint = Color.White,
-                                    modifier = Modifier.size(18.dp)
+                                    modifier = Modifier.size(16.dp)
                                 )
                             }
 
-                            Text(
-                                text = "${(scale * 100).toInt()}%",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White,
-                                modifier = Modifier
-                                    .clickable {
-                                        scale = 1f
-                                        offset = Offset.Zero
+                            // Zoom percentage text pill
+                            Box {
+                                Surface(
+                                    onClick = {
+                                        if (scale != 1f) {
+                                            scale = 1f
+                                            offset = Offset(0f, offset.y)
+                                        } else {
+                                            showPresetsMenu = !showPresetsMenu
+                                        }
                                         showZoomIndicator = true
+                                    },
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = Color(0xFF1E293B),
+                                    modifier = Modifier.padding(horizontal = 2.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Text(
+                                            text = "${(scale * 100).toInt()}%",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White
+                                        )
+                                        Icon(
+                                            imageVector = Icons.Default.ArrowDropDown,
+                                            contentDescription = "Zoom Presets",
+                                            tint = Color(0xFF94A3B8),
+                                            modifier = Modifier.size(14.dp)
+                                        )
                                     }
-                                    .padding(horizontal = 4.dp)
-                            )
+                                }
+
+                                DropdownMenu(
+                                    expanded = showPresetsMenu,
+                                    onDismissRequest = { showPresetsMenu = false },
+                                    modifier = Modifier.background(Color(0xFF1E293B))
+                                ) {
+                                    val presets = listOf(0.5f, 0.8f, 1.0f, 1.25f, 1.5f, 2.0f, 3.0f)
+                                    presets.forEach { preset ->
+                                        DropdownMenuItem(
+                                            text = {
+                                                Text(
+                                                    text = "${(preset * 100).toInt()}%" + if (preset == 1.0f) " (Default)" else "",
+                                                    color = if (kotlin.math.abs(scale - preset) < 0.05f) Color(0xFF3B82F6) else Color.White,
+                                                    fontWeight = if (kotlin.math.abs(scale - preset) < 0.05f) FontWeight.Bold else FontWeight.Normal,
+                                                    fontSize = 13.sp
+                                                )
+                                            },
+                                            onClick = {
+                                                scale = preset
+                                                if (preset == 1.0f) offset = Offset(0f, offset.y)
+                                                showPresetsMenu = false
+                                                showZoomIndicator = true
+                                            }
+                                        )
+                                    }
+                                }
+                            }
 
                             IconButton(
                                 onClick = {
                                     scale = (scale + 0.15f).coerceIn(0.5f, 3.5f)
                                     showZoomIndicator = true
                                 },
-                                modifier = Modifier.size(32.dp)
+                                modifier = Modifier.size(28.dp)
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Add,
                                     contentDescription = "Zoom In",
                                     tint = Color.White,
-                                    modifier = Modifier.size(18.dp)
+                                    modifier = Modifier.size(16.dp)
                                 )
                             }
 
                             Box(
                                 modifier = Modifier
                                     .width(1.dp)
-                                    .height(18.dp)
-                                    .background(Color(0xFF475569))
+                                    .height(16.dp)
+                                    .background(Color(0xFF334155))
                             )
 
                             IconButton(
                                 onClick = { isZoomLocked = true },
-                                modifier = Modifier.size(32.dp)
+                                modifier = Modifier.size(28.dp)
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.LockOpen,
-                                    contentDescription = "Lock Page",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(18.dp)
+                                    contentDescription = "Lock Canvas Zoom",
+                                    tint = Color(0xFF94A3B8),
+                                    modifier = Modifier.size(16.dp)
                                 )
                             }
                         }

@@ -2,22 +2,22 @@ package com.example.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// Minimal Modern Palette (Clean, monochrome with subtle accents)
-val BluePrimary = Color(0xFF111111) // Almost black for primary actions
-val BluePrimaryContainer = Color(0xFFF0F0F0)
-val BlueOnPrimaryContainer = Color(0xFF111111)
+// Minimal High-Contrast Palette for Sunlight Legibility
+val BluePrimary = Color(0xFF0F172A) // Rich deep slate black for primary actions
+val BluePrimaryContainer = Color(0xFFE2E8F0)
+val BlueOnPrimaryContainer = Color(0xFF0F172A)
 
-val SlateSecondary = Color(0xFF666666)
-val SlateSecondaryContainer = Color(0xFFF9F9F9)
+val SlateSecondary = Color(0xFF334155) // High-contrast dark slate for secondary labels and subtitles
+val SlateSecondaryContainer = Color(0xFFE2E8F0)
 
-// Light Theme Elements (Clean, crisp background with soft off-white canvas)
-val MinimalBackground = Color(0xFFFFFFFF)
+// Light Theme Elements (Clean, anti-glare soft background with crisp slate typography)
+val MinimalBackground = Color(0xFFF8FAFC)
 val MinimalSurface = Color(0xFFFFFFFF)
-val MinimalSurfaceVariant = Color(0xFFF5F5F5)
-val MinimalOnSurface = Color(0xFF111111)
+val MinimalSurfaceVariant = Color(0xFFF1F5F9)
+val MinimalOnSurface = Color(0xFF0F172A)
 
-val OutlineGrey = Color(0xFFE5E5E5)
-val OutlineVariantLight = Color(0xFFF0F0F0)
+val OutlineGrey = Color(0xFFCBD5E1)
+val OutlineVariantLight = Color(0xFFE2E8F0)
 
 // Dark/Slate Theme Elements (Deep dark slate)
 val AIInsightDarkNavy = Color(0xFF000000)

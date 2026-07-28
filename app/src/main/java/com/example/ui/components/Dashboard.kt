@@ -105,8 +105,9 @@ fun NovaDashboard(
                         )
                         Text(
                             text = "by Aditya Kumar",
-                            fontSize = 14.sp,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         val context = androidx.compose.ui.platform.LocalContext.current
                         val isSignedIn = GoogleDriveBackupHelper.isSignedIn(context)
@@ -523,8 +524,8 @@ fun StatCard(
                 Text(
                     text = subtitle,
                     fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
-                    fontWeight = FontWeight.Medium
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontWeight = FontWeight.SemiBold
                 )
             }
 

@@ -59,8 +59,8 @@ private val LightColorScheme = lightColorScheme(
 @Composable
 fun MyApplicationTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    // Allow dynamic color support by default to support wallpaper extraction
-    dynamicColor: Boolean = true,
+    // Keep dynamicColor false by default to ensure custom high-contrast palette is preserved in sunlight
+    dynamicColor: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val colorScheme = when {

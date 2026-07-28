@@ -58,6 +58,8 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke as DrawStroke
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.platform.LocalConfiguration
@@ -1915,14 +1917,45 @@ fun RealisticPenItem(
     onClick: () -> Unit,
     onDoubleTap: (() -> Unit)? = null
 ) {
+    val animatedBorderWidth by androidx.compose.animation.core.animateDpAsState(
+        targetValue = if (isSelected) 1.5.dp else 0.dp,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "realistic_pen_border_width"
+    )
+    val animatedBgColor by androidx.compose.animation.animateColorAsState(
+        targetValue = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f) else Color.Transparent,
+        animationSpec = tween(durationMillis = 200),
+        label = "realistic_pen_bg_color"
+    )
+    val animatedBorderColor by androidx.compose.animation.animateColorAsState(
+        targetValue = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
+        animationSpec = tween(durationMillis = 200),
+        label = "realistic_pen_border_color"
+    )
+
+    val haptic = LocalHapticFeedback.current
+    val itemShape = RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp, bottomStart = 8.dp, bottomEnd = 8.dp)
+
     Box(
         modifier = Modifier
-            .width(28.dp)
-            .height(38.dp)
-            .clip(RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp, bottomStart = 8.dp, bottomEnd = 8.dp))
-            .background(if (isSelected) Color(0xFFE2E8F0) else Color.Transparent)
-            .pointerInput(Unit) { detectTapGestures(onTap = { onClick() }, onDoubleTap = { onDoubleTap?.invoke() }) }
-            .padding(top = 1.dp, bottom = 2.dp),
+            .width(30.dp)
+            .height(40.dp)
+            .clip(itemShape)
+            .background(animatedBgColor)
+            .border(width = animatedBorderWidth, color = animatedBorderColor, shape = itemShape)
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onTap = {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onClick()
+                    },
+                    onDoubleTap = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onDoubleTap?.invoke()
+                    }
+                )
+            }
+            .padding(top = 2.dp, bottom = 3.dp),
         contentAlignment = Alignment.TopCenter
     ) {
         Canvas(modifier = Modifier.width(18.dp).fillMaxHeight()) {
@@ -2207,6 +2240,17 @@ fun RealisticPenItem(
                     )
                 }
             }
+        }
+        if (isSelected) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 1.dp)
+                    .width(12.dp)
+                    .height(2.5.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary)
+            )
         }
     }
 }
@@ -3958,7 +4002,7 @@ fun NoteEditorCanvas(
                         text = "Tool Palette:",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color(0xFF64748B)
+                        color = Color(0xFF334155)
                     )
 
                     // Row of active tool's 4 primary colors
@@ -4065,8 +4109,8 @@ fun NoteEditorCanvas(
                             Text(
                                 text = label,
                                 fontSize = 10.sp,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                color = if (isSelected) Color(0xFF3B82F6) else Color(0xFF64748B)
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
+                                color = if (isSelected) Color(0xFF2563EB) else Color(0xFF334155)
                             )
                         }
                     }
@@ -4079,7 +4123,7 @@ fun NoteEditorCanvas(
                         Icon(
                             imageVector = Icons.Default.Tune,
                             contentDescription = "Customize Brush Thickness",
-                            tint = Color(0xFF3B82F6),
+                            tint = Color(0xFF2563EB),
                             modifier = Modifier.size(20.dp)
                         )
                     }
@@ -4106,7 +4150,7 @@ fun NoteEditorCanvas(
                     Icon(
                         imageVector = if (viewModel.timerIsRunning) Icons.Default.HourglassTop else Icons.Default.HourglassEmpty,
                         contentDescription = "Focus Timer",
-                        tint = if (viewModel.timerIsRunning) MaterialTheme.colorScheme.primary else Color(0xFF64748B),
+                        tint = if (viewModel.timerIsRunning) MaterialTheme.colorScheme.primary else Color(0xFF334155),
                         modifier = Modifier.size(16.dp)
                     )
 
@@ -4145,7 +4189,7 @@ fun NoteEditorCanvas(
                         Icon(
                             imageVector = Icons.Default.Replay,
                             contentDescription = "Reset Timer",
-                            tint = Color(0xFF64748B),
+                            tint = Color(0xFF334155),
                             modifier = Modifier.size(16.dp)
                         )
                     }
@@ -4548,8 +4592,29 @@ fun NoteEditorCanvas(
                     ) {
                         androidx.compose.animation.AnimatedVisibility(
                             visible = showFloatingPenSection,
-                            enter = fadeIn() + slideInVertically(initialOffsetY = { -it / 2 }),
-                            exit = fadeOut() + slideOutVertically(targetOffsetY = { -it / 2 })
+                            enter = fadeIn(animationSpec = tween(280)) + 
+                                    slideInVertically(
+                                        initialOffsetY = { -it / 2 }, 
+                                        animationSpec = spring(
+                                            stiffness = Spring.StiffnessMediumLow, 
+                                            dampingRatio = Spring.DampingRatioMediumBouncy
+                                        )
+                                    ) + 
+                                    scaleIn(
+                                        initialScale = 0.82f, 
+                                        transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 0f), 
+                                        animationSpec = spring(
+                                            stiffness = Spring.StiffnessMediumLow, 
+                                            dampingRatio = Spring.DampingRatioMediumBouncy
+                                        )
+                                    ),
+                            exit = fadeOut(animationSpec = tween(200)) + 
+                                   slideOutVertically(targetOffsetY = { -it / 2 }) + 
+                                   scaleOut(
+                                       targetScale = 0.85f, 
+                                       transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 0f), 
+                                       animationSpec = tween(200)
+                                   )
                         ) {
                             FloatingPenSection(
                                 viewModel = viewModel,
@@ -6220,6 +6285,31 @@ fun FloatingPenSection(
     onCustomizeShadeClick: (Int) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    var offsetX by remember { mutableStateOf(0f) }
+    var offsetY by remember { mutableStateOf(0f) }
+    val haptic = LocalHapticFeedback.current
+
+    var isScaleEntered by remember { mutableStateOf(false) }
+    val scaleAnim by animateFloatAsState(
+        targetValue = if (isScaleEntered) 1f else 0.82f,
+        animationSpec = spring(
+            stiffness = Spring.StiffnessMediumLow,
+            dampingRatio = Spring.DampingRatioMediumBouncy
+        ),
+        label = "floating_pen_section_scale"
+    )
+    val alphaAnim by animateFloatAsState(
+        targetValue = if (isScaleEntered) 1f else 0f,
+        animationSpec = tween(durationMillis = 280, easing = FastOutSlowInEasing),
+        label = "floating_pen_section_alpha"
+    )
+
+    LaunchedEffect(viewModel.selectedNote?.id) {
+        isScaleEntered = false
+        kotlinx.coroutines.delay(20)
+        isScaleEntered = true
+    }
+
     val isDarkTheme = when (viewModel.themeMode) {
         "dark" -> true
         "light" -> false
@@ -6230,6 +6320,13 @@ fun FloatingPenSection(
     
     Card(
         modifier = modifier
+            .offset { androidx.compose.ui.unit.IntOffset(offsetX.toInt(), offsetY.toInt()) }
+            .graphicsLayer {
+                scaleX = scaleAnim
+                scaleY = scaleAnim
+                alpha = alphaAnim
+                transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 0f)
+            }
             .padding(horizontal = 16.dp, vertical = 8.dp)
             .wrapContentWidth()
             .height(56.dp),
@@ -6241,35 +6338,87 @@ fun FloatingPenSection(
         Row(
             modifier = Modifier
                 .fillMaxHeight()
-                .padding(horizontal = 16.dp, vertical = 4.dp)
-                .horizontalScroll(rememberScrollState()),
+                .padding(horizontal = 12.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            // Drag Grip Handle (Double-tap to reset position)
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .padding(vertical = 4.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(if (isDarkTheme) Color(0xFF334155).copy(alpha = 0.6f) else Color(0xFFF1F5F9))
+                    .pointerInput(Unit) {
+                        detectTapGestures(
+                            onDoubleTap = {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                offsetX = 0f
+                                offsetY = 0f
+                            }
+                        )
+                    }
+                    .pointerInput(Unit) {
+                        detectDragGestures(
+                            onDragStart = {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            },
+                            onDrag = { change, dragAmount ->
+                                change.consume()
+                                offsetX += dragAmount.x
+                                offsetY += dragAmount.y
+                            }
+                        )
+                    }
+                    .padding(horizontal = 8.dp)
+                    .testTag("floating_pen_drag_handle"),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.DragHandle,
+                    contentDescription = "Drag to reposition palette (Double tap to reset)",
+                    tint = if (isDarkTheme) Color(0xFF94A3B8) else Color(0xFF1E293B),
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .horizontalScroll(rememberScrollState()),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
             // Undo & Redo
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 IconButton(
-                    onClick = { viewModel.undo() },
+                    onClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        viewModel.undo()
+                    },
                     modifier = Modifier.size(36.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Undo,
                         contentDescription = "Undo",
-                        tint = if (isDarkTheme) Color(0xFF94A3B8) else Color(0xFF475569),
+                        tint = if (isDarkTheme) Color(0xFF94A3B8) else Color(0xFF1E293B),
                         modifier = Modifier.size(18.dp)
                     )
                 }
                 IconButton(
-                    onClick = { viewModel.redo() },
+                    onClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        viewModel.redo()
+                    },
                     modifier = Modifier.size(36.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Redo,
                         contentDescription = "Redo",
-                        tint = if (isDarkTheme) Color(0xFF94A3B8) else Color(0xFF475569),
+                        tint = if (isDarkTheme) Color(0xFF94A3B8) else Color(0xFF1E293B),
                         modifier = Modifier.size(18.dp)
                     )
                 }
@@ -6308,21 +6457,47 @@ fun FloatingPenSection(
                 }
 
                 // Dedicated Shape Drawer Button in Pen Palette
-                IconButton(
-                    onClick = {
-                        viewModel.activeToolType = "shapes"
-                        onToolDoubleTap("shapes")
-                    },
+                val isShapeToolActive = viewModel.activeToolType == "shapes"
+                val shapeDrawerBg by androidx.compose.animation.animateColorAsState(
+                    targetValue = if (isShapeToolActive) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f) else Color.Transparent,
+                    animationSpec = tween(durationMillis = 200),
+                    label = "shape_drawer_bg"
+                )
+                val shapeDrawerBorderColor by androidx.compose.animation.animateColorAsState(
+                    targetValue = if (isShapeToolActive) MaterialTheme.colorScheme.primary else Color.Transparent,
+                    animationSpec = tween(durationMillis = 200),
+                    label = "shape_drawer_border"
+                )
+
+                Box(
                     modifier = Modifier
                         .size(36.dp)
-                        .testTag("floating_pen_section_shape_drawer")
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(shapeDrawerBg)
+                        .border(
+                            width = if (isShapeToolActive) 1.5.dp else 0.dp,
+                            color = shapeDrawerBorderColor,
+                            shape = RoundedCornerShape(8.dp)
+                        ),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Category,
-                        contentDescription = "Open Shape Drawer",
-                        tint = if (viewModel.activeToolType == "shapes") MaterialTheme.colorScheme.primary else (if (isDarkTheme) Color(0xFF94A3B8) else Color(0xFF475569)),
-                        modifier = Modifier.size(18.dp)
-                    )
+                    IconButton(
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            viewModel.activeToolType = "shapes"
+                            onToolDoubleTap("shapes")
+                        },
+                        modifier = Modifier
+                            .size(36.dp)
+                            .testTag("floating_pen_section_shape_drawer")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Category,
+                            contentDescription = "Open Shape Drawer",
+                            tint = if (isShapeToolActive) MaterialTheme.colorScheme.primary else (if (isDarkTheme) Color(0xFF94A3B8) else Color(0xFF1E293B)),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
                 }
             }
             
@@ -6348,15 +6523,18 @@ fun FloatingPenSection(
                             )
                             .combinedClickable(
                                 onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                     viewModel.activeColor = colorVal
                                     if (viewModel.activeToolType == "eraser" || viewModel.activeToolType == "lasso") {
                                         viewModel.activeToolType = "fountain_pen"
                                     }
                                 },
                                 onLongClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                     onCustomizeShadeClick(index)
                                 },
                                 onDoubleClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                     onCustomizeShadeClick(index)
                                 }
                             )
@@ -6366,6 +6544,7 @@ fun FloatingPenSection(
                 // Customize Shade Button
                 IconButton(
                     onClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                         val activeIdx = viewModel.activeToolColors.indexOf(viewModel.activeColor).coerceAtLeast(0)
                         onCustomizeShadeClick(activeIdx)
                     },
@@ -6400,7 +6579,10 @@ fun FloatingPenSection(
                             .size(28.dp)
                             .clip(CircleShape)
                             .background(if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
-                            .clickable { viewModel.activeWidth = width },
+                            .clickable {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                viewModel.activeWidth = width
+                            },
                         contentAlignment = Alignment.Center
                     ) {
                         val dotSizeDp = when (width) {
@@ -6422,7 +6604,10 @@ fun FloatingPenSection(
             
             // Photo option
             IconButton(
-                onClick = onAddPhotoClick,
+                onClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onAddPhotoClick()
+                },
                 modifier = Modifier.size(36.dp)
             ) {
                 Icon(
@@ -6443,7 +6628,10 @@ fun FloatingPenSection(
                 modifier = Modifier
                     .clip(RoundedCornerShape(12.dp))
                     .background(if (viewModel.timerIsRunning) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
-                    .clickable { onOpenTimerSettings() }
+                    .clickable {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onOpenTimerSettings()
+                    }
                     .padding(horizontal = 6.dp, vertical = 4.dp)
             ) {
                 Icon(
@@ -6498,6 +6686,7 @@ fun FloatingPenSection(
             }
         }
     }
+}
 }
 
 
