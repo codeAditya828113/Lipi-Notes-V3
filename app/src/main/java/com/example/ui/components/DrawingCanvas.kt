@@ -576,7 +576,6 @@ fun DrawingCanvas(
                                 activeImageInteraction = "drag"
                                 activeImageCorner = null
                                 lastFingerDragPoint = Offset(x, y)
-                                return@pointerInteropFilter true
                             }
                         } else if (lassoSelectedStrokes.isEmpty()) {
                             selectedImageIndex = null
@@ -956,16 +955,56 @@ fun DrawingCanvas(
                             downTouchY = y
                             longPressJob?.cancel()
                             longPressJob = coroutineScope.launch {
-                                delay(500) // 500ms long press threshold
+                                delay(400) // 400ms long press threshold
+                                val targetPage = touchedPage
+                                val targetNormX = startX
+                                val targetNormY = startY
+
+                                // A. Check for target shape
                                 val targetShape = strokes.lastOrNull { s ->
-                                    s.page == touchedPage && !s.isHidden && run {
+                                    s.page == targetPage && !s.isHidden && run {
                                         val bbox = SmartInkEngine.getBoundingBox(s)
-                                        val expandedBox = Rect(bbox.left - 25f, bbox.top - 25f, bbox.right + 25f, bbox.bottom + 25f)
-                                        expandedBox.contains(Offset(startX, startY))
+                                        val expandedBox = Rect(bbox.left - 30f, bbox.top - 30f, bbox.right + 30f, bbox.bottom + 30f)
+                                        expandedBox.contains(Offset(targetNormX, targetNormY)) || s.toolType == "shape" || s.fillShape
                                     }
                                 }
+
+                                // B. Check for target image
+                                var targetImgIdx: Int? = null
+                                var targetImgElem: com.example.data.ImageElement? = null
+                                for (i in images.indices.reversed()) {
+                                    val img = images[i]
+                                    val imgPage = img.page.coerceIn(1, pdfPageCount)
+                                    if (imgPage == targetPage) {
+                                        val renderX = img.x
+                                        val renderY = img.y
+                                        val renderW = img.width
+                                        val renderH = img.height
+                                        if (targetNormX >= renderX - 15f && targetNormX <= renderX + renderW + 15f &&
+                                            targetNormY >= renderY - 15f && targetNormY <= renderY + renderH + 15f) {
+                                            targetImgIdx = i
+                                            targetImgElem = img
+                                            break
+                                        }
+                                    }
+                                }
+
                                 if (targetShape != null) {
+                                    selectedImageIndex = null
                                     onShapeLongPressed(targetShape)
+                                    activeLassoInteraction = "move"
+                                    lastLassoTouchPoint = Offset(downTouchX, downTouchY)
+                                    try {
+                                        view.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+                                    } catch (e: Exception) {}
+                                } else if (targetImgIdx != null && targetImgElem != null) {
+                                    selectedImageIndex = targetImgIdx
+                                    onImageLongPressed(targetImgIdx, targetImgElem)
+                                    activeImageInteraction = "drag"
+                                    lastFingerDragPoint = Offset(downTouchX, downTouchY)
+                                    try {
+                                        view.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+                                    } catch (e: Exception) {}
                                 }
                             }
                             true
