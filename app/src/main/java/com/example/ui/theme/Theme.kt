@@ -34,7 +34,7 @@ private val DarkColorScheme = darkColorScheme(
     onSurface = DarkOnSurface,
     surfaceVariant = DarkSurfaceVariant,
     onSurfaceVariant = SlateSecondaryContainer,
-    outline = OutlineDarkGrey,
+    outline = OutlineGrey,
     outlineVariant = OutlineVariantLight
 )
 
@@ -51,8 +51,8 @@ private val LightColorScheme = lightColorScheme(
     surface = MinimalSurface,
     onSurface = MinimalOnSurface,
     surfaceVariant = MinimalSurfaceVariant,
-    onSurfaceVariant = MinimalOnSurfaceVariant,
-    outline = OutlineDarkGrey,
+    onSurfaceVariant = SlateSecondary,
+    outline = OutlineGrey,
     outlineVariant = OutlineVariantLight
 )
 
@@ -60,7 +60,7 @@ private val LightColorScheme = lightColorScheme(
 fun MyApplicationTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     // Allow dynamic color support by default to support wallpaper extraction
-    dynamicColor: Boolean = false,
+    dynamicColor: Boolean = true,
     content: @Composable () -> Unit,
 ) {
     val colorScheme = when {

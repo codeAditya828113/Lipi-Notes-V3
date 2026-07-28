@@ -21,6 +21,16 @@ class MainActivity : ComponentActivity() {
     super.onCreate(savedInstanceState)
     enableEdgeToEdge()
 
+    // Open in Full Display Mode: Hide status bar and navigation bar for whole screen experience
+    androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
+    val windowInsetsController = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
+    windowInsetsController.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+    windowInsetsController.systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+    window.addFlags(android.view.WindowManager.LayoutParams.FLAG_FULLSCREEN)
+    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+      window.attributes.layoutInDisplayCutoutMode = android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+    }
+
     // Initialize local Room database and repository
     val database = AppDatabase.getDatabase(this)
     val repository = NoteRepository(database.noteDao())

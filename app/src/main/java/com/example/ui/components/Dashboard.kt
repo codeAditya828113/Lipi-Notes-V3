@@ -31,7 +31,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.ui.theme.glassmorphism
 import com.example.data.NoteEntity
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
@@ -72,17 +71,10 @@ fun NovaDashboard(
         }
     }
 
-    val bgBrush = Brush.linearGradient(
-        colors = listOf(
-            MaterialTheme.colorScheme.background,
-            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-        )
-    )
-
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(bgBrush)
+            .background(MaterialTheme.colorScheme.background)
     ) {
         Column(
             modifier = Modifier
@@ -114,8 +106,7 @@ fun NovaDashboard(
                         Text(
                             text = "by Aditya Kumar",
                             fontSize = 14.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                         )
                         val context = androidx.compose.ui.platform.LocalContext.current
                         val isSignedIn = GoogleDriveBackupHelper.isSignedIn(context)
@@ -213,7 +204,7 @@ fun NovaDashboard(
                     subtitle = "${studyMinsDone}m of ${dailyGoalMins}m target",
                     progress = (studySecs.toFloat() / (dailyGoalMins * 60f)).coerceAtMost(1f),
                     icon = Icons.Default.TrendingUp,
-                    tint = MaterialTheme.colorScheme.primary,
+                    tint = Color(0xFF00B0FF),
                     onClick = { showCustomizeGoalsModal = true },
                     onCustomizeClick = { showCustomizeGoalsModal = true }
                 )
@@ -223,7 +214,7 @@ fun NovaDashboard(
                     value = "${viewModel.studyStreakDays} Days 🔥",
                     subtitle = if (viewModel.studyStreakDays >= 7) "Legendary streak!" else "Keep studying daily",
                     icon = Icons.Default.LocalFireDepartment,
-                    tint = com.example.ui.theme.CoralRed,
+                    tint = Color(0xFFFF5722),
                     onClick = { showCustomizeGoalsModal = true },
                     onCustomizeClick = { showCustomizeGoalsModal = true }
                 )
@@ -252,7 +243,7 @@ fun NovaDashboard(
                         title = "PDF Notes & Documents",
                         subtitle = "$pdfNotesCount PDF files imported • Tap to open PDF folder",
                         icon = Icons.Default.PictureAsPdf,
-                        color = com.example.ui.theme.CoralRed.copy(alpha = 0.1f),
+                        color = Color(0xFFFFEBEE),
                         onClick = {
                             if (onNavigateToNotesWithFilter != null) {
                                 onNavigateToNotesWithFilter("PDFs")
@@ -281,7 +272,7 @@ fun NovaDashboard(
                         title = "Cornell Academic Pad",
                         subtitle = "Standardized recall layout for lecture memorization",
                         icon = Icons.Default.ListAlt,
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                        color = Color(0xFFE0F7FA),
                         onClick = {
                             viewModel.createNewNote("Cornell Note", "cornell")
                             if (onNavigateToNotesWithFilter != null) {
@@ -299,7 +290,7 @@ fun NovaDashboard(
                         title = "PDF Notes & Documents Folder",
                         subtitle = "$pdfNotesCount PDF files imported • Tap to open PDF folder",
                         icon = Icons.Default.PictureAsPdf,
-                        color = com.example.ui.theme.CoralRed.copy(alpha = 0.1f),
+                        color = Color(0xFFFFEBEE),
                         onClick = {
                             if (onNavigateToNotesWithFilter != null) {
                                 onNavigateToNotesWithFilter("PDFs")
@@ -328,7 +319,7 @@ fun NovaDashboard(
                         title = "Cornell Academic Pad",
                         subtitle = "Standardized recall layout perfect for lecture memorization",
                         icon = Icons.Default.ListAlt,
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                        color = Color(0xFFE0F7FA),
                         onClick = {
                             viewModel.createNewNote("Cornell Note", "cornell")
                             if (onNavigateToNotesWithFilter != null) {
@@ -415,7 +406,7 @@ fun NovaDashboard(
                         Text(
                             text = "Tap on 'Ruled Notebook' or 'Cornell Academic Pad' above to get started!",
                             fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = MaterialTheme.colorScheme.outline,
                             textAlign = TextAlign.Center,
                             modifier = Modifier.padding(top = 2.dp)
                         )
@@ -474,8 +465,8 @@ fun StatCard(
             .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        shape = RoundedCornerShape(20.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        shape = RoundedCornerShape(12.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Column(
             modifier = Modifier
@@ -499,7 +490,7 @@ fun StatCard(
                         Text(
                             text = title.uppercase(),
                             fontSize = 10.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = MaterialTheme.colorScheme.outline,
                             fontWeight = FontWeight.Bold,
                             letterSpacing = 0.5.sp
                         )
@@ -588,7 +579,7 @@ fun CustomizeGoalsModal(
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.TrendingUp, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                            Icon(Icons.Default.TrendingUp, contentDescription = null, tint = Color(0xFF00B0FF), modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(8.dp))
                             Text("Daily Study Time Target", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                         }
@@ -602,8 +593,8 @@ fun CustomizeGoalsModal(
                                 val isSel = tempGoalMins == mins.toString()
                                 Surface(
                                     shape = RoundedCornerShape(8.dp),
-                                    color = if (isSel) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surface,
-                                    border = BorderStroke(1.dp, if (isSel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                                    color = if (isSel) Color(0xFF00B0FF).copy(alpha = 0.2f) else MaterialTheme.colorScheme.surface,
+                                    border = BorderStroke(1.dp, if (isSel) Color(0xFF00B0FF) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
                                     modifier = Modifier
                                         .weight(1f)
                                         .clickable { tempGoalMins = mins.toString() }
@@ -613,7 +604,7 @@ fun CustomizeGoalsModal(
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
                                         textAlign = TextAlign.Center,
-                                        color = if (isSel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                        color = if (isSel) Color(0xFF00B0FF) else MaterialTheme.colorScheme.onSurface,
                                         modifier = Modifier.padding(vertical = 6.dp)
                                     )
                                 }
@@ -640,7 +631,7 @@ fun CustomizeGoalsModal(
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.LocalFireDepartment, contentDescription = null, tint = com.example.ui.theme.CoralRed, modifier = Modifier.size(18.dp))
+                            Icon(Icons.Default.LocalFireDepartment, contentDescription = null, tint = Color(0xFFFF5722), modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(8.dp))
                             Text("Current Streak: ${viewModel.studyStreakDays} Days 🔥", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                         }
@@ -714,8 +705,8 @@ fun ActionCard(
         modifier = modifier.clickable(onClick = onClick),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        shape = RoundedCornerShape(20.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        shape = RoundedCornerShape(12.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Row(
             modifier = Modifier
@@ -787,8 +778,8 @@ fun RecentNoteCard(
             .clickable(onClick = onClick),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        shape = RoundedCornerShape(20.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        shape = RoundedCornerShape(12.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Column {
             if (note.coverType != "none") {
@@ -843,8 +834,7 @@ fun RecentNoteCard(
             Text(
                 text = "Last active: $dateString",
                 fontSize = 10.sp,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.outline
             )
         }
         }
@@ -863,7 +853,7 @@ fun DashboardPomodoroWidget(viewModel: NoteViewModel) {
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
-        shape = RoundedCornerShape(24.dp), elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        shape = RoundedCornerShape(18.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(
@@ -879,7 +869,7 @@ fun DashboardPomodoroWidget(viewModel: NoteViewModel) {
                     Icon(
                         imageVector = Icons.Default.Timer,
                         contentDescription = null,
-                        tint = com.example.ui.theme.CoralRed,
+                        tint = Color(0xFFFF5722),
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
@@ -895,10 +885,10 @@ fun DashboardPomodoroWidget(viewModel: NoteViewModel) {
                     text = if (isTimerRunning) "ACTIVE" else "READY",
                     fontSize = 9.sp,
                     fontWeight = FontWeight.Bold,
-                    color = if (isTimerRunning) Color(0xFF10B981) else com.example.ui.theme.CoralRed,
+                    color = if (isTimerRunning) Color(0xFF10B981) else Color(0xFFFF5722),
                     modifier = Modifier
                         .background(
-                            if (isTimerRunning) Color(0xFF10B981).copy(alpha = 0.1f) else com.example.ui.theme.CoralRed.copy(alpha = 0.1f),
+                            if (isTimerRunning) Color(0xFF10B981).copy(alpha = 0.1f) else Color(0xFFFF5722).copy(alpha = 0.1f),
                             RoundedCornerShape(6.dp)
                         )
                         .padding(horizontal = 6.dp, vertical = 2.dp)
@@ -931,8 +921,8 @@ fun DashboardPomodoroWidget(viewModel: NoteViewModel) {
                     val isSelected = viewModel.timerTotalSeconds == secs
                     Surface(
                         shape = RoundedCornerShape(8.dp),
-                        color = if (isSelected) com.example.ui.theme.CoralRed.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                        border = BorderStroke(1.dp, if (isSelected) com.example.ui.theme.CoralRed else Color.Transparent),
+                        color = if (isSelected) Color(0xFFFF5722).copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        border = BorderStroke(1.dp, if (isSelected) Color(0xFFFF5722) else Color.Transparent),
                         modifier = Modifier.clickable {
                             viewModel.resetTimer(secs)
                         }
@@ -941,7 +931,7 @@ fun DashboardPomodoroWidget(viewModel: NoteViewModel) {
                             text = label,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
-                            color = if (isSelected) com.example.ui.theme.CoralRed else MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = if (isSelected) Color(0xFFFF5722) else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                         )
                     }
@@ -963,7 +953,7 @@ fun DashboardPomodoroWidget(viewModel: NoteViewModel) {
                         }
                     },
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = if (isTimerRunning) MaterialTheme.colorScheme.error else com.example.ui.theme.CoralRed
+                        containerColor = if (isTimerRunning) MaterialTheme.colorScheme.error else Color(0xFFFF5722)
                     ),
                     shape = RoundedCornerShape(10.dp),
                     modifier = Modifier.testTag("pomodoro_focus_button")
@@ -1004,7 +994,7 @@ fun DashboardTasksWidget() {
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
-        shape = RoundedCornerShape(24.dp), elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        shape = RoundedCornerShape(18.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -1017,7 +1007,7 @@ fun DashboardTasksWidget() {
                     Icon(
                         imageVector = Icons.Default.TaskAlt,
                         contentDescription = null,
-                        tint = com.example.ui.theme.EmeraldGreen,
+                        tint = Color(0xFF4CAF50),
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
@@ -1033,7 +1023,7 @@ fun DashboardTasksWidget() {
                     text = "${tasks.count { it.done }} of ${tasks.size} done",
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Medium,
-                    color = com.example.ui.theme.EmeraldGreen
+                    color = Color(0xFF4CAF50)
                 )
             }
 
@@ -1052,7 +1042,7 @@ fun DashboardTasksWidget() {
                         Icon(
                             imageVector = if (t.done) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
                             contentDescription = null,
-                            tint = if (t.done) com.example.ui.theme.EmeraldGreen else MaterialTheme.colorScheme.outline,
+                            tint = if (t.done) Color(0xFF4CAF50) else MaterialTheme.colorScheme.outline,
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(10.dp))
@@ -1121,7 +1111,7 @@ fun DashboardTasksWidget() {
                     },
                     modifier = Modifier
                         .size(36.dp)
-                        .background(com.example.ui.theme.EmeraldGreen, RoundedCornerShape(8.dp))
+                        .background(Color(0xFF4CAF50), RoundedCornerShape(8.dp))
                 ) {
                     Icon(Icons.Default.Add, contentDescription = "Add Task", tint = androidx.compose.ui.graphics.Color.White, modifier = Modifier.size(16.dp))
                 }
@@ -1138,7 +1128,7 @@ fun AISuggestionRow() {
         SuggestionData(
             title = "Semantic Smart Tags",
             desc = "Auto-cluster 'Cornell Notes' into #exam-prep tag groups",
-            accent = MaterialTheme.colorScheme.primary,
+            accent = Color(0xFF00B0FF),
             icon = Icons.Default.AutoAwesome
         ),
         SuggestionData(
@@ -1193,10 +1183,9 @@ fun AISuggestionRow() {
                     Text(
                         text = sug.desc,
                         fontSize = 10.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = MaterialTheme.colorScheme.outline,
                         maxLines = 3,
-                        lineHeight = 13.sp
+                        lineHeight = 12.sp
                     )
                 }
             }

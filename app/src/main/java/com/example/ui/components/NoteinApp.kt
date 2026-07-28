@@ -141,6 +141,28 @@ fun NoteinApp(
         viewModel.isFullscreen = false
     }
 
+    LaunchedEffect(viewModel.isFullscreen) {
+        val window = (context as? android.app.Activity)?.window
+        if (window != null) {
+            val controller = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
+            if (viewModel.isFullscreen) {
+                // Strict full view mode: Hide status & navigation bars, require swipe to show transiently
+                controller.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+                controller.systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                window.addFlags(android.view.WindowManager.LayoutParams.FLAG_FULLSCREEN)
+                window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                    window.attributes.layoutInDisplayCutoutMode = android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                }
+            } else {
+                // Normal Mode: Restore system bars & standard layout
+                controller.show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+                window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_FULLSCREEN)
+                window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            }
+        }
+    }
+
     ModalNavigationDrawer(
         drawerState = drawerState,
         gesturesEnabled = !isTablet,
@@ -156,16 +178,11 @@ fun NoteinApp(
                         activeTab = activeTab,
                         onTabChange = { tab ->
                             activeTab = tab
-                            if (tab == "notes" || tab == "home") {
-                                viewModel.selectNote(null)
-                            }
                             scope.launch { drawerState.close() }
                         },
                         selectedFilter = selectedFilter,
                         onFilterChange = { filter ->
                             selectedFilter = filter
-                            activeTab = "notes"
-                            viewModel.selectNote(null)
                             scope.launch { drawerState.close() }
                         },
                         searchKeyword = searchKeyword,
@@ -226,18 +243,9 @@ fun NoteinApp(
                             notes = notes,
                             viewModel = viewModel,
                             activeTab = activeTab,
-                            onTabChange = { tab ->
-                                activeTab = tab
-                                if (tab == "notes" || tab == "home") {
-                                    viewModel.selectNote(null)
-                                }
-                            },
+                            onTabChange = { activeTab = it },
                             selectedFilter = selectedFilter,
-                            onFilterChange = { filter ->
-                                selectedFilter = filter
-                                activeTab = "notes"
-                                viewModel.selectNote(null)
-                            },
+                            onFilterChange = { selectedFilter = it },
                             searchKeyword = searchKeyword,
                             onSearchChange = { searchKeyword = it }
                         )
@@ -329,7 +337,7 @@ fun NoteinApp(
                 Icon(
                     imageVector = if (viewModel.updateAvailable) Icons.Default.SystemUpdate else Icons.Default.CheckCircle,
                     contentDescription = null,
-                    tint = if (viewModel.updateAvailable) Color(0xFF00B0FF) else MaterialTheme.colorScheme.secondary,
+                    tint = if (viewModel.updateAvailable) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary,
                     modifier = Modifier.size(32.dp)
                 )
             },
@@ -352,7 +360,7 @@ fun NoteinApp(
                             "You are currently running the latest version of Lipi Notes (v${com.example.BuildConfig.VERSION_NAME}). You can re-download the latest release APK from GitHub anytime."
                         },
                         fontSize = 13.sp,
-                        color = Color(0xFF475569)
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
 
                     if (viewModel.updateNotes.isNotEmpty()) {
@@ -366,7 +374,7 @@ fun NoteinApp(
                                     text = "Release Details:",
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF00B0FF)
+                                    color = MaterialTheme.colorScheme.primary
                                 )
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
@@ -384,7 +392,7 @@ fun NoteinApp(
                                 text = "Downloading update: ${(viewModel.updateProgress!! * 100).toInt()}%",
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold,
-                                color = Color(0xFF00B0FF)
+                                color = MaterialTheme.colorScheme.primary
                             )
                             LinearProgressIndicator(
                                 progress = { viewModel.updateProgress!! },
@@ -472,7 +480,7 @@ fun NoteinApp(
                 Icon(
                     imageVector = Icons.Default.NewReleases,
                     contentDescription = null,
-                    tint = Color(0xFF00B0FF),
+                    tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(36.dp)
                 )
             },
@@ -491,7 +499,7 @@ fun NoteinApp(
                     Text(
                         text = "Your app has been successfully updated! Here is the change log and list of improvements in this release:",
                         fontSize = 13.sp,
-                        color = Color(0xFF475569)
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
 
                     Surface(
@@ -504,7 +512,7 @@ fun NoteinApp(
                                 text = "Release Notes & Highlights:",
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFF00B0FF)
+                                color = MaterialTheme.colorScheme.primary
                             )
                             Spacer(modifier = Modifier.height(6.dp))
                             Text(
@@ -526,170 +534,6 @@ fun NoteinApp(
                 }
             }
         )
-    }
-}
-
-@Composable
-fun NoteTabBar(
-    notes: List<NoteEntity>,
-    openNoteIds: Set<Int>,
-    selectedNote: NoteEntity?,
-    onSelectNote: (NoteEntity?) -> Unit,
-    onCloseNote: (NoteEntity) -> Unit,
-    onCreateNoteClick: () -> Unit,
-    onOpenMenu: () -> Unit,
-    viewModel: NoteViewModel
-) {
-    val openNotes = remember(notes, openNoteIds) {
-        notes.filter { it.id in openNoteIds }
-    }
-
-    Row(
-        verticalAlignment = Alignment.Bottom,
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color(0xFFF1F5F9))
-            .padding(horizontal = 8.dp, vertical = 0.dp)
-    ) {
-        // Menu / Sidebar Icon
-        IconButton(
-            onClick = onOpenMenu,
-            modifier = Modifier
-                .padding(bottom = 4.dp, end = 4.dp)
-                .size(32.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.Menu,
-                contentDescription = "Open Folders & Labels",
-                tint = Color(0xFF475569),
-                modifier = Modifier.size(20.dp)
-            )
-        }
-
-        // Tabs Row
-        Row(
-            modifier = Modifier
-                .weight(1f)
-                .horizontalScroll(rememberScrollState())
-                .padding(top = 6.dp),
-            verticalAlignment = Alignment.Bottom
-        ) {
-            // Folders & Notes List Tab
-            val isFoldersSelected = (selectedNote == null)
-            Surface(
-                modifier = Modifier
-                    .padding(horizontal = 2.dp)
-                    .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)),
-                color = if (isFoldersSelected) Color.White else Color(0xFFE2E8F0),
-                border = if (isFoldersSelected) BorderStroke(1.dp, Color(0xFFE2E8F0)) else null
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .clickable { onSelectNote(null) }
-                        .padding(horizontal = 14.dp, vertical = 10.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Folder,
-                        contentDescription = "Folders & Notes",
-                        tint = if (isFoldersSelected) Color(0xFF00B0FF) else Color(0xFF64748B),
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "Folders & Notes",
-                        fontSize = 13.sp,
-                        fontWeight = if (isFoldersSelected) FontWeight.Bold else FontWeight.Medium,
-                        color = if (isFoldersSelected) Color(0xFF0F172A) else Color(0xFF475569)
-                    )
-                }
-            }
-
-            // Individual Open Note Tabs
-            openNotes.forEach { note ->
-                val isTabSelected = selectedNote?.id == note.id
-                val tabIconTint = if (note.templateType == "pdf") Color(0xFFD32F2F) else Color(0xFF00B0FF)
-
-                Surface(
-                    modifier = Modifier
-                        .padding(horizontal = 2.dp)
-                        .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)),
-                    color = if (isTabSelected) Color.White else Color(0xFFE2E8F0),
-                    border = if (isTabSelected) BorderStroke(1.dp, Color(0xFFE2E8F0)) else null
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .clickable { onSelectNote(note) }
-                            .padding(horizontal = 14.dp, vertical = 10.dp)
-                    ) {
-                        Icon(
-                            imageVector = if (note.templateType == "pdf") Icons.Default.PictureAsPdf else Icons.Default.Description,
-                            contentDescription = null,
-                            tint = tabIconTint,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = note.title,
-                            fontSize = 13.sp,
-                            fontWeight = if (isTabSelected) FontWeight.Bold else FontWeight.Medium,
-                            color = if (isTabSelected) Color(0xFF0F172A) else Color(0xFF475569),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.widthIn(max = 140.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        IconButton(
-                            onClick = { onCloseNote(note) },
-                            modifier = Modifier.size(16.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = "Close Note",
-                                tint = Color(0xFF94A3B8),
-                                modifier = Modifier.size(12.dp)
-                            )
-                        }
-                    }
-                }
-            }
-
-            // New Tab Button (+)
-            IconButton(
-                onClick = onCreateNoteClick,
-                modifier = Modifier
-                    .padding(bottom = 6.dp, start = 6.dp)
-                    .size(28.dp)
-                    .background(Color.White, CircleShape)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription = "New Note Tab",
-                    tint = Color(0xFF475569),
-                    modifier = Modifier.size(16.dp)
-                )
-            }
-        }
-
-        // Right side controls
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            modifier = Modifier.padding(bottom = 6.dp, start = 8.dp)
-        ) {
-            IconButton(
-                onClick = { viewModel.isFullscreen = !viewModel.isFullscreen },
-                modifier = Modifier.size(28.dp)
-            ) {
-                Icon(
-                    imageVector = if (viewModel.isFullscreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
-                    contentDescription = "Fullscreen",
-                    tint = Color(0xFF475569),
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-        }
     }
 }
 
@@ -792,28 +636,15 @@ fun NoteWorkspace(
                 notes = notes,
                 onCreateNoteClick = onCreateNoteClick,
                 onBackClick = { viewModel.selectNote(null) },
-                isSidebarExpanded = isSidebarExpanded,
-                onToggleSidebar = onToggleSidebar,
-                isNoteListExpanded = isNoteListExpanded,
-                onToggleNoteList = onToggleNoteList,
-                onOpenMenu = onOpenMenu
+                isSidebarExpanded = false,
+                onToggleSidebar = {},
+                isNoteListExpanded = true,
+                onToggleNoteList = {}
             )
         }
     } else {
         Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
             Column(modifier = Modifier.fillMaxSize()) {
-                if (viewModel.openNoteIds.isNotEmpty()) {
-                    NoteTabBar(
-                        notes = notes,
-                        openNoteIds = viewModel.openNoteIds,
-                        selectedNote = null,
-                        onSelectNote = { viewModel.selectNote(it) },
-                        onCloseNote = { viewModel.closeNote(it) },
-                        onCreateNoteClick = onCreateNoteClick,
-                        onOpenMenu = onOpenMenu,
-                        viewModel = viewModel
-                    )
-                }
                 NoteListHeader(
                     searchKeyword = searchKeyword,
                     onSearchChange = onSearchChange,
@@ -953,7 +784,7 @@ fun GoogleDriveBackupDialog(
                             Icon(
                                 imageVector = Icons.Default.CloudQueue,
                                 contentDescription = null,
-                                tint = Color(0xFF00B0FF),
+                                tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.padding(8.dp).size(24.dp)
                             )
                         }
@@ -966,7 +797,7 @@ fun GoogleDriveBackupDialog(
                             Text(
                                 text = "Cloud Backup & Sync Options",
                                 fontSize = 12.sp,
-                                color = Color(0xFF475569)
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
@@ -1006,7 +837,7 @@ fun GoogleDriveBackupDialog(
                                 Text(
                                     text = if (viewModel.lastSyncTime.isNotBlank()) "Last backup: ${viewModel.lastSyncTime}" else "No backup history yet",
                                     fontSize = 12.sp,
-                                    color = Color(0xFF475569)
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                             if (viewModel.isSyncing) {
@@ -1028,7 +859,7 @@ fun GoogleDriveBackupDialog(
                         }
 
                         Spacer(modifier = Modifier.height(12.dp))
-                        HorizontalDivider(color = Color(0xFFE2E8F0).copy(alpha = 0.5f))
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                         Spacer(modifier = Modifier.height(12.dp))
 
                         Row(
@@ -1045,7 +876,7 @@ fun GoogleDriveBackupDialog(
                                 Text(
                                     text = "Auto-sync note updates directly to Google Drive",
                                     fontSize = 12.sp,
-                                    color = Color(0xFF475569)
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                             Switch(
@@ -1055,7 +886,7 @@ fun GoogleDriveBackupDialog(
                         }
 
                         Spacer(modifier = Modifier.height(12.dp))
-                        HorizontalDivider(color = Color(0xFFE2E8F0).copy(alpha = 0.5f))
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                         Spacer(modifier = Modifier.height(12.dp))
 
                         val context = androidx.compose.ui.platform.LocalContext.current
@@ -1073,7 +904,7 @@ fun GoogleDriveBackupDialog(
                                 Text(
                                     text = "Save all notes & study stats to local device storage",
                                     fontSize = 12.sp,
-                                    color = Color(0xFF475569)
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                             OutlinedButton(
@@ -1158,7 +989,7 @@ fun NoteListHeader(
                 Icon(
                     imageVector = Icons.Default.CloudQueue,
                     contentDescription = "Google Drive Backup",
-                    tint = Color(0xFF00B0FF),
+                    tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(24.dp).clickable { showDriveBackupDialog = true }
                 )
             }
@@ -1171,13 +1002,13 @@ fun NoteListHeader(
                 Icon(
                     imageVector = if (viewModel?.isSelectionMode == true) Icons.Default.CheckCircle else Icons.Default.CheckCircleOutline,
                     contentDescription = "Select",
-                    tint = if (viewModel?.isSelectionMode == true) Color(0xFF00B0FF) else MaterialTheme.colorScheme.onSurface,
+                    tint = if (viewModel?.isSelectionMode == true) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.size(24.dp).clickable { viewModel?.toggleSelectionMode() }
                 )
                 Icon(
                     imageVector = Icons.Default.Search,
                     contentDescription = "Search",
-                    tint = if (isSearching || searchKeyword.isNotEmpty()) Color(0xFF00B0FF) else MaterialTheme.colorScheme.onSurface,
+                    tint = if (isSearching || searchKeyword.isNotEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.size(24.dp).clickable { isSearching = !isSearching }
                 )
             }
@@ -1202,7 +1033,7 @@ fun NoteListHeader(
                     )
                     .border(
                         width = 1.dp,
-                        color = Color(0xFF00B0FF),
+                        color = MaterialTheme.colorScheme.primary,
                         shape = RoundedCornerShape(20.dp)
                     )
                     .padding(horizontal = 14.dp),
@@ -1214,7 +1045,7 @@ fun NoteListHeader(
                         Icon(
                             imageVector = Icons.Default.Search,
                             contentDescription = "Search",
-                            tint = Color(0xFF00B0FF),
+                            tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
@@ -1223,7 +1054,7 @@ fun NoteListHeader(
                                 Text(
                                     text = "Search by title, content or AI summary...",
                                     fontSize = 12.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = MaterialTheme.colorScheme.outline
                                 )
                             }
                             innerTextField()
@@ -1276,11 +1107,11 @@ fun NoteListHeader(
                             text = if (filter == "PDF") "PDF Notes" else if (filter == "Folder") "Templates" else filter,
                             fontSize = 18.sp,
                             fontWeight = if(isSelected) FontWeight.Medium else FontWeight.Normal,
-                            color = if(isSelected) Color(0xFF00B0FF) else MaterialTheme.colorScheme.onSurface
+                            color = if(isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                         )
                         if (isSelected) {
                             Spacer(Modifier.height(6.dp))
-                            Box(Modifier.width(40.dp).height(3.dp).background(Color(0xFF00B0FF)))
+                            Box(Modifier.width(40.dp).height(3.dp).background(MaterialTheme.colorScheme.primary))
                         } else {
                             Spacer(Modifier.height(9.dp))
                         }
@@ -1353,7 +1184,7 @@ fun NoteListHeader(
                             imageVector = Icons.Default.Sort,
                             contentDescription = "Sort Options",
                             modifier = Modifier.size(20.dp),
-                            tint = Color(0xFF00B0FF)
+                            tint = MaterialTheme.colorScheme.primary
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
@@ -1366,7 +1197,7 @@ fun NoteListHeader(
                             },
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Medium,
-                            color = Color(0xFF00B0FF)
+                            color = MaterialTheme.colorScheme.primary
                         )
                     }
 
@@ -1387,7 +1218,7 @@ fun NoteListHeader(
                                     Text(
                                         text = label,
                                         fontWeight = if (selectedSortOption == key) FontWeight.Bold else FontWeight.Normal,
-                                        color = if (selectedSortOption == key) Color(0xFF00B0FF) else MaterialTheme.colorScheme.onSurface
+                                        color = if (selectedSortOption == key) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                                     )
                                 },
                                 onClick = {
@@ -1455,7 +1286,7 @@ fun NoteListHeader(
                             Icon(
                                 imageVector = Icons.Default.ContentCopy,
                                 contentDescription = "Batch Duplicate",
-                                tint = if (viewModel.selectedNoteIds.isNotEmpty()) Color(0xFF00B0FF) else MaterialTheme.colorScheme.outline
+                                tint = if (viewModel.selectedNoteIds.isNotEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
                             )
                         }
                         IconButton(
@@ -1489,7 +1320,7 @@ fun NoteCardPreview(note: NoteEntity, modifier: Modifier = Modifier) {
         modifier = modifier
             .fillMaxSize()
             .background(Color(note.pageColor), RoundedCornerShape(4.dp))
-            .border(1.dp, Color(0xFFE2E8F0).copy(alpha = 0.3f), RoundedCornerShape(4.dp)),
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f), RoundedCornerShape(4.dp)),
         contentAlignment = Alignment.Center
     ) {
         if (note.coverType != "none") {
@@ -1594,7 +1425,7 @@ fun NoteCardPreview(note: NoteEntity, modifier: Modifier = Modifier) {
                         Icon(
                             imageVector = Icons.Default.DirectionsCar,
                             contentDescription = "Car",
-                            tint = Color(0xFF475569).copy(alpha = 0.7f),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                             modifier = Modifier.size(64.dp)
                         )
                     }
@@ -1653,7 +1484,7 @@ fun NoteList(
         ) {
             Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                border = BorderStroke(1.dp, Color(0xFFE2E8F0).copy(alpha = 0.4f)),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
                 shape = RoundedCornerShape(24.dp),
                 modifier = Modifier
                     .widthIn(max = 420.dp)
@@ -1672,7 +1503,7 @@ fun NoteList(
                             Icon(
                                 imageVector = Icons.Default.EditNote,
                                 contentDescription = "No Notes",
-                                tint = Color(0xFF00B0FF),
+                                tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(36.dp)
                             )
                         }
@@ -1687,7 +1518,7 @@ fun NoteList(
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
                         text = "Start taking handwritten notes, import PDF study materials, or create a Cornell pad.",
-                        color = Color(0xFF475569),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 13.sp,
                         textAlign = TextAlign.Center,
                         lineHeight = 18.sp
@@ -1755,12 +1586,12 @@ fun NoteList(
                                      .padding(8.dp)
                                      .size(24.dp)
                                      .background(
-                                         color = if (isCheckSelected) Color(0xFF00B0FF) else MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                                         color = if (isCheckSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
                                          shape = CircleShape
                                      )
                                      .border(
                                          width = 2.dp,
-                                         color = if (isCheckSelected) Color(0xFF00B0FF) else MaterialTheme.colorScheme.outline,
+                                         color = if (isCheckSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
                                          shape = CircleShape
                                      ),
                                  contentAlignment = Alignment.Center
@@ -1783,7 +1614,7 @@ fun NoteList(
                                  .padding(8.dp)
                                  .size(20.dp)
                                  .clickable { onToggleStar(note.id) },
-                             tint = if (isStarred) Color.Red else Color(0xFF475569).copy(alpha = 0.7f)
+                             tint = if (isStarred) Color.Red else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                          )
                     }
                     Spacer(modifier = Modifier.height(12.dp))
@@ -1814,13 +1645,13 @@ fun NoteList(
                         Text(
                             text = "${(note.id % 20) + 1}P",
                             fontSize = 11.sp,
-                            color = Color(0xFF475569)
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(modifier = Modifier.width(16.dp))
                         Text(
                             text = SimpleDateFormat("dd/MM/yy", Locale.getDefault()).format(Date(note.lastModifiedTime)),
                             fontSize = 11.sp,
-                            color = Color(0xFF475569)
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                     if (note.content.isNotBlank()) {
@@ -1840,7 +1671,7 @@ fun NoteList(
                                     Icon(
                                         imageVector = Icons.Default.DocumentScanner,
                                         contentDescription = null,
-                                        tint = Color(0xFF00B0FF),
+                                        tint = MaterialTheme.colorScheme.primary,
                                         modifier = Modifier.size(10.dp)
                                     )
                                     Spacer(modifier = Modifier.width(3.dp))
@@ -1848,7 +1679,7 @@ fun NoteList(
                                         text = "ML Kit Searchable",
                                         fontSize = 9.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = Color(0xFF00B0FF)
+                                        color = MaterialTheme.colorScheme.primary
                                     )
                                 }
                             }
@@ -1873,7 +1704,7 @@ fun NoteList(
                                         imageVector = Icons.Default.Palette,
                                         contentDescription = null,
                                         modifier = Modifier.size(18.dp),
-                                        tint = Color(0xFF00B0FF)
+                                        tint = MaterialTheme.colorScheme.primary
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text("Customize Cover & Template")
@@ -2026,14 +1857,14 @@ fun NoteEditorEmptyState(
                 Icon(
                     imageVector = if (isSidebarExpanded) Icons.Default.MenuOpen else Icons.Default.Menu,
                     contentDescription = "Toggle Sidebar",
-                    tint = if (isSidebarExpanded) Color(0xFF00B0FF) else Color(0xFF475569)
+                    tint = if (isSidebarExpanded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
             IconButton(onClick = onToggleNoteList) {
                 Icon(
                     imageVector = if (isNoteListExpanded) Icons.Default.ViewList else Icons.Default.List,
                     contentDescription = "Toggle Notes List",
-                    tint = if (isNoteListExpanded) Color(0xFF00B0FF) else Color(0xFF475569)
+                    tint = if (isNoteListExpanded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
@@ -2064,7 +1895,7 @@ fun NoteEditorEmptyState(
                     text = "Select a note from the panel, or create a new handwritten pad with grids, ruled sheets, Cornell tables, or study PDFs.",
                     textAlign = TextAlign.Center,
                     fontSize = 14.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.outline
                 )
                 Spacer(modifier = Modifier.height(16.dp))
                 Button(onClick = onCreateNoteClick) {
@@ -2127,7 +1958,7 @@ fun RealisticPenItem(
                         lineTo(w * 0.75f, nibStart)
                         close()
                     }
-                    drawPath(nibPath, color = Color(0xFFE2E8F0))
+                    drawPath(nibPath, color = Color(0xFFCBD5E1))
                     
                     val goldPath = Path().apply {
                         moveTo(w * 0.35f, nibStart)
@@ -2180,7 +2011,7 @@ fun RealisticPenItem(
                 "felt_pen" -> {
                     val bodyH = h * 0.2f
                     drawRect(
-                        color = Color(0xFFE2E8F0),
+                        color = Color(0xFFCBD5E1),
                         topLeft = Offset(w * 0.22f, 0f),
                         size = Size(w * 0.56f, bodyH)
                     )
@@ -2262,7 +2093,7 @@ fun RealisticPenItem(
                     )
                     val ferruleH = h * 0.3f
                     drawRect(
-                        color = Color(0xFFE2E8F0),
+                        color = Color(0xFFCBD5E1),
                         topLeft = Offset(w * 0.24f, bodyH),
                         size = Size(w * 0.52f, ferruleH)
                     )
@@ -2293,7 +2124,7 @@ fun RealisticPenItem(
                         lineTo(w * 0.78f, bodyH)
                         close()
                     }
-                    drawPath(conePath, color = Color(0xFFE2E8F0))
+                    drawPath(conePath, color = Color(0xFFCBD5E1))
                     drawCircle(
                         color = Color(0xFFEF4444),
                         radius = 1.5.dp.toPx(),
@@ -2315,7 +2146,7 @@ fun RealisticPenItem(
                 }
                 "shapes" -> {
                     drawCircle(
-                        color = Color(0xFF00B0FF),
+                        color = Color(0xFF3B82F6),
                         radius = w * 0.25f,
                         center = Offset(w * 0.35f, h * 0.4f)
                     )
@@ -2357,19 +2188,19 @@ fun RealisticPenItem(
                     }
                     drawPath(
                         path = ovalPath,
-                        color = Color(0xFF00B0FF),
+                        color = Color(0xFF2563EB),
                         style = androidx.compose.ui.graphics.drawscope.Stroke(
                             width = 1.5.dp.toPx(),
                             pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(4f, 3f), 0f)
                         )
                     )
                     drawCircle(
-                        color = Color(0xFF00B0FF),
+                        color = Color(0xFF1D4ED8),
                         radius = 2.dp.toPx(),
                         center = Offset(w * 0.5f, h * 0.7f)
                     )
                     drawLine(
-                        color = Color(0xFF00B0FF),
+                        color = Color(0xFF2563EB),
                         start = Offset(w * 0.5f, h * 0.7f),
                         end = Offset(w * 0.75f, h * 0.9f),
                         strokeWidth = 1.5.dp.toPx()
@@ -2391,8 +2222,7 @@ fun NoteEditorCanvas(
     isSidebarExpanded: Boolean = true,
     onToggleSidebar: () -> Unit = {},
     isNoteListExpanded: Boolean = true,
-    onToggleNoteList: () -> Unit = {},
-    onOpenMenu: () -> Unit = {}
+    onToggleNoteList: () -> Unit = {}
 ) {
     var showAISidebar by remember { mutableStateOf(false) }
     var showStylusSettingsDialog by remember { mutableStateOf(false) }
@@ -2522,7 +2352,7 @@ fun NoteEditorCanvas(
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             IconButton(onClick = { showToolSettings = null }, modifier = Modifier.size(32.dp)) {
-                                Icon(Icons.Default.Close, contentDescription = "Close", tint = Color(0xFF475569))
+                                Icon(Icons.Default.Close, contentDescription = "Close", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
 
@@ -2539,7 +2369,7 @@ fun NoteEditorCanvas(
                                             viewModel.activeToolType = "fountain_pen" 
                                             showToolSettings = "fountain_pen"
                                         }
-                                        .border(1.dp, Color(0xFF00B0FF), RoundedCornerShape(topStart = 8.dp, bottomStart = 8.dp))
+                                        .border(1.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(topStart = 8.dp, bottomStart = 8.dp))
                                         .padding(vertical = 8.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
@@ -2554,7 +2384,7 @@ fun NoteEditorCanvas(
                                             viewModel.activeToolType = "ballpoint"
                                             showToolSettings = "ballpoint"
                                         }
-                                        .border(1.dp, Color(0xFF00B0FF), RoundedCornerShape(topEnd = 8.dp, bottomEnd = 8.dp))
+                                        .border(1.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(topEnd = 8.dp, bottomEnd = 8.dp))
                                         .padding(vertical = 8.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
@@ -2596,7 +2426,7 @@ fun NoteEditorCanvas(
                                     "${String.format("%.1f", viewModel.activeWidth)} px",
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF00B0FF)
+                                    color = MaterialTheme.colorScheme.primary
                                 )
                             }
                             
@@ -2605,7 +2435,7 @@ fun NoteEditorCanvas(
                                     .size(44.dp)
                                     .clip(CircleShape)
                                     .background(MaterialTheme.colorScheme.surface)
-                                    .border(1.dp, Color(0xFFE2E8F0), CircleShape),
+                                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape),
                                 contentAlignment = Alignment.Center
                             ) {
                                 val previewDp = (viewModel.activeWidth.dp * 0.65f).coerceIn(3.dp, 36.dp)
@@ -2674,7 +2504,7 @@ fun NoteEditorCanvas(
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(16.dp))
                                         .background(if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface)
-                                        .border(1.dp, if (isSelected) Color(0xFF00B0FF) else Color(0xFFE2E8F0), RoundedCornerShape(16.dp))
+                                        .border(1.dp, if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(16.dp))
                                         .clickable { viewModel.activeWidth = widthVal }
                                         .padding(horizontal = 10.dp, vertical = 6.dp)
                                 ) {
@@ -2882,7 +2712,7 @@ fun NoteEditorCanvas(
                                         .background(Color(colorVal))
                                         .border(
                                             width = if (isSelected) 2.dp else 1.dp,
-                                            color = if (isSelected) Color(0xFF00B0FF) else Color(0xFFE2E8F0),
+                                            color = if (isSelected) Color(0xFF3B82F6) else Color(0xFFCBD5E1),
                                             shape = RoundedCornerShape(4.dp)
                                         )
                                         .clickable {
@@ -2903,7 +2733,7 @@ fun NoteEditorCanvas(
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(8.dp))
                                     .background(if (viewModel.laserMode == "line") MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
-                                    .border(1.dp, if (viewModel.laserMode == "line") Color(0xFF00B0FF) else Color.Gray, RoundedCornerShape(8.dp))
+                                    .border(1.dp, if (viewModel.laserMode == "line") MaterialTheme.colorScheme.primary else Color.Gray, RoundedCornerShape(8.dp))
                                     .clickable { viewModel.laserMode = "line" }
                                     .padding(horizontal = 16.dp, vertical = 8.dp)
                             ) {
@@ -2914,7 +2744,7 @@ fun NoteEditorCanvas(
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(8.dp))
                                     .background(if (viewModel.laserMode == "spot") MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
-                                    .border(1.dp, if (viewModel.laserMode == "spot") Color(0xFF00B0FF) else Color.Gray, RoundedCornerShape(8.dp))
+                                    .border(1.dp, if (viewModel.laserMode == "spot") MaterialTheme.colorScheme.primary else Color.Gray, RoundedCornerShape(8.dp))
                                     .clickable { viewModel.laserMode = "spot" }
                                     .padding(horizontal = 16.dp, vertical = 8.dp)
                             ) {
@@ -2961,13 +2791,13 @@ fun NoteEditorCanvas(
                                     .weight(1f)
                                     .clip(RoundedCornerShape(8.dp))
                                     .background(if (viewModel.eraserMode == "stroke") MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
-                                    .border(1.dp, if (viewModel.eraserMode == "stroke") Color(0xFF00B0FF) else Color.LightGray, RoundedCornerShape(8.dp))
+                                    .border(1.dp, if (viewModel.eraserMode == "stroke") MaterialTheme.colorScheme.primary else Color.LightGray, RoundedCornerShape(8.dp))
                                     .clickable { viewModel.eraserMode = "stroke" }
                                     .padding(vertical = 10.dp, horizontal = 4.dp),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Icon(Icons.Default.AutoFixNormal, contentDescription = null, modifier = Modifier.size(20.dp), tint = if (viewModel.eraserMode == "stroke") Color(0xFF00B0FF) else Color.Gray)
+                                    Icon(Icons.Default.AutoFixNormal, contentDescription = null, modifier = Modifier.size(20.dp), tint = if (viewModel.eraserMode == "stroke") MaterialTheme.colorScheme.primary else Color.Gray)
                                     Spacer(modifier = Modifier.height(4.dp))
                                     Text("Stroke", fontSize = 12.sp, fontWeight = if (viewModel.eraserMode == "stroke") FontWeight.Bold else FontWeight.Normal)
                                 }
@@ -2979,13 +2809,13 @@ fun NoteEditorCanvas(
                                     .weight(1f)
                                     .clip(RoundedCornerShape(8.dp))
                                     .background(if (viewModel.eraserMode == "precise") MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
-                                    .border(1.dp, if (viewModel.eraserMode == "precise") Color(0xFF00B0FF) else Color.LightGray, RoundedCornerShape(8.dp))
+                                    .border(1.dp, if (viewModel.eraserMode == "precise") MaterialTheme.colorScheme.primary else Color.LightGray, RoundedCornerShape(8.dp))
                                     .clickable { viewModel.eraserMode = "precise" }
                                     .padding(vertical = 10.dp, horizontal = 4.dp),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Icon(Icons.Default.Gesture, contentDescription = null, modifier = Modifier.size(20.dp), tint = if (viewModel.eraserMode == "precise") Color(0xFF00B0FF) else Color.Gray)
+                                    Icon(Icons.Default.Gesture, contentDescription = null, modifier = Modifier.size(20.dp), tint = if (viewModel.eraserMode == "precise") MaterialTheme.colorScheme.primary else Color.Gray)
                                     Spacer(modifier = Modifier.height(4.dp))
                                     Text("Precise", fontSize = 12.sp, fontWeight = if (viewModel.eraserMode == "precise") FontWeight.Bold else FontWeight.Normal)
                                 }
@@ -2997,13 +2827,13 @@ fun NoteEditorCanvas(
                                     .weight(1f)
                                     .clip(RoundedCornerShape(8.dp))
                                     .background(if (viewModel.eraserMode == "clear_all") MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
-                                    .border(1.dp, if (viewModel.eraserMode == "clear_all") Color(0xFF00B0FF) else Color.LightGray, RoundedCornerShape(8.dp))
+                                    .border(1.dp, if (viewModel.eraserMode == "clear_all") MaterialTheme.colorScheme.primary else Color.LightGray, RoundedCornerShape(8.dp))
                                     .clickable { viewModel.eraserMode = "clear_all" }
                                     .padding(vertical = 10.dp, horizontal = 4.dp),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Icon(Icons.Default.DeleteSweep, contentDescription = null, modifier = Modifier.size(20.dp), tint = if (viewModel.eraserMode == "clear_all") Color(0xFF00B0FF) else Color.Gray)
+                                    Icon(Icons.Default.DeleteSweep, contentDescription = null, modifier = Modifier.size(20.dp), tint = if (viewModel.eraserMode == "clear_all") MaterialTheme.colorScheme.primary else Color.Gray)
                                     Spacer(modifier = Modifier.height(4.dp))
                                     Text("Clear All", fontSize = 12.sp, fontWeight = if (viewModel.eraserMode == "clear_all") FontWeight.Bold else FontWeight.Normal)
                                 }
@@ -3057,7 +2887,7 @@ fun NoteEditorCanvas(
                                             .size(36.dp)
                                             .clip(CircleShape)
                                             .background(Color(c))
-                                            .border(2.dp, if (isSel) Color(0xFF00B0FF) else Color.Transparent, CircleShape)
+                                            .border(2.dp, if (isSel) MaterialTheme.colorScheme.primary else Color.Transparent, CircleShape)
                                             .clickable { viewModel.activeColor = c }
                                     )
                                     index++
@@ -3132,7 +2962,7 @@ fun NoteEditorCanvas(
             onDismissRequest = { showLayersDialog = false },
             title = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Layers, contentDescription = null, tint = Color(0xFF00B0FF))
+                    Icon(Icons.Default.Layers, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                     Spacer(modifier = Modifier.width(8.dp))
                     Text("Canvas Layers & Annotations")
                 }
@@ -3197,7 +3027,7 @@ fun NoteEditorCanvas(
                     Text(
                         "Page ${viewModel.pdfPage} of ${viewModel.pdfPageCount}",
                         fontSize = 14.sp,
-                        color = Color(0xFF475569)
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     
                     if (viewModel.pdfPageCount > 1) {
@@ -3268,7 +3098,7 @@ fun NoteEditorCanvas(
                     Icon(
                         imageVector = Icons.Default.HourglassTop,
                         contentDescription = null,
-                        tint = Color(0xFF00B0FF)
+                        tint = MaterialTheme.colorScheme.primary
                     )
                     Text("Focus Timer Settings", style = MaterialTheme.typography.titleMedium)
                 }
@@ -3292,7 +3122,7 @@ fun NoteEditorCanvas(
                                     showFullscreenTimerDialog = false
                                 },
                                 colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (viewModel.timerTotalSeconds == secs) Color(0xFF00B0FF) else MaterialTheme.colorScheme.secondaryContainer,
+                                    containerColor = if (viewModel.timerTotalSeconds == secs) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondaryContainer,
                                     contentColor = if (viewModel.timerTotalSeconds == secs) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSecondaryContainer
                                 )
                             ) {
@@ -3370,7 +3200,7 @@ fun NoteEditorCanvas(
                     Icon(
                         imageVector = Icons.Default.Gesture,
                         contentDescription = null,
-                        tint = Color(0xFF00B0FF),
+                        tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(40.dp)
                     )
                     
@@ -3388,7 +3218,7 @@ fun NoteEditorCanvas(
                     Text(
                         text = "Customize active stylus features, double-tap shortcuts, and palm rejection behaviors.",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = Color(0xFF475569),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center
                     )
                     
@@ -3415,7 +3245,7 @@ fun NoteEditorCanvas(
                             Text(
                                 text = "Hand/finger touches pan and scroll the canvas, while only the stylus draws.",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = Color(0xFF475569)
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                         Switch(
@@ -3430,7 +3260,7 @@ fun NoteEditorCanvas(
                         text = "Stylus Double-Tap / Side-Button Action",
                         fontWeight = FontWeight.Bold,
                         style = MaterialTheme.typography.bodyMedium,
-                        color = Color(0xFF00B0FF),
+                        color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.align(Alignment.Start)
                     )
                     
@@ -3468,7 +3298,7 @@ fun NoteEditorCanvas(
                                     text = actionLabel,
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                                    color = if (isSelected) Color(0xFF00B0FF) else MaterialTheme.colorScheme.onSurface
+                                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                                 )
                             }
                         }
@@ -3516,19 +3346,129 @@ fun NoteEditorCanvas(
             }
     ) {
         if (!viewModel.isFullscreen) {
-            NoteTabBar(
-                notes = notes,
-                openNoteIds = viewModel.openNoteIds,
-                selectedNote = selectedNote,
-                onSelectNote = { viewModel.selectNote(it) },
-                onCloseNote = { viewModel.closeNote(it) },
-                onCreateNoteClick = onCreateNoteClick,
-                onOpenMenu = onOpenMenu,
-                viewModel = viewModel
-            )
+            // TIER 1: Top Tier (Browser-like tabs for different notes + Core Actions)
+        Row(
+            verticalAlignment = Alignment.Bottom,
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color(0xFFF1F5F9)) // Clean light gray browser header
+                .padding(horizontal = 8.dp, vertical = 0.dp)
+        ) {
+            // Tabs Row
+            val openNotes = notes.filter { it.id in viewModel.openNoteIds }
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .horizontalScroll(rememberScrollState())
+                    .padding(top = 6.dp),
+                verticalAlignment = Alignment.Bottom
+            ) {
+                openNotes.forEach { note ->
+                    val isTabSelected = note.id == selectedNote.id
+                    val tabIconTint = if (note.templateType == "pdf") Color(0xFFD32F2F) else Color(0xFF3B82F6)
+                    
+                    Surface(
+                        modifier = Modifier
+                            .padding(horizontal = 2.dp)
+                            .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)),
+                        color = if (isTabSelected) Color.White else Color(0xFFE2E8F0),
+                        border = if (isTabSelected) BorderStroke(1.dp, Color(0xFFCBD5E1)) else null
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .clickable { viewModel.selectNote(note) }
+                                .padding(horizontal = 16.dp, vertical = 10.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (note.templateType == "pdf") Icons.Default.PictureAsPdf else Icons.Default.Description,
+                                contentDescription = null,
+                                tint = tabIconTint,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = note.title,
+                                fontSize = 13.sp,
+                                fontWeight = if (isTabSelected) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isTabSelected) Color(0xFF0F172A) else Color(0xFF475569),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.widthIn(max = 140.dp)
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            IconButton(
+                                onClick = {
+                                    viewModel.closeNote(note)
+                                },
+                                modifier = Modifier.size(16.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Close Note",
+                                    tint = Color(0xFF94A3B8),
+                                    modifier = Modifier.size(12.dp)
+                                )
+                            }
+                        }
+                    }
+                }
 
-            // TIER 2: Two-Tier horizontal toolbar (Full-faced top toolbar - shown only when not in full view mode)
-            Column(
+                // New Tab Button
+                IconButton(
+                    onClick = onCreateNoteClick,
+                    modifier = Modifier
+                        .padding(bottom = 6.dp, start = 6.dp)
+                        .size(28.dp)
+                        .background(Color.White, CircleShape)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "New Note Tab",
+                        tint = Color(0xFF475569),
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+
+            // Right side of browser header controls
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                modifier = Modifier.padding(bottom = 6.dp, start = 8.dp)
+            ) {
+                // Fullscreen Immersive Toggle button
+                IconButton(
+                    onClick = {
+                        viewModel.isFullscreen = !viewModel.isFullscreen
+                    },
+                    modifier = Modifier.size(32.dp).testTag("fullscreen_toggle_button")
+                ) {
+                    Icon(
+                        imageVector = if (viewModel.isFullscreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
+                        contentDescription = "Toggle Immersive Fullscreen",
+                        tint = Color(0xFF475569),
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+                
+                // Dropdown icon [ ▾ ]
+                IconButton(
+                    onClick = onCreateNoteClick,
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ArrowDropDown,
+                        contentDescription = "Templates Menu",
+                        tint = Color(0xFF475569),
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+            }
+        }
+
+        // TIER 2: Two-Tier horizontal toolbar
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(MaterialTheme.colorScheme.surface)
@@ -3563,10 +3503,7 @@ fun NoteEditorCanvas(
                     
                     // Split screen / Sidebar toggle [ | ]
                     IconButton(
-                        onClick = {
-                            onOpenMenu()
-                            onToggleSidebar()
-                        },
+                        onClick = onToggleSidebar,
                         modifier = Modifier.size(32.dp)
                     ) {
                         Icon(
@@ -3595,7 +3532,7 @@ fun NoteEditorCanvas(
                         modifier = Modifier
                             .size(30.dp)
                             .background(Color(0xFFEFF6FF), CircleShape)
-                            .border(1.dp, Color(0xFF00B0FF), CircleShape),
+                            .border(1.dp, Color(0xFF3B82F6), CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
@@ -3605,7 +3542,7 @@ fun NoteEditorCanvas(
                                 else -> Icons.Default.Gesture
                             },
                             contentDescription = "Active Tool",
-                            tint = Color(0xFF00B0FF),
+                            tint = Color(0xFF3B82F6),
                             modifier = Modifier.size(16.dp)
                         )
                     }
@@ -3655,11 +3592,11 @@ fun NoteEditorCanvas(
                             Icon(
                                 imageVector = Icons.Default.Edit,
                                 contentDescription = "Draw mode",
-                                tint = if (viewModel.activeToolType in listOf("pen", "fountain_pen", "pencil", "highlighter", "laser")) Color(0xFF00B0FF) else Color(0xFF475569),
+                                tint = if (viewModel.activeToolType in listOf("pen", "fountain_pen", "pencil", "highlighter", "laser")) Color(0xFF3B82F6) else Color(0xFF475569),
                                 modifier = Modifier.size(18.dp)
                             )
                             if (viewModel.activeToolType in listOf("pen", "fountain_pen", "pencil", "highlighter", "laser")) {
-                                Box(modifier = Modifier.width(14.dp).height(2.dp).background(Color(0xFF00B0FF)))
+                                Box(modifier = Modifier.width(14.dp).height(2.dp).background(Color(0xFF3B82F6)))
                             }
                         }
                     }
@@ -3672,7 +3609,7 @@ fun NoteEditorCanvas(
                         Icon(
                             imageVector = Icons.Default.Gesture,
                             contentDescription = "Scribble to Text Studio",
-                            tint = Color(0xFF00B0FF),
+                            tint = Color(0xFF3B82F6),
                             modifier = Modifier.size(18.dp)
                         )
                     }
@@ -3706,11 +3643,11 @@ fun NoteEditorCanvas(
                             Icon(
                                 imageVector = Icons.Default.Crop,
                                 contentDescription = "Lasso selection",
-                                tint = if (viewModel.activeToolType == "lasso") Color(0xFF00B0FF) else Color(0xFF475569),
+                                tint = if (viewModel.activeToolType == "lasso") Color(0xFF3B82F6) else Color(0xFF475569),
                                 modifier = Modifier.size(18.dp)
                             )
                             if (viewModel.activeToolType == "lasso") {
-                                Box(modifier = Modifier.width(14.dp).height(2.dp).background(Color(0xFF00B0FF)))
+                                Box(modifier = Modifier.width(14.dp).height(2.dp).background(Color(0xFF3B82F6)))
                             }
                         }
                     }
@@ -3723,7 +3660,7 @@ fun NoteEditorCanvas(
                         Icon(
                             imageVector = Icons.Default.Straighten,
                             contentDescription = "Ruler alignment",
-                            tint = if (viewModel.isRulerActive) Color(0xFF00B0FF) else Color(0xFF475569),
+                            tint = if (viewModel.isRulerActive) Color(0xFF3B82F6) else Color(0xFF475569),
                             modifier = Modifier.size(18.dp)
                         )
                     }
@@ -3788,7 +3725,7 @@ fun NoteEditorCanvas(
                         Icon(
                             imageVector = Icons.Default.AutoAwesome,
                             contentDescription = "AI Assistant Panel",
-                            tint = if (showAISidebar) Color(0xFF00B0FF) else Color(0xFF475569),
+                            tint = if (showAISidebar) Color(0xFF3B82F6) else Color(0xFF475569),
                             modifier = Modifier.size(18.dp)
                         )
                     }
@@ -3796,8 +3733,8 @@ fun NoteEditorCanvas(
                     // Palm Rejection Quick Toggle Button
                     Surface(
                         shape = RoundedCornerShape(16.dp),
-                        color = if (viewModel.stylusOnlyDrawing) Color(0xFF00B0FF) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                        border = BorderStroke(1.dp, if (viewModel.stylusOnlyDrawing) Color(0xFF00B0FF) else Color(0xFFE2E8F0)),
+                        color = if (viewModel.stylusOnlyDrawing) Color(0xFF2563EB) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        border = BorderStroke(1.dp, if (viewModel.stylusOnlyDrawing) Color(0xFF1D4ED8) else MaterialTheme.colorScheme.outlineVariant),
                         modifier = Modifier
                             .clip(RoundedCornerShape(16.dp))
                             .clickable {
@@ -3812,7 +3749,7 @@ fun NoteEditorCanvas(
                             Icon(
                                 imageVector = Icons.Default.FrontHand,
                                 contentDescription = "Palm Rejection Mode",
-                                tint = if (viewModel.stylusOnlyDrawing) Color.White else Color(0xFF475569),
+                                tint = if (viewModel.stylusOnlyDrawing) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(13.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
@@ -3820,7 +3757,7 @@ fun NoteEditorCanvas(
                                 text = if (viewModel.stylusOnlyDrawing) "Palm Rejection ON" else "Palm Rejection OFF",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = if (viewModel.stylusOnlyDrawing) Color.White else Color(0xFF475569)
+                                color = if (viewModel.stylusOnlyDrawing) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
@@ -3837,7 +3774,7 @@ fun NoteEditorCanvas(
                         Icon(
                             imageVector = Icons.Default.Settings,
                             contentDescription = "Settings",
-                            tint = if (viewModel.stylusOnlyDrawing) Color(0xFF00B0FF) else Color(0xFF475569),
+                            tint = if (viewModel.stylusOnlyDrawing) Color(0xFF3B82F6) else Color(0xFF475569),
                             modifier = Modifier.size(18.dp)
                         )
                     }
@@ -3852,7 +3789,7 @@ fun NoteEditorCanvas(
                         Icon(
                             imageVector = Icons.Default.Style,
                             contentDescription = "Change Background Pattern",
-                            tint = Color(0xFF00B0FF),
+                            tint = Color(0xFF3B82F6),
                             modifier = Modifier.size(18.dp)
                         )
                     }
@@ -3867,7 +3804,7 @@ fun NoteEditorCanvas(
                         Icon(
                             imageVector = if (isToolbarExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
                             contentDescription = "Toggle Pen Shelf (Optimize Workspace)",
-                            tint = Color(0xFF00B0FF),
+                            tint = Color(0xFF3B82F6),
                             modifier = Modifier.size(18.dp)
                         )
                     }
@@ -3904,7 +3841,7 @@ fun NoteEditorCanvas(
                         Icon(
                             imageVector = Icons.Default.Description,
                             contentDescription = "Export active note as DOCX",
-                            tint = Color(0xFF00B0FF), // Blue for DOCX
+                            tint = Color(0xFF2563EB), // Blue for DOCX
                             modifier = Modifier.size(18.dp)
                         )
                     }
@@ -3962,21 +3899,6 @@ fun NoteEditorCanvas(
                             modifier = Modifier.size(18.dp)
                         )
                     }
-
-                    // Fullscreen Mode Toggle Button
-                    IconButton(
-                        onClick = { viewModel.isFullscreen = !viewModel.isFullscreen },
-                        modifier = Modifier
-                            .size(32.dp)
-                            .testTag("tier2_fullscreen_toggle_button")
-                    ) {
-                        Icon(
-                            imageVector = if (viewModel.isFullscreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
-                            contentDescription = "Toggle Immersive Full View Mode",
-                            tint = Color(0xFF00B0FF),
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
                 }
             }
 
@@ -4024,7 +3946,7 @@ fun NoteEditorCanvas(
                     modifier = Modifier
                         .width(2.dp)
                         .height(40.dp)
-                        .background(Color(0xFFE2E8F0))
+                        .background(Color(0xFFCBD5E1))
                 )
 
                 // Color Palette & Star Favorite
@@ -4049,7 +3971,7 @@ fun NoteEditorCanvas(
                                 .background(Color(colorVal))
                                 .border(
                                     width = if (isSelected) 3.dp else 1.dp,
-                                    color = if (isSelected) Color(0xFF00B0FF) else Color(0xFFE2E8F0),
+                                    color = if (isSelected) Color(0xFF3B82F6) else Color(0xFFCBD5E1),
                                     shape = CircleShape
                                 )
                                 .combinedClickable(
@@ -4080,7 +4002,7 @@ fun NoteEditorCanvas(
                         Icon(
                             imageVector = Icons.Default.Palette,
                             contentDescription = "Customize Shade",
-                            tint = Color(0xFF00B0FF),
+                            tint = Color(0xFF3B82F6),
                             modifier = Modifier.size(20.dp)
                         )
                     }
@@ -4091,7 +4013,7 @@ fun NoteEditorCanvas(
                     modifier = Modifier
                         .width(2.dp)
                         .height(40.dp)
-                        .background(Color(0xFFE2E8F0))
+                        .background(Color(0xFFCBD5E1))
                 )
 
                 // Dynamic Circular Thickness Selector with dots and settings button
@@ -4126,7 +4048,7 @@ fun NoteEditorCanvas(
                                     .size(30.dp)
                                     .border(
                                         width = if (isSelected) 2.dp else 1.dp,
-                                        color = if (isSelected) Color(0xFF00B0FF) else Color(0xFFE2E8F0),
+                                        color = if (isSelected) Color(0xFF3B82F6) else Color(0xFFCBD5E1),
                                         shape = CircleShape
                                     ),
                                 contentAlignment = Alignment.Center
@@ -4144,7 +4066,7 @@ fun NoteEditorCanvas(
                                 text = label,
                                 fontSize = 10.sp,
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                color = if (isSelected) Color(0xFF00B0FF) else Color(0xFF64748B)
+                                color = if (isSelected) Color(0xFF3B82F6) else Color(0xFF64748B)
                             )
                         }
                     }
@@ -4157,7 +4079,7 @@ fun NoteEditorCanvas(
                         Icon(
                             imageVector = Icons.Default.Tune,
                             contentDescription = "Customize Brush Thickness",
-                            tint = Color(0xFF00B0FF),
+                            tint = Color(0xFF3B82F6),
                             modifier = Modifier.size(20.dp)
                         )
                     }
@@ -4168,7 +4090,7 @@ fun NoteEditorCanvas(
                     modifier = Modifier
                         .width(2.dp)
                         .height(40.dp)
-                        .background(Color(0xFFE2E8F0))
+                        .background(Color(0xFFCBD5E1))
                 )
 
                 // Row 2 Focus Timer Integration
@@ -4184,7 +4106,7 @@ fun NoteEditorCanvas(
                     Icon(
                         imageVector = if (viewModel.timerIsRunning) Icons.Default.HourglassTop else Icons.Default.HourglassEmpty,
                         contentDescription = "Focus Timer",
-                        tint = if (viewModel.timerIsRunning) Color(0xFF00B0FF) else Color(0xFF64748B),
+                        tint = if (viewModel.timerIsRunning) MaterialTheme.colorScheme.primary else Color(0xFF64748B),
                         modifier = Modifier.size(16.dp)
                     )
 
@@ -4210,7 +4132,7 @@ fun NoteEditorCanvas(
                         Icon(
                             imageVector = if (viewModel.timerIsRunning) Icons.Default.Pause else Icons.Default.PlayArrow,
                             contentDescription = "Play/Pause Timer",
-                            tint = if (viewModel.timerIsRunning) MaterialTheme.colorScheme.secondary else Color(0xFF00B0FF),
+                            tint = if (viewModel.timerIsRunning) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(16.dp)
                         )
                     }
@@ -4244,7 +4166,7 @@ fun NoteEditorCanvas(
                                 color = if (viewModel.timerTotalSeconds == secs) MaterialTheme.colorScheme.primaryContainer else Color(0xFFF1F5F9),
                                 border = BorderStroke(
                                     width = 1.dp,
-                                    color = if (viewModel.timerTotalSeconds == secs) Color(0xFF00B0FF) else Color(0xFFE2E8F0)
+                                    color = if (viewModel.timerTotalSeconds == secs) MaterialTheme.colorScheme.primary else Color(0xFFCBD5E1)
                                 ),
                                 modifier = Modifier.padding(vertical = 2.dp)
                             ) {
@@ -4268,7 +4190,7 @@ fun NoteEditorCanvas(
                         color = if (viewModel.timerTotalSeconds !in listOf(600, 1500, 3000)) MaterialTheme.colorScheme.tertiaryContainer else Color(0xFFF1F5F9),
                         border = BorderStroke(
                             width = 1.dp,
-                            color = if (viewModel.timerTotalSeconds !in listOf(600, 1500, 3000)) MaterialTheme.colorScheme.tertiary else Color(0xFFE2E8F0)
+                            color = if (viewModel.timerTotalSeconds !in listOf(600, 1500, 3000)) MaterialTheme.colorScheme.tertiary else Color(0xFFCBD5E1)
                         ),
                         modifier = Modifier.padding(vertical = 2.dp)
                     ) {
@@ -4330,6 +4252,8 @@ fun NoteEditorCanvas(
                     }
                 }
             }
+            }
+        }
         }
 
         // Active workspace (Canvas + AI Sidebar overlay)
@@ -4454,7 +4378,7 @@ fun NoteEditorCanvas(
                             // Change Color
                             listOf(
                                 0xFF1E1E1E.toInt() to Color(0xFF1E1E1E), // Black
-                                0xFF1976D2.toInt() to Color(0xFF00B0FF), // Blue
+                                0xFF1976D2.toInt() to MaterialTheme.colorScheme.primary, // Blue
                                 0xFFD32F2F.toInt() to Color(0xFFD32F2F), // Red
                                 0xFF388E3C.toInt() to Color(0xFF388E3C)  // Green
                             ).forEach { (colorInt, colorVal) ->
@@ -4478,7 +4402,7 @@ fun NoteEditorCanvas(
                                 Icon(
                                     imageVector = Icons.Default.ContentCopy,
                                     contentDescription = "Duplicate selected shape",
-                                    tint = Color(0xFF00B0FF),
+                                    tint = MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.size(18.dp)
                                 )
                             }
@@ -4522,7 +4446,7 @@ fun NoteEditorCanvas(
                                 Icon(
                                     imageVector = Icons.Default.Check,
                                     contentDescription = "Done editing shape",
-                                    tint = Color(0xFF00B0FF),
+                                    tint = MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.size(18.dp)
                                 )
                             }
@@ -4561,7 +4485,7 @@ fun NoteEditorCanvas(
                                 Icon(
                                     imageVector = Icons.Default.KeyboardArrowUp,
                                     contentDescription = "Previous Page",
-                                    tint = if (viewModel.pdfPage > 1) Color(0xFF475569) else Color(0xFF475569).copy(alpha = 0.38f)
+                                    tint = if (viewModel.pdfPage > 1) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
                                 )
                             }
 
@@ -4594,7 +4518,7 @@ fun NoteEditorCanvas(
                                 Icon(
                                     imageVector = Icons.Default.KeyboardArrowDown,
                                     contentDescription = "Next Page",
-                                    tint = if (viewModel.pdfPage < viewModel.pdfPageCount) Color(0xFF475569) else Color(0xFF475569).copy(alpha = 0.38f)
+                                    tint = if (viewModel.pdfPage < viewModel.pdfPageCount) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
                                 )
                             }
 
@@ -4605,7 +4529,7 @@ fun NoteEditorCanvas(
                                 Icon(
                                     imageVector = Icons.Default.Add,
                                     contentDescription = "Add Page",
-                                    tint = Color(0xFF00B0FF)
+                                    tint = MaterialTheme.colorScheme.primary
                                 )
                             }
                         }
@@ -4615,35 +4539,17 @@ fun NoteEditorCanvas(
 
                 // Floating Pen Section & Fullscreen Exit Controls
                 if (viewModel.isFullscreen) {
-                    // Top Bar Floating Controls
+                    // Floating Pen Section Overlay (Top-Center)
                     Box(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp)
+                            .fillMaxSize()
+                            .padding(top = 16.dp, start = 64.dp, end = 64.dp),
+                        contentAlignment = Alignment.TopCenter
                     ) {
-                        // Exit Fullscreen (Top-Left)
-                        IconButton(
-                            onClick = { viewModel.isFullscreen = false },
-                            modifier = Modifier
-                                .align(Alignment.TopStart)
-                                .size(40.dp)
-                                .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                                .testTag("fullscreen_exit_floating")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.FullscreenExit,
-                                contentDescription = "Exit Immersive Fullscreen",
-                                tint = Color.White,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-
-                        // Floating Pen Section Overlay (Top-Center)
                         androidx.compose.animation.AnimatedVisibility(
                             visible = showFloatingPenSection,
                             enter = fadeIn() + slideInVertically(initialOffsetY = { -it / 2 }),
-                            exit = fadeOut() + slideOutVertically(targetOffsetY = { -it / 2 }),
-                            modifier = Modifier.align(Alignment.TopCenter)
+                            exit = fadeOut() + slideOutVertically(targetOffsetY = { -it / 2 })
                         ) {
                             FloatingPenSection(
                                 viewModel = viewModel,
@@ -4655,21 +4561,48 @@ fun NoteEditorCanvas(
                                 onCustomizeShadeClick = { showColorPickerDialogIndex = it }
                             )
                         }
+                    }
 
-                        // Toggle Pen Palette FAB Button (Top-Right)
+                    // Floating Toggle Pen Palette FAB Button (Top-Right)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(16.dp),
+                        contentAlignment = Alignment.TopEnd
+                    ) {
                         FloatingActionButton(
                             onClick = { showFloatingPenSection = !showFloatingPenSection },
                             containerColor = MaterialTheme.colorScheme.primaryContainer,
                             contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                             shape = CircleShape,
-                            modifier = Modifier
-                                .align(Alignment.TopEnd)
-                                .size(44.dp)
-                                .testTag("floating_pen_section_toggle")
+                            modifier = Modifier.size(48.dp).testTag("floating_pen_section_toggle")
                         ) {
                             Icon(
                                 imageVector = if (showFloatingPenSection) Icons.Default.Close else Icons.Default.Brush,
                                 contentDescription = "Toggle Immersive Pen Palette",
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                    }
+
+                    // Floating Exit Fullscreen Button (Top-Left)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(16.dp),
+                        contentAlignment = Alignment.TopStart
+                    ) {
+                        IconButton(
+                            onClick = { viewModel.isFullscreen = false },
+                            modifier = Modifier
+                                .size(40.dp)
+                                .background(Color.Black.copy(alpha = 0.4f), CircleShape)
+                                .testTag("fullscreen_exit_floating")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.FullscreenExit,
+                                contentDescription = "Exit Immersive Fullscreen",
+                                tint = Color.White,
                                 modifier = Modifier.size(20.dp)
                             )
                         }
@@ -4688,19 +4621,19 @@ fun NoteEditorCanvas(
                         .width(310.dp)
                         .fillMaxHeight()
                         .background(MaterialTheme.colorScheme.surface)
-                        .border(BorderStroke(1.dp, Color(0xFFE2E8F0)))
+                        .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant))
                         .padding(16.dp)
                 ) {
                     Text(
                         "AI Companion",
                         fontWeight = FontWeight.Bold,
                         fontSize = 18.sp,
-                        color = Color(0xFF00B0FF)
+                        color = MaterialTheme.colorScheme.primary
                     )
                     Text(
                         "Integrated OCR Indexing & Audio Recorder",
                         fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.outline
                     )
 
                     Spacer(modifier = Modifier.height(16.dp))
@@ -4712,7 +4645,7 @@ fun NoteEditorCanvas(
                     ) {
                         Column(modifier = Modifier.padding(12.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Gesture, contentDescription = null, tint = Color(0xFF00B0FF))
+                                Icon(Icons.Default.Gesture, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text("Handwriting Indexer", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                             }
@@ -4720,7 +4653,7 @@ fun NoteEditorCanvas(
                             Text(
                                 "Analyze handwritten strokes, transcribe equations/text, and extract search tags.",
                                 fontSize = 11.sp,
-                                color = Color(0xFF475569)
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Spacer(modifier = Modifier.height(10.dp))
 
@@ -4763,7 +4696,7 @@ fun NoteEditorCanvas(
                             Text(
                                 "Extract text from imported PDF documents using Google ML Kit on-device text recognition to make all pages searchable.",
                                 fontSize = 11.sp,
-                                color = Color(0xFF475569)
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Spacer(modifier = Modifier.height(10.dp))
 
@@ -4808,7 +4741,7 @@ fun NoteEditorCanvas(
                             Text(
                                 "Record notes directly. Gemini will automatically transcribe your voice notes.",
                                 fontSize = 11.sp,
-                                color = Color(0xFF475569)
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Spacer(modifier = Modifier.height(10.dp))
 
@@ -4861,7 +4794,7 @@ fun NoteEditorCanvas(
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxWidth()
-                            .border(BorderStroke(1.dp, Color(0xFFE2E8F0)), shape = RoundedCornerShape(8.dp))
+                            .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), shape = RoundedCornerShape(8.dp))
                             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f))
                             .padding(10.dp)
                     ) {
@@ -4875,13 +4808,13 @@ fun NoteEditorCanvas(
                                     )
                                 } else {
                                     if (!selectedNote.summary.isNullOrBlank()) {
-                                        Text("Summary Tag:", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = Color(0xFF00B0FF))
+                                        Text("Summary Tag:", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
                                         Text(selectedNote.summary, fontSize = 12.sp)
                                         Spacer(modifier = Modifier.height(10.dp))
                                     }
 
                                     if (!selectedNote.content.isNullOrBlank()) {
-                                        Text("Handwriting OCR & Styled Scribbles:", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = Color(0xFF00B0FF))
+                                        Text("Handwriting OCR & Styled Scribbles:", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
                                         StyledTextRenderer(selectedNote.content, modifier = Modifier.padding(top = 4.dp))
                                         Spacer(modifier = Modifier.height(10.dp))
                                     }
@@ -4897,8 +4830,6 @@ fun NoteEditorCanvas(
                 }
             }
         }
-    }
-    }
     }
 
     if (editingImageIndex != null && editingImageElement != null) {
@@ -4978,7 +4909,7 @@ fun HandwrittenSearchDialog(
                         Icon(
                             imageVector = Icons.Default.AutoAwesome,
                             contentDescription = null,
-                            tint = Color(0xFF00B0FF)
+                            tint = MaterialTheme.colorScheme.primary
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
@@ -5011,7 +4942,7 @@ fun HandwrittenSearchDialog(
                                 Icon(
                                     Icons.Default.Gesture,
                                     contentDescription = null,
-                                    tint = Color(0xFF00B0FF),
+                                    tint = MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.size(20.dp)
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
@@ -5026,7 +4957,7 @@ fun HandwrittenSearchDialog(
                         Text(
                             "Analyze vector strokes on this canvas to recognize handwritten words, equations, and drawings, making them searchable across your notes.",
                             fontSize = 11.sp,
-                            color = Color(0xFF475569)
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(modifier = Modifier.height(10.dp))
 
@@ -5069,7 +5000,7 @@ fun HandwrittenSearchDialog(
                         .testTag("handwritten_search_input"),
                     placeholder = { Text("Search handwritten text, tags, summary...", fontSize = 13.sp) },
                     leadingIcon = {
-                        Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFF00B0FF))
+                        Icon(Icons.Default.Search, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                     },
                     trailingIcon = {
                         if (query.isNotEmpty()) {
@@ -5112,12 +5043,12 @@ fun HandwrittenSearchDialog(
                                 "No handwritten text indexed yet.",
                                 fontWeight = FontWeight.Medium,
                                 fontSize = 13.sp,
-                                color = Color(0xFF475569)
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Text(
                                 "Draw or write notes on the canvas, then click 'Analyze & Index Strokes' above to make your handwriting searchable.",
                                 fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = MaterialTheme.colorScheme.outline,
                                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                                 modifier = Modifier.padding(top = 4.dp)
                             )
@@ -5131,7 +5062,7 @@ fun HandwrittenSearchDialog(
                     if (!matchesQuery) {
                         Text(
                             "No matching text found for '$query'",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = MaterialTheme.colorScheme.outline,
                             fontSize = 12.sp,
                             modifier = Modifier.padding(vertical = 12.dp)
                         )
@@ -5145,9 +5076,9 @@ fun HandwrittenSearchDialog(
                                 )
                             ) {
                                 Column(modifier = Modifier.padding(12.dp)) {
-                                    Text("Summary", fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = Color(0xFF00B0FF))
+                                    Text("Summary", fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
                                     Spacer(modifier = Modifier.height(4.dp))
-                                    Text(summary, fontSize = 12.sp, color = Color(0xFF475569))
+                                    Text(summary, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                             }
                         }
@@ -5165,10 +5096,10 @@ fun HandwrittenSearchDialog(
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text("Recognized Text", fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = Color(0xFF00B0FF))
+                                    Text("Recognized Text", fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
                                     if (query.isNotBlank() && transcription.contains(query, ignoreCase = true)) {
                                         Surface(
-                                            color = Color(0xFF00B0FF),
+                                            color = MaterialTheme.colorScheme.primary,
                                             shape = RoundedCornerShape(8.dp)
                                         ) {
                                             Text(
@@ -5237,7 +5168,7 @@ fun PhotoOptionsDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Photo, contentDescription = null, tint = Color(0xFF00B0FF))
+                        Icon(Icons.Default.Photo, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("Photo Options", fontWeight = FontWeight.Bold, fontSize = 18.sp)
                     }
@@ -5451,7 +5382,7 @@ fun CreateNoteDialog(
                     text = "New Note Canvas",
                     fontWeight = FontWeight.Bold,
                     fontSize = 18.sp,
-                    color = Color(0xFF00B0FF)
+                    color = MaterialTheme.colorScheme.primary
                 )
                 Spacer(modifier = Modifier.height(14.dp))
 
@@ -5494,7 +5425,7 @@ fun CreateNoteDialog(
                                 .background(if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f) else Color.Transparent)
                                 .border(
                                     width = if (isSelected) 1.5.dp else 1.dp,
-                                    color = if (isSelected) Color(0xFF00B0FF) else Color(0xFFE2E8F0).copy(alpha = 0.5f),
+                                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
                                     shape = RoundedCornerShape(10.dp)
                                 )
                                 .clickable { selectedTemplate = type }
@@ -5506,7 +5437,7 @@ fun CreateNoteDialog(
                                     .clip(RoundedCornerShape(6.dp))
                                     .border(
                                         width = 1.dp,
-                                        color = if (isSelected) Color(0xFF00B0FF) else Color.LightGray,
+                                        color = if (isSelected) MaterialTheme.colorScheme.primary else Color.LightGray,
                                         shape = RoundedCornerShape(6.dp)
                                     )
                             ) {
@@ -5523,7 +5454,7 @@ fun CreateNoteDialog(
                                     fontSize = 14.sp,
                                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold
                                 )
-                                Text(desc, fontSize = 11.sp, color = Color(0xFF475569).copy(alpha = 0.8f))
+                                Text(desc, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f))
                             }
                         }
                     }
@@ -5719,7 +5650,7 @@ fun SyncDashboard(viewModel: NoteViewModel) {
                     ) {
                         Surface(
                             shape = CircleShape,
-                            color = Color(0xFF00B0FF),
+                            color = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(52.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
@@ -5776,7 +5707,7 @@ fun SyncDashboard(viewModel: NoteViewModel) {
                                         text = if (isSignedIn) "Google Account Connected" else "Not Signed In",
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = if (isSignedIn) Color(0xFF10B981) else Color(0xFF475569)
+                                        color = if (isSignedIn) Color(0xFF10B981) else MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
                             }
@@ -5876,7 +5807,7 @@ fun SyncDashboard(viewModel: NoteViewModel) {
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
-                HorizontalDivider(color = Color(0xFFE2E8F0).copy(alpha = 0.5f))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                 Spacer(modifier = Modifier.height(14.dp))
 
                 // Feature checklist
@@ -5893,7 +5824,7 @@ fun SyncDashboard(viewModel: NoteViewModel) {
                             Icon(
                                 imageVector = icon,
                                 contentDescription = null,
-                                tint = Color(0xFF00B0FF),
+                                tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(6.dp))
@@ -5922,13 +5853,13 @@ fun SyncDashboard(viewModel: NoteViewModel) {
                         Icon(
                             imageVector = Icons.Default.Backup,
                             contentDescription = "Syncing",
-                            tint = Color(0xFF00B0FF),
+                            tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(32.dp)
                         )
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
                             Text("Google Drive Cloud Backup", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                            Text("Last fully backed up: ${viewModel.lastSyncTime}", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("Last fully backed up: ${viewModel.lastSyncTime}", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
                         }
                     }
 
@@ -5954,7 +5885,7 @@ fun SyncDashboard(viewModel: NoteViewModel) {
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
-                HorizontalDivider(color = Color(0xFFE2E8F0).copy(alpha = 0.5f))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                 Spacer(modifier = Modifier.height(14.dp))
 
                 // Auto sync toggle
@@ -5965,7 +5896,7 @@ fun SyncDashboard(viewModel: NoteViewModel) {
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text("Automated Live Backup", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                        Text("Automatically backup note modifications to Google Drive on save.", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Automatically backup note modifications to Google Drive on save.", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
                     }
                     Switch(
                         checked = viewModel.autoBackupEnabled,
@@ -6004,7 +5935,7 @@ fun SyncDashboard(viewModel: NoteViewModel) {
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
                             Text("Local Storage Backup & Restore", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                            Text("Export all notes, study stats & goals to local file or restore from a backup", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("Export all notes, study stats & goals to local file or restore from a backup", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
                         }
                     }
                 }
@@ -6035,7 +5966,7 @@ fun SyncDashboard(viewModel: NoteViewModel) {
                         },
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00B0FF))
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                     ) {
                         Icon(Icons.Default.FileUpload, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(6.dp))
@@ -6063,7 +5994,7 @@ fun SyncDashboard(viewModel: NoteViewModel) {
 
                 if (localBackupList.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(14.dp))
-                    HorizontalDivider(color = Color(0xFFE2E8F0).copy(alpha = 0.5f))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                     Spacer(modifier = Modifier.height(10.dp))
 
                     Text("Auto-Saved Local Backups (${localBackupList.size})", fontWeight = FontWeight.Bold, fontSize = 13.sp)
@@ -6081,7 +6012,7 @@ fun SyncDashboard(viewModel: NoteViewModel) {
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(file.name, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, maxLines = 1)
-                                Text("${file.length() / 1024} KB • ${java.text.SimpleDateFormat("MMM dd, yyyy HH:mm", java.util.Locale.getDefault()).format(java.util.Date(file.lastModified()))}", fontSize = 10.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("${file.length() / 1024} KB • ${java.text.SimpleDateFormat("MMM dd, yyyy HH:mm", java.util.Locale.getDefault()).format(java.util.Date(file.lastModified()))}", fontSize = 10.sp, color = MaterialTheme.colorScheme.outline)
                             }
                             TextButton(
                                 onClick = {
@@ -6114,7 +6045,7 @@ fun SyncDashboard(viewModel: NoteViewModel) {
             modifier = Modifier
                 .height(220.dp)
                 .fillMaxWidth()
-                .border(BorderStroke(1.dp, Color(0xFFE2E8F0)), shape = RoundedCornerShape(12.dp))
+                .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), shape = RoundedCornerShape(12.dp))
                 .background(Color.Black.copy(alpha = 0.05f))
                 .padding(14.dp)
         ) {
@@ -6124,7 +6055,7 @@ fun SyncDashboard(viewModel: NoteViewModel) {
                         text = log,
                         fontFamily = FontFamily.Monospace,
                         fontSize = 11.sp,
-                        color = if (log.contains("error", ignoreCase = true)) MaterialTheme.colorScheme.error else Color(0xFF475569),
+                        color = if (log.contains("error", ignoreCase = true)) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(vertical = 3.dp)
                     )
                 }
@@ -6190,7 +6121,7 @@ fun AISummaryCenter(notes: List<NoteEntity>, viewModel: NoteViewModel) {
                     Card(
                         modifier = Modifier.fillMaxWidth().clickable { viewModel.selectNote(note) },
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                     ) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             Row(
@@ -6198,7 +6129,7 @@ fun AISummaryCenter(notes: List<NoteEntity>, viewModel: NoteViewModel) {
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text(note.title, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color(0xFF00B0FF))
+                                Text(note.title, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.primary)
                                 Box(
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(8.dp))
@@ -6217,17 +6148,17 @@ fun AISummaryCenter(notes: List<NoteEntity>, viewModel: NoteViewModel) {
                             Spacer(modifier = Modifier.height(10.dp))
 
                             if (!note.summary.isNullOrBlank()) {
-                                Text("ORGANIZED CATEGORY SUMMARY:", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("ORGANIZED CATEGORY SUMMARY:", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
                                 Text(note.summary, fontSize = 13.sp, modifier = Modifier.padding(bottom = 8.dp))
                             }
 
                             if (!note.content.isNullOrBlank()) {
-                                Text("TRANSCRIBED HANDWRITTEN WORDS & SCRIBBLINGS:", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("TRANSCRIBED HANDWRITTEN WORDS & SCRIBBLINGS:", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
                                 StyledTextRenderer(note.content, modifier = Modifier.padding(bottom = 8.dp))
                             }
 
                             if (!note.audioTranscription.isNullOrBlank()) {
-                                Text("AUDIO MEMO TRANSCRIBED TEXT:", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("AUDIO MEMO TRANSCRIBED TEXT:", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
                                 Text(note.audioTranscription, fontSize = 13.sp, modifier = Modifier.padding(bottom = 8.dp))
                             }
                         }
@@ -6252,7 +6183,7 @@ fun CustomAIAssistantChip(
         color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
         border = androidx.compose.foundation.BorderStroke(
             width = 1.dp,
-            color = if (selected) Color(0xFF00B0FF) else Color.LightGray.copy(alpha = 0.3f)
+            color = if (selected) MaterialTheme.colorScheme.primary else Color.LightGray.copy(alpha = 0.3f)
         ),
         modifier = Modifier.padding(horizontal = 4.dp)
     ) {
@@ -6263,7 +6194,7 @@ fun CustomAIAssistantChip(
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = if (selected) Color(0xFF00B0FF) else Color(0xFF475569),
+                tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(16.dp)
             )
             Spacer(modifier = Modifier.width(6.dp))
@@ -6271,7 +6202,7 @@ fun CustomAIAssistantChip(
                 text = label,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Medium,
-                color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else Color(0xFF475569)
+                color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }
@@ -6305,7 +6236,7 @@ fun FloatingPenSection(
         shape = RoundedCornerShape(28.dp),
         colors = CardDefaults.cardColors(containerColor = cardBg),
         elevation = CardDefaults.cardElevation(defaultElevation = 12.dp),
-        border = BorderStroke(1.dp, if (isDarkTheme) Color(0xFF475569).copy(alpha = 0.5f) else Color(0xFFE2E8F0).copy(alpha = 0.5f))
+        border = BorderStroke(1.dp, if (isDarkTheme) Color(0xFF475569).copy(alpha = 0.5f) else Color(0xFFCBD5E1).copy(alpha = 0.5f))
     ) {
         Row(
             modifier = Modifier
@@ -6389,7 +6320,7 @@ fun FloatingPenSection(
                     Icon(
                         imageVector = Icons.Default.Category,
                         contentDescription = "Open Shape Drawer",
-                        tint = if (viewModel.activeToolType == "shapes") Color(0xFF00B0FF) else (if (isDarkTheme) Color(0xFF94A3B8) else Color(0xFF475569)),
+                        tint = if (viewModel.activeToolType == "shapes") MaterialTheme.colorScheme.primary else (if (isDarkTheme) Color(0xFF94A3B8) else Color(0xFF475569)),
                         modifier = Modifier.size(18.dp)
                     )
                 }
@@ -6412,7 +6343,7 @@ fun FloatingPenSection(
                             .background(Color(colorVal))
                             .border(
                                 width = if (isSelected) 3.dp else 1.dp,
-                                color = if (isSelected) (if (isDarkTheme) Color.White else Color.Black) else Color(0xFFE2E8F0),
+                                color = if (isSelected) (if (isDarkTheme) Color.White else Color.Black) else Color(0xFFCBD5E1),
                                 shape = CircleShape
                             )
                             .combinedClickable(
@@ -6443,7 +6374,7 @@ fun FloatingPenSection(
                     Icon(
                         imageVector = Icons.Default.Palette,
                         contentDescription = "Customize Shade",
-                        tint = Color(0xFF00B0FF),
+                        tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(18.dp)
                     )
                 }
@@ -6480,7 +6411,7 @@ fun FloatingPenSection(
                         Box(
                             modifier = Modifier
                                 .size(dotSizeDp)
-                                .background(if (isSelected) Color(0xFF00B0FF) else (if (isDarkTheme) Color.White else Color.Black), CircleShape)
+                                .background(if (isSelected) MaterialTheme.colorScheme.primary else (if (isDarkTheme) Color.White else Color.Black), CircleShape)
                         )
                     }
                 }
@@ -6497,7 +6428,7 @@ fun FloatingPenSection(
                 Icon(
                     imageVector = Icons.Default.AddPhotoAlternate,
                     contentDescription = "Add Photo",
-                    tint = Color(0xFF00B0FF),
+                    tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(18.dp)
                 )
             }
@@ -6518,7 +6449,7 @@ fun FloatingPenSection(
                 Icon(
                     imageVector = if (viewModel.timerIsRunning) Icons.Default.HourglassTop else Icons.Default.HourglassEmpty,
                     contentDescription = "Focus Timer",
-                    tint = if (viewModel.timerIsRunning) Color(0xFF00B0FF) else (if (isDarkTheme) Color.White else Color.Black),
+                    tint = if (viewModel.timerIsRunning) MaterialTheme.colorScheme.primary else (if (isDarkTheme) Color.White else Color.Black),
                     modifier = Modifier.size(16.dp)
                 )
                 val minutes = viewModel.timerRemainingSeconds / 60
@@ -6548,7 +6479,7 @@ fun FloatingPenSection(
                         Icon(
                             imageVector = Icons.Default.Style,
                             contentDescription = "Change Background Pattern",
-                            tint = Color(0xFF00B0FF),
+                            tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(18.dp)
                         )
                     }
@@ -6560,7 +6491,7 @@ fun FloatingPenSection(
                     Icon(
                         imageVector = Icons.Default.FullscreenExit,
                         contentDescription = "Exit Immersive Mode",
-                        tint = Color(0xFF00B0FF),
+                        tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(18.dp)
                     )
                 }
@@ -6718,7 +6649,7 @@ fun ScribbleToTextDialog(
                         Icon(
                             imageVector = Icons.Default.Gesture,
                             contentDescription = null,
-                            tint = Color(0xFF00B0FF),
+                            tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(24.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
@@ -6738,7 +6669,7 @@ fun ScribbleToTextDialog(
                 Text(
                     text = "Write your English text on the scribble pad below, convert to text, and customize your writing style.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color(0xFF475569)
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 
                 Spacer(modifier = Modifier.height(12.dp))
@@ -6749,7 +6680,7 @@ fun ScribbleToTextDialog(
                         .fillMaxWidth()
                         .weight(1f)
                         .clip(RoundedCornerShape(16.dp))
-                        .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(16.dp))
+                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(16.dp))
                         .background(MaterialTheme.colorScheme.surface)
                         .pointerInput(Unit) {
                             detectDragGestures(
@@ -6851,7 +6782,7 @@ fun ScribbleToTextDialog(
                     if (scribbleStrokes.isEmpty()) {
                         Text(
                             text = "✍️ Write English words here...",
-                            color = Color(0xFF475569),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.bodySmall,
                             modifier = Modifier
                                 .align(Alignment.Center)
@@ -6924,7 +6855,7 @@ fun ScribbleToTextDialog(
                     text = "Choose Writing Font Style:",
                     style = MaterialTheme.typography.bodySmall,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFF475569)
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 
                 Spacer(modifier = Modifier.height(6.dp))
@@ -6946,7 +6877,7 @@ fun ScribbleToTextDialog(
                             ),
                             border = BorderStroke(
                                 width = if (isSelected) 2.dp else 1.dp,
-                                color = if (isSelected) Color(0xFF00B0FF) else Color(0xFFE2E8F0)
+                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
                             )
                         ) {
                             Column(
@@ -6975,14 +6906,14 @@ fun ScribbleToTextDialog(
                                     fontWeight = sampleWeight,
                                     fontSize = 11.sp,
                                     maxLines = 1,
-                                    color = if (isSelected) Color(0xFF00B0FF) else MaterialTheme.colorScheme.onSurface
+                                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                                 )
                                 Text(
                                     text = style.third,
                                     style = MaterialTheme.typography.bodySmall,
                                     fontSize = 8.sp,
                                     maxLines = 1,
-                                    color = Color(0xFF475569)
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         }
@@ -6998,7 +6929,7 @@ fun ScribbleToTextDialog(
                         .height(68.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)),
                     shape = RoundedCornerShape(12.dp),
-                    border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                 ) {
                     Column(
                         modifier = Modifier
@@ -7010,7 +6941,7 @@ fun ScribbleToTextDialog(
                             text = "Live Styled Preview:",
                             fontSize = 9.sp,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.outline
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         if (convertedText.isBlank()) {
@@ -7089,7 +7020,7 @@ fun AnyShadeColorPickerDialog(
                 Icon(
                     imageVector = Icons.Default.Palette,
                     contentDescription = null,
-                    tint = Color(0xFF00B0FF)
+                    tint = MaterialTheme.colorScheme.primary
                 )
                 Text("Select Any Shade", style = MaterialTheme.typography.titleMedium)
             }
@@ -7123,7 +7054,7 @@ fun AnyShadeColorPickerDialog(
                         Text(
                             text = if (isHighlighter) "Semi-transparent Highlighter" else "Solid Color",
                             fontSize = 12.sp,
-                            color = Color(0xFF475569)
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
@@ -7430,7 +7361,7 @@ fun ShapeToolSettingsPanel(
                         onClick = { viewModel.insertShapeAtCenter() },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(10.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00B0FF))
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                     ) {
                         Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(6.dp))
@@ -7470,7 +7401,7 @@ fun ShapeToolSettingsPanel(
                 onClick = { viewModel.insertShapeAtCenter() },
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(10.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00B0FF))
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
             ) {
                 Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.width(6.dp))
@@ -7490,7 +7421,7 @@ fun ShapeToolSettingsPanel(
 fun ShapeIconPreview(
     shapeType: String,
     shapeCategory: String = "2d",
-    tint: Color = Color(0xFF00B0FF),
+    tint: Color = MaterialTheme.colorScheme.primary,
     modifier: Modifier = Modifier
 ) {
     Canvas(modifier = modifier) {
@@ -7850,7 +7781,7 @@ fun ShapeSelectionGrid(
                             color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
                             border = BorderStroke(
                                 width = if (isSelected) 2.dp else 1.dp,
-                                color = if (isSelected) Color(0xFF00B0FF) else Color.Transparent
+                                color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent
                             )
                         ) {
                             Box(
@@ -7860,7 +7791,7 @@ fun ShapeSelectionGrid(
                                 ShapeIconPreview(
                                     shapeType = typeKey,
                                     shapeCategory = shapeCategory,
-                                    tint = if (isSelected) Color(0xFF00B0FF) else Color(0xFF475569),
+                                    tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.size(28.dp)
                                 )
                             }
@@ -7881,7 +7812,7 @@ fun ShapeLivePreviewCard(viewModel: NoteViewModel) {
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
         Column(
             modifier = Modifier.padding(12.dp),
@@ -7892,11 +7823,11 @@ fun ShapeLivePreviewCard(viewModel: NoteViewModel) {
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Live Shape Preview", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color(0xFF00B0FF))
+                Text("Live Shape Preview", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
                 Text(
                     text = "${viewModel.shapeRotationAngle.toInt()}°",
                     fontSize = 11.sp,
-                    color = Color(0xFF475569)
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
             Spacer(modifier = Modifier.height(8.dp))
@@ -7929,7 +7860,7 @@ fun ShapeCustomizationPanel(viewModel: NoteViewModel) {
         color = MaterialTheme.colorScheme.surfaceContainerLow
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
-            Text("Shape Customization", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color(0xFF00B0FF))
+            Text("Shape Customization", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
             Spacer(modifier = Modifier.height(8.dp))
 
             // Stroke Fill Toggle
@@ -7951,7 +7882,7 @@ fun ShapeCustomizationPanel(viewModel: NoteViewModel) {
 
             if (viewModel.fillShapeEnabled) {
                 Spacer(modifier = Modifier.height(4.dp))
-                Text("Fill Opacity: ${(viewModel.fillShapeOpacity * 100).toInt()}%", fontSize = 11.sp, color = Color(0xFF475569))
+                Text("Fill Opacity: ${(viewModel.fillShapeOpacity * 100).toInt()}%", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Slider(
                     value = viewModel.fillShapeOpacity,
                     onValueChange = { 
@@ -7965,7 +7896,7 @@ fun ShapeCustomizationPanel(viewModel: NoteViewModel) {
 
             if (viewModel.shapeCategory == "3d") {
                 Spacer(modifier = Modifier.height(8.dp))
-                Text("3D Depth Ratio: ${(viewModel.shape3dDepth * 100).toInt()}%", fontSize = 11.sp, color = Color(0xFF475569))
+                Text("3D Depth Ratio: ${(viewModel.shape3dDepth * 100).toInt()}%", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Slider(
                     value = viewModel.shape3dDepth,
                     onValueChange = { 
@@ -7978,7 +7909,7 @@ fun ShapeCustomizationPanel(viewModel: NoteViewModel) {
             }
 
             Spacer(modifier = Modifier.height(8.dp))
-            Text("Rotation Angle: ${viewModel.shapeRotationAngle.toInt()}°", fontSize = 11.sp, color = Color(0xFF475569))
+            Text("Rotation Angle: ${viewModel.shapeRotationAngle.toInt()}°", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Slider(
                 value = viewModel.shapeRotationAngle,
                 onValueChange = { 
