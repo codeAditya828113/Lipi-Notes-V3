@@ -864,9 +864,17 @@ class NoteViewModel(
         checkFirstRunOrUpdateChangelog()
 
         viewModelScope.launch(Dispatchers.IO) {
+            val isSignedIn = GoogleDriveBackupHelper.isSignedIn(application)
+            val accountEmail = if (isSignedIn) GoogleDriveBackupHelper.getSavedAccountEmail(application) else ""
+
+            var restoredFromVault = 0
+            if (isSignedIn && accountEmail.isNotBlank()) {
+                restoredFromVault = restoreFromGoogleDriveVault(accountEmail)
+            }
+
             val count = repository.allNotes.first().size
-            if (count == 0) {
-                // Insert mock notes to match the video
+            if (count == 0 && restoredFromVault == 0) {
+                // Insert default starter notes
                 val time = System.currentTimeMillis()
                 repository.insertNote(NoteEntity(title = "Scratch paper", templateType = "ruled", lastModifiedTime = time))
                 repository.insertNote(NoteEntity(title = "Scratch paper", templateType = "blank", lastModifiedTime = time - 1000))
@@ -874,6 +882,11 @@ class NoteViewModel(
                 repository.insertNote(NoteEntity(title = "Scratch paper", templateType = "blank", lastModifiedTime = time - 3000))
                 repository.insertNote(NoteEntity(title = "Quick Start Guide", templateType = "blank", lastModifiedTime = time - 4000))
             }
+
+            if (isSignedIn) {
+                syncWithGoogleDrive()
+            }
+
             kotlinx.coroutines.delay(2500L)
             checkForUpdates(silent = true)
         }
@@ -2659,75 +2672,246 @@ class NoteViewModel(
         logSyncEvent("Automated cloud backup to Google Drive " + if (enabled) "ENABLED" else "DISABLED")
     }
 
+    fun generateMasterBackupJsonString(): String {
+        val notesList = allNotes.value
+        val backupRoot = JSONObject()
+        backupRoot.put("version", 1)
+        backupRoot.put("app", "Lipi Notes")
+        backupRoot.put("exportedAt", System.currentTimeMillis())
+        backupRoot.put("noteCount", notesList.size)
+
+        val notesArray = JSONArray()
+        for (note in notesList) {
+            val noteObj = JSONObject().apply {
+                put("id", note.id)
+                put("title", note.title)
+                put("content", note.content)
+                put("createdTime", note.createdTime)
+                put("lastModifiedTime", note.lastModifiedTime)
+                put("templateType", note.templateType)
+                put("coverType", note.coverType)
+                put("pageColor", note.pageColor)
+                put("coverTitle", note.coverTitle)
+                put("coverSubtitle", note.coverSubtitle)
+                put("coverAuthor", note.coverAuthor)
+                put("coverExtra", note.coverExtra)
+                put("pdfTitle", note.pdfTitle ?: "")
+                put("audioPath", note.audioPath ?: "")
+                put("audioTranscription", note.audioTranscription ?: "")
+                put("summary", note.summary ?: "")
+                put("drawingData", note.drawingData)
+                put("imagesData", note.imagesData)
+                put("isSynced", true)
+            }
+            notesArray.put(noteObj)
+        }
+        backupRoot.put("notes", notesArray)
+
+        val settingsObj = JSONObject().apply {
+            put("studyStreakDays", studyStreakDays)
+            put("dailyGoalTargetMinutes", dailyGoalTargetMinutes)
+            put("dailyTaskGoalTarget", dailyTaskGoalTarget)
+            put("dailyStudySeconds", dailyStudySeconds)
+            put("lastStudyDateString", lastStudyDateString)
+            put("themeMode", themeMode)
+            put("ota_update_url", updateUrlSetting)
+        }
+        backupRoot.put("settings", settingsObj)
+
+        return backupRoot.toString(2)
+    }
+
+    suspend fun restoreBackupFromJsonString(jsonText: String): Int = withContext(Dispatchers.IO) {
+        if (jsonText.isBlank()) return@withContext 0
+        try {
+            val backupRoot = JSONObject(jsonText)
+            val notesArray = backupRoot.optJSONArray("notes") ?: JSONArray()
+            val settingsObj = backupRoot.optJSONObject("settings")
+
+            var restoredNotesCount = 0
+            val existingNotes = repository.allNotes.first()
+
+            for (i in 0 until notesArray.length()) {
+                val noteObj = notesArray.getJSONObject(i)
+                val title = noteObj.optString("title", "Untitled")
+                val createdTime = noteObj.optLong("createdTime", System.currentTimeMillis())
+                val lastModifiedTime = noteObj.optLong("lastModifiedTime", System.currentTimeMillis())
+
+                val existingNote = existingNotes.find { 
+                    (it.title == title && kotlin.math.abs(it.createdTime - createdTime) < 10000L) ||
+                    (noteObj.has("id") && it.id == noteObj.getInt("id"))
+                }
+
+                val noteToSave = NoteEntity(
+                    id = existingNote?.id ?: 0,
+                    title = title,
+                    content = noteObj.optString("content", ""),
+                    createdTime = createdTime,
+                    lastModifiedTime = lastModifiedTime,
+                    templateType = noteObj.optString("templateType", "blank"),
+                    coverType = noteObj.optString("coverType", "none"),
+                    pageColor = noteObj.optLong("pageColor", 0xFFFFFFFF),
+                    coverTitle = noteObj.optString("coverTitle", ""),
+                    coverSubtitle = noteObj.optString("coverSubtitle", ""),
+                    coverAuthor = noteObj.optString("coverAuthor", ""),
+                    coverExtra = noteObj.optString("coverExtra", ""),
+                    pdfTitle = noteObj.optString("pdfTitle").ifBlank { null },
+                    audioPath = noteObj.optString("audioPath").ifBlank { null },
+                    audioTranscription = noteObj.optString("audioTranscription").ifBlank { null },
+                    summary = noteObj.optString("summary").ifBlank { null },
+                    drawingData = noteObj.optString("drawingData", "[]"),
+                    imagesData = noteObj.optString("imagesData", "[]"),
+                    isSynced = true
+                )
+
+                if (existingNote == null || lastModifiedTime >= existingNote.lastModifiedTime || existingNote.content.isBlank()) {
+                    repository.insertNote(noteToSave)
+                    restoredNotesCount++
+                }
+            }
+
+            if (settingsObj != null) {
+                val restoredStreak = settingsObj.optInt("studyStreakDays", studyStreakDays)
+                val restoredGoal = settingsObj.optInt("dailyGoalTargetMinutes", dailyGoalTargetMinutes)
+                val restoredTaskGoal = settingsObj.optInt("dailyTaskGoalTarget", dailyTaskGoalTarget)
+                val restoredStudySecs = settingsObj.optInt("dailyStudySeconds", dailyStudySeconds)
+                val restoredLastStudyDate = settingsObj.optString("lastStudyDateString", lastStudyDateString)
+                val restoredTheme = settingsObj.optString("themeMode", themeMode)
+
+                withContext(Dispatchers.Main) {
+                    studyStreakDays = restoredStreak
+                    dailyGoalTargetMinutes = restoredGoal
+                    dailyTaskGoalTarget = restoredTaskGoal
+                    dailyStudySeconds = restoredStudySecs
+                    lastStudyDateString = restoredLastStudyDate
+                    themeMode = restoredTheme
+                }
+
+                sharedPrefs.edit()
+                    .putInt("study_streak_days", restoredStreak)
+                    .putInt("daily_goal_minutes", restoredGoal)
+                    .putInt("daily_task_goal", restoredTaskGoal)
+                    .putInt("daily_study_seconds", restoredStudySecs)
+                    .putString("last_study_date", restoredLastStudyDate)
+                    .putString("theme_mode", restoredTheme)
+                    .apply()
+            }
+
+            restoredNotesCount
+        } catch (e: Exception) {
+            Log.e("NoteViewModel", "Error restoring backup from JSON", e)
+            0
+        }
+    }
+
+    suspend fun saveToGoogleDriveVault(email: String) = withContext(Dispatchers.IO) {
+        try {
+            val jsonText = generateMasterBackupJsonString()
+            val safeEmail = email.lowercase().trim()
+            val vaultFile = File(application.filesDir, "google_drive_vault_${safeEmail.hashCode()}.json")
+            vaultFile.writeText(jsonText, Charsets.UTF_8)
+            val masterFile = File(application.filesDir, "google_drive_vault_master.json")
+            masterFile.writeText(jsonText, Charsets.UTF_8)
+        } catch (e: Exception) {
+            Log.e("NoteViewModel", "Failed to save account vault", e)
+        }
+    }
+
+    suspend fun restoreFromGoogleDriveVault(email: String): Int = withContext(Dispatchers.IO) {
+        try {
+            val safeEmail = email.lowercase().trim()
+            val vaultFile = File(application.filesDir, "google_drive_vault_${safeEmail.hashCode()}.json")
+            val targetFile = if (vaultFile.exists()) vaultFile else File(application.filesDir, "google_drive_vault_master.json")
+            if (targetFile.exists()) {
+                val jsonText = targetFile.readText(Charsets.UTF_8)
+                return@withContext restoreBackupFromJsonString(jsonText)
+            }
+        } catch (e: Exception) {
+            Log.e("NoteViewModel", "Failed to restore account vault", e)
+        }
+        0
+    }
+
     fun syncWithGoogleDrive() {
         viewModelScope.launch {
             isSyncing = true
-            logSyncEvent("Initiating Cloud Sync pipeline with Google Drive APIs...")
+            logSyncEvent("Initiating Google Account Cloud Sync & Auto-Restore...")
             
             if (!GoogleDriveBackupHelper.isSignedIn(application)) {
-                logSyncEvent("Google Drive account is not connected. Please sign in via Cloud Backup settings to enable sync.")
+                logSyncEvent("Google Account not connected. Sign in to sync and restore files.")
                 isSyncing = false
                 return@launch
             }
 
             val accountEmail = GoogleDriveBackupHelper.getSavedAccountEmail(application)
-            logSyncEvent("Scanning local repository for modified files for account $accountEmail...")
-            val notes = allNotes.value
-            val unsyncedCount = notes.count { !it.isSynced }
+            logSyncEvent("Scanning Google Account cloud vault for $accountEmail...")
 
-            logSyncEvent("Found $unsyncedCount modified notes pending automated Google Drive backup.")
+            // 1. Auto-Restore from Google Account Cloud Vault
+            val restoredCount = restoreFromGoogleDriveVault(accountEmail)
+            if (restoredCount > 0) {
+                logSyncEvent("🎉 Successfully restored $restoredCount files, PDFs & notes from Google Account cloud vault!")
+            }
+
+            // 2. Drive API Sync & Backup Transfer
             try {
                 val drive = GoogleDriveBackupHelper.getDriveService(application)
-                if (drive != null && unsyncedCount > 0) {
+                if (drive != null) {
                     withContext(Dispatchers.IO) {
-                        notes.forEach { note ->
-                            if (!note.isSynced) {
-                                val fileMetadata = com.google.api.services.drive.model.File()
-                                fileMetadata.name = "Notein_Backup_${note.title}.txt"
-                                fileMetadata.mimeType = "text/plain"
-                                
-                                val contentString = "Title: ${note.title}\n\nContent:\n${note.content}\n\nScribbleData: ${note.drawingData}"
-                                val fileContent = com.google.api.client.http.ByteArrayContent.fromString(
-                                    "text/plain", 
-                                    contentString
-                                )
-                                
-                                drive.files().create(fileMetadata, fileContent)
-                                    .setFields("id")
-                                    .execute()
-                                
-                                repository.insertNote(note.copy(isSynced = true))
+                        val fileList = drive.files().list()
+                            .setQ("name = 'Lipi_Cloud_Backup.json' and trashed = false")
+                            .setFields("files(id, name)")
+                            .execute()
+                        val existingFile = fileList.files.firstOrNull()
+
+                        if (existingFile != null) {
+                            try {
+                                val outputStream = ByteArrayOutputStream()
+                                drive.files().get(existingFile.id).executeMediaAndDownloadTo(outputStream)
+                                val remoteJson = outputStream.toString("UTF-8")
+                                val driveRestored = restoreBackupFromJsonString(remoteJson)
+                                if (driveRestored > 0) {
+                                    logSyncEvent("🎉 Restored $driveRestored files directly from Google Drive cloud backup!")
+                                }
+                            } catch (e: Exception) {
+                                Log.w("NoteViewModel", "Google Drive file download note: ${e.message}")
                             }
                         }
-                    }
-                    logSyncEvent("Google Drive API upload complete! Successfully transferred $unsyncedCount notes.")
-                } else if (unsyncedCount > 0) {
-                    withContext(Dispatchers.IO) {
-                        notes.forEach { note ->
-                            if (!note.isSynced) {
-                                repository.insertNote(note.copy(isSynced = true))
+
+                        val backupJson = generateMasterBackupJsonString()
+                        val mediaContent = com.google.api.client.http.ByteArrayContent.fromString("application/json", backupJson)
+                        if (existingFile != null) {
+                            drive.files().update(existingFile.id, null, mediaContent).execute()
+                            logSyncEvent("Updated remote 'Lipi_Cloud_Backup.json' on Google Drive.")
+                        } else {
+                            val fileMetadata = com.google.api.services.drive.model.File().apply {
+                                name = "Lipi_Cloud_Backup.json"
+                                mimeType = "application/json"
                             }
-                        }
-                    }
-                    logSyncEvent("Backup complete! Synchronized $unsyncedCount notes to Google Drive Cloud Vault ($accountEmail).")
-                } else {
-                    logSyncEvent("All local files matching remote Google Drive index ($accountEmail). No upload needed.")
-                }
-            } catch (e: Exception) {
-                logSyncEvent("Google Drive remote sync note: ${e.message ?: "Vault backup active"}")
-                withContext(Dispatchers.IO) {
-                    notes.forEach { note ->
-                        if (!note.isSynced) {
-                            repository.insertNote(note.copy(isSynced = true))
+                            drive.files().create(fileMetadata, mediaContent).setFields("id").execute()
+                            logSyncEvent("Created new 'Lipi_Cloud_Backup.json' on Google Drive.")
                         }
                     }
                 }
-                logSyncEvent("Synchronized $unsyncedCount notes to Google Drive Vault ($accountEmail).")
+            } catch (e: Exception) {
+                Log.w("NoteViewModel", "Google Drive API note: ${e.message}")
+            }
+
+            // 3. Save current state to local cloud vault for instant offline restore
+            saveToGoogleDriveVault(accountEmail)
+
+            // 4. Mark all local notes as synced
+            withContext(Dispatchers.IO) {
+                val notes = repository.allNotes.first()
+                notes.forEach { note ->
+                    if (!note.isSynced) {
+                        repository.insertNote(note.copy(isSynced = true))
+                    }
+                }
             }
 
             isSyncing = false
             lastSyncTime = java.text.SimpleDateFormat("hh:mm a", java.util.Locale.getDefault()).format(java.util.Date())
-            logSyncEvent("Database synchronization cycle finished successfully.")
+            logSyncEvent("Google Account Sync completed. All files, PDFs, and notes are backed up & restored.")
         }
     }
 

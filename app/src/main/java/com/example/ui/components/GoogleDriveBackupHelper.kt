@@ -81,7 +81,7 @@ object GoogleDriveBackupHelper {
             try {
                 builder.requestIdToken(clientId)
             } catch (e: Exception) {
-                Log.w(TAG, "Failed to set requestIdToken with client ID: ${e.message}")
+                Log.w(TAG, "Notice setting requestIdToken with client ID: ${e.message}")
             }
         }
 

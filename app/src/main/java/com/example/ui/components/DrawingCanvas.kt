@@ -6,8 +6,10 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.DisposableEffect
@@ -168,7 +170,7 @@ fun DrawingCanvas(
     var initialPivot by remember { mutableStateOf(Offset.Zero) }
     var initialOffset by remember { mutableStateOf(Offset.Zero) }
 
-    LaunchedEffect(scale, isZooming) {
+    LaunchedEffect(scale, offset, isZooming) {
         if (isZooming) {
             showZoomIndicator = true
         } else {
@@ -236,40 +238,32 @@ fun DrawingCanvas(
             }
         }
 
-        // Compute which pages are currently visible on screen (plus a padding buffer)
+        // Compute which pages are currently visible on screen (plus a generous padding buffer)
+        val pageGap = with(density) { 20.dp.toPx() }
+        val pageTopMargin = with(density) { 16.dp.toPx() }
+
         val visiblePages = remember(offset, scale, pdfPageCount, heightPx, pdfPageSizes, widthPx) {
             val visible = mutableSetOf<Int>()
             val visibleStart = -offset.y / scale
             val visibleEnd = (-offset.y + heightPx) / scale
+
+            var currentTop = pageTopMargin
             for (p in 1..pdfPageCount) {
-                var pTop = 0f
-                for (i in 1 until p) {
-                    val originalSize = pdfPageSizes.getOrNull(i - 1)
-                    val pH = if (originalSize != null) {
-                        val scaleX = widthPx.toFloat() / originalSize.width
-                        val scaleY = heightPx.toFloat() / originalSize.height
-                        val s = kotlin.math.min(scaleX, scaleY)
-                        originalSize.height * s
-                    } else {
-                        heightPx.toFloat()
-                    }
-                    pTop += pH
-                }
-                
                 val originalSize = pdfPageSizes.getOrNull(p - 1)
-                val pH = if (originalSize != null) {
+                val pH = if (originalSize != null && originalSize.width > 0f) {
                     val scaleX = widthPx.toFloat() / originalSize.width
                     val scaleY = heightPx.toFloat() / originalSize.height
                     val s = kotlin.math.min(scaleX, scaleY)
                     originalSize.height * s
                 } else {
-                    heightPx.toFloat()
+                    widthPx.toFloat() * (800f / 600f)
                 }
 
-                val buffer = 400f // load pages 400px before/after they enter visible viewport
-                if (pTop + pH >= visibleStart - buffer && pTop <= visibleEnd + buffer) {
+                val buffer = 1500f // Pre-render buffer above & below screen for smooth lag-free scrolling
+                if (currentTop + pH >= visibleStart - buffer && currentTop <= visibleEnd + buffer) {
                     visible.add(p)
                 }
+                currentTop += pH + pageGap
             }
             if (visible.isEmpty() && pdfPageCount >= 1) {
                 visible.add(1)
@@ -277,7 +271,7 @@ fun DrawingCanvas(
             visible
         }
 
-        // Lazy render/load visible pages, remove pages that scrolled out of view safely
+        // Lazy render/load visible pages, retain rendered bitmaps in memory up to 25 pages
         LaunchedEffect(visiblePages, pdfFile, widthPx, heightPx) {
             if (pdfFile == null || !pdfFile.exists() || (templateType != "pdf" && templateType != "docx")) {
                 pdfBitmaps = emptyMap()
@@ -287,18 +281,17 @@ fun DrawingCanvas(
             withContext(Dispatchers.IO) {
                 val updatedBitmaps = pdfBitmaps.toMutableMap()
                 
-                // 1. Remove bitmaps for pages that are no longer visible/needed
-                val iterator = updatedBitmaps.iterator()
+                // 1. Only evict cached bitmaps if memory footprint grows beyond 25 pages
                 var removedAny = false
-                while (iterator.hasNext()) {
-                    val entry = iterator.next()
-                    val p = entry.key
-                    val isNearVisible = visiblePages.contains(p) || 
-                                       visiblePages.contains(p - 1) || 
-                                       visiblePages.contains(p + 1)
-                    if (!isNearVisible) {
-                        iterator.remove()
-                        removedAny = true
+                if (updatedBitmaps.size > 25) {
+                    val iterator = updatedBitmaps.iterator()
+                    while (iterator.hasNext() && updatedBitmaps.size > 20) {
+                        val entry = iterator.next()
+                        val p = entry.key
+                        if (!visiblePages.contains(p) && kotlin.math.abs(p - pdfPage) > 4) {
+                            iterator.remove()
+                            removedAny = true
+                        }
                     }
                 }
                 
@@ -363,8 +356,6 @@ fun DrawingCanvas(
         val getPageLeft: (Int) -> Float = { p ->
             (widthPx.toFloat() - getPageWidth(p)) / 2f
         }
-        val pageGap = with(density) { 20.dp.toPx() }
-        val pageTopMargin = with(density) { 16.dp.toPx() }
         val getPageTop: (Int) -> Float = { p ->
             var top = pageTopMargin
             for (i in 1 until p) {
@@ -782,43 +773,7 @@ fun DrawingCanvas(
                             }
                             MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                                 isZooming = false
-                                try {
-                                    velocityTracker.addMovement(motionEvent)
-                                    velocityTracker.computeCurrentVelocity(1000)
-                                    val vx = velocityTracker.xVelocity
-                                    val vy = velocityTracker.yVelocity
-                                    if (kotlin.math.hypot(vx, vy) > 120f) {
-                                        flingJob?.cancel()
-                                        flingJob = coroutineScope.launch {
-                                            var curVx = vx
-                                            var curVy = vy
-                                            var lastTime = System.currentTimeMillis()
-                                            while (kotlin.math.hypot(curVx, curVy) > 25f) {
-                                                delay(16)
-                                                val now = System.currentTimeMillis()
-                                                val dt = ((now - lastTime) / 1000f).coerceIn(0.001f, 0.05f)
-                                                lastTime = now
-
-                                                var totalHeight = 0f
-                                                for (p in 1..pdfPageCount) {
-                                                    totalHeight += getPageHeight(p)
-                                                }
-                                                val maxScrollY = -((totalHeight * scale - heightPx + 200f).coerceAtLeast(0f))
-                                                val maxScrollX = ((scale - 1f) * widthPx / 2f + 100f).coerceAtLeast(0f)
-
-                                                val nextX = (offset.x + curVx * dt).coerceIn(-maxScrollX, maxScrollX)
-                                                val nextY = (offset.y + curVy * dt).coerceIn(maxScrollY, 0f)
-
-                                                if (nextX == -maxScrollX || nextX == maxScrollX) curVx = 0f
-                                                if (nextY == maxScrollY || nextY == 0f) curVy = 0f
-
-                                                offset = Offset(nextX, nextY)
-                                                curVx *= 0.91f
-                                                curVy *= 0.91f
-                                            }
-                                        }
-                                    }
-                                } catch (e: Exception) {}
+                                try { velocityTracker.clear() } catch (_: Exception) {}
                             }
                         }
                         return@pointerInteropFilter true
@@ -1951,43 +1906,134 @@ fun DrawingCanvas(
         }
         } // Close the Box with pointerInteropFilter
         
-        // Persistent Page Number Badge (Top-End) - ALWAYS visible while writing and scrolling
-        if (pdfPageCount > 1 || templateType == "pdf" || templateType == "docx") {
+        // Dynamic Interactive Vertical Scrollbar and Attached Page Indicator (No overlap with top pen palette!)
+        var isDraggingScrollbar by remember { mutableStateOf(false) }
+
+        val totalCanvasHeight = remember(pdfPageCount, pdfPageSizes, widthPx, heightPx) {
+            var h = pageTopMargin
+            for (p in 1..pdfPageCount) {
+                val originalSize = pdfPageSizes.getOrNull(p - 1)
+                val pH = if (originalSize != null && originalSize.width > 0f) {
+                    val scaleX = widthPx.toFloat() / originalSize.width
+                    val scaleY = heightPx.toFloat() / originalSize.height
+                    val s = kotlin.math.min(scaleX, scaleY)
+                    originalSize.height * s
+                } else {
+                    widthPx.toFloat() * (800f / 600f)
+                }
+                h += pH + pageGap
+            }
+            h
+        }
+
+        val maxScrollYVal = (totalCanvasHeight * scale - heightPx).coerceAtLeast(0f)
+        if (maxScrollYVal > 10f) {
+            val trackHeightPx = (heightPx.toFloat() - with(density) { 80.dp.toPx() }).coerceAtLeast(100f)
+            val thumbHeightPx = (trackHeightPx * (heightPx.toFloat() / (totalCanvasHeight * scale)))
+                .coerceIn(with(density) { 48.dp.toPx() }, trackHeightPx * 0.4f)
+            val maxThumbOffsetPx = (trackHeightPx - thumbHeightPx).coerceAtLeast(1f)
+            val currentProgress = (-offset.y / maxScrollYVal).coerceIn(0f, 1f)
+            val thumbTopPx = currentProgress * maxThumbOffsetPx
+
             Box(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .padding(top = 16.dp, end = 16.dp)
-                    .background(
-                        color = Color(0xFF1E293B).copy(alpha = 0.88f),
-                        shape = CircleShape
-                    )
-                    .border(1.dp, Color(0xFF475569), CircleShape)
-                    .padding(horizontal = 14.dp, vertical = 6.dp)
+                    .padding(top = 40.dp, end = 6.dp)
             ) {
-                Text(
-                    text = "Page $pdfPage of $pdfPageCount",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
+                AnimatedVisibility(
+                    visible = showZoomIndicator || isDraggingScrollbar,
+                    enter = fadeIn(),
+                    exit = fadeOut()
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.graphicsLayer {
+                            translationY = thumbTopPx
+                        }
+                    ) {
+                        // Dynamic Floating Page Indicator Attached to Scroll Thumb
+                        Surface(
+                            shape = CircleShape,
+                            color = Color(0xFF1E293B).copy(alpha = 0.92f),
+                            shadowElevation = 6.dp,
+                            border = BorderStroke(1.dp, Color(0xFF475569))
+                        ) {
+                            Text(
+                                text = "Page $pdfPage of $pdfPageCount",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                            )
+                        }
+
+                        // Scrollbar Thumb Handle
+                        Box(
+                            modifier = Modifier
+                                .width(8.dp)
+                                .height(with(density) { thumbHeightPx.toDp() })
+                                .background(
+                                    color = if (isDraggingScrollbar) Color(0xFF3B82F6) else Color(0xFF94A3B8).copy(alpha = 0.85f),
+                                    shape = CircleShape
+                                )
+                                .pointerInput(maxScrollYVal, maxThumbOffsetPx) {
+                                    detectVerticalDragGestures(
+                                        onDragStart = { isDraggingScrollbar = true },
+                                        onDragEnd = { isDraggingScrollbar = false },
+                                        onDragCancel = { isDraggingScrollbar = false },
+                                        onVerticalDrag = { change, dragAmount ->
+                                            change.consume()
+                                            showZoomIndicator = true
+                                            val newProgress = ((thumbTopPx + dragAmount) / maxThumbOffsetPx).coerceIn(0f, 1f)
+                                            val targetY = -newProgress * maxScrollYVal
+                                            val maxScrollX = ((scale - 1f) * widthPx / 2f + 100f).coerceAtLeast(0f)
+                                            offset = Offset(offset.x.coerceIn(-maxScrollX, maxScrollX), targetY)
+                                        }
+                                    )
+                                }
+                        )
+                    }
+                }
             }
         }
 
-        // 6. Floating Zoom Controls Overlay (aligned at bottom-start of the drawing canvas)
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(start = 16.dp, bottom = 16.dp)
-            ) {
+        // Floating Zoom Controls & Lock State Overlay (Bottom-Start)
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(start = 16.dp, bottom = 16.dp)
+        ) {
+            if (isZoomLocked) {
+                // When locked: ONLY show a small lock icon in the corner
+                Surface(
+                    onClick = { isZoomLocked = false },
+                    shape = CircleShape,
+                    color = Color(0xFF1E293B).copy(alpha = 0.9f),
+                    shadowElevation = 6.dp,
+                    border = BorderStroke(1.dp, Color(0xFF3B82F6)),
+                    modifier = Modifier.size(38.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Default.Lock,
+                            contentDescription = "Unlock Page",
+                            tint = Color(0xFF3B82F6),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+            } else {
+                // When unlocked: Zoom controls appear ONLY when scrolling/zooming and disappear after 2s inactivity
                 AnimatedVisibility(
-                    visible = showZoomIndicator || isZoomLocked,
-                    enter = fadeIn(),
-                    exit = fadeOut()
+                    visible = showZoomIndicator,
+                    enter = fadeIn() + slideInVertically(initialOffsetY = { it / 2 }),
+                    exit = fadeOut() + slideOutVertically(targetOffsetY = { it / 2 })
                 ) {
                     Card(
                         shape = CircleShape,
                         colors = CardDefaults.cardColors(
-                            containerColor = Color(0xFF1E293B).copy(alpha = 0.9f), // Sleek translucent slate-dark theme
+                            containerColor = Color(0xFF1E293B).copy(alpha = 0.9f),
                             contentColor = Color.White
                         ),
                         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
@@ -1998,9 +2044,11 @@ fun DrawingCanvas(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            // Zoom Out [-]
                             IconButton(
-                                onClick = { scale = (scale - 0.15f).coerceIn(0.5f, 3.5f) },
+                                onClick = {
+                                    scale = (scale - 0.15f).coerceIn(0.5f, 3.5f)
+                                    showZoomIndicator = true
+                                },
                                 modifier = Modifier.size(32.dp)
                             ) {
                                 Icon(
@@ -2010,8 +2058,7 @@ fun DrawingCanvas(
                                     modifier = Modifier.size(18.dp)
                                 )
                             }
-                            
-                            // Zoom Percentage Indicator & Reset Button
+
                             Text(
                                 text = "${(scale * 100).toInt()}%",
                                 fontSize = 12.sp,
@@ -2021,13 +2068,16 @@ fun DrawingCanvas(
                                     .clickable {
                                         scale = 1f
                                         offset = Offset.Zero
+                                        showZoomIndicator = true
                                     }
                                     .padding(horizontal = 4.dp)
                             )
-                            
-                            // Zoom In [+]
+
                             IconButton(
-                                onClick = { scale = (scale + 0.15f).coerceIn(0.5f, 3.5f) },
+                                onClick = {
+                                    scale = (scale + 0.15f).coerceIn(0.5f, 3.5f)
+                                    showZoomIndicator = true
+                                },
                                 modifier = Modifier.size(32.dp)
                             ) {
                                 Icon(
@@ -2037,30 +2087,30 @@ fun DrawingCanvas(
                                     modifier = Modifier.size(18.dp)
                                 )
                             }
-                            
-                            // Vertical Divider
+
                             Box(
                                 modifier = Modifier
                                     .width(1.dp)
                                     .height(18.dp)
                                     .background(Color(0xFF475569))
                             )
-                            
-                            // Gesture Lock/Unlock Toggle Button
+
                             IconButton(
-                                onClick = { isZoomLocked = !isZoomLocked },
+                                onClick = { isZoomLocked = true },
                                 modifier = Modifier.size(32.dp)
                             ) {
                                 Icon(
-                                    imageVector = if (isZoomLocked) Icons.Default.Lock else Icons.Default.LockOpen,
-                                    contentDescription = "Toggle gesture lock",
-                                    tint = if (isZoomLocked) Color(0xFF3B82F6) else Color.White,
+                                    imageVector = Icons.Default.LockOpen,
+                                    contentDescription = "Lock Page",
+                                    tint = Color.White,
                                     modifier = Modifier.size(18.dp)
                                 )
                             }
                         }
                     }
                 }
+            }
+        }
 
                 // Floating Photo Action Bar when an image is selected
                 if (selectedImageIndex != null && selectedImageIndex!! in images.indices) {
@@ -2131,7 +2181,6 @@ fun DrawingCanvas(
                 }
             }
         }
-    }
 
 fun getImageColorFilter(filter: String): androidx.compose.ui.graphics.ColorFilter? {
     return when (filter) {
