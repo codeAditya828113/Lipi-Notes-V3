@@ -1915,19 +1915,50 @@ fun RealisticPenItem(
     toolId: String,
     isSelected: Boolean,
     onClick: () -> Unit,
-    onDoubleTap: (() -> Unit)? = null
+    onDoubleTap: (() -> Unit)? = null,
+    activeColor: Color? = null
 ) {
+    // Physical pen lift out of shelf when selected (bouncy spring)
+    val animatedOffsetY by androidx.compose.animation.core.animateDpAsState(
+        targetValue = if (isSelected) (-8).dp else 0.dp,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMediumLow
+        ),
+        label = "realistic_pen_offset_y"
+    )
+
+    // Bouncy scale expansion when selected
+    val animatedScale by animateFloatAsState(
+        targetValue = if (isSelected) 1.15f else 1.0f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMediumLow
+        ),
+        label = "realistic_pen_scale"
+    )
+
+    // Gentle rotation tilt when selected
+    val animatedRotation by animateFloatAsState(
+        targetValue = if (isSelected) -4f else 0f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessLow
+        ),
+        label = "realistic_pen_rotation"
+    )
+
     val animatedBorderWidth by androidx.compose.animation.core.animateDpAsState(
         targetValue = if (isSelected) 1.5.dp else 0.dp,
         animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
         label = "realistic_pen_border_width"
     )
-    val animatedBgColor by androidx.compose.animation.animateColorAsState(
+    val animatedBgColor by animateColorAsState(
         targetValue = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f) else Color.Transparent,
         animationSpec = tween(durationMillis = 200),
         label = "realistic_pen_bg_color"
     )
-    val animatedBorderColor by androidx.compose.animation.animateColorAsState(
+    val animatedBorderColor by animateColorAsState(
         targetValue = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
         animationSpec = tween(durationMillis = 200),
         label = "realistic_pen_border_color"
@@ -1938,8 +1969,15 @@ fun RealisticPenItem(
 
     Box(
         modifier = Modifier
+            .padding(horizontal = 2.dp)
             .width(30.dp)
-            .height(40.dp)
+            .height(42.dp)
+            .graphicsLayer {
+                translationY = animatedOffsetY.toPx()
+                scaleX = animatedScale
+                scaleY = animatedScale
+                rotationZ = animatedRotation
+            }
             .clip(itemShape)
             .background(animatedBgColor)
             .border(width = animatedBorderWidth, color = animatedBorderColor, shape = itemShape)
@@ -3978,6 +4016,7 @@ fun NoteEditorCanvas(
                             onDoubleTap = { showToolSettings = if (toolId == "fountain_pen" && viewModel.activeToolType == "ballpoint") "ballpoint" else toolId },
                             toolId = toolId,
                             isSelected = isSelected,
+                            activeColor = Color(viewModel.activeColor),
                             onClick = {
                                 viewModel.activeToolType = toolId
                             }
@@ -4008,9 +4047,24 @@ fun NoteEditorCanvas(
                     // Row of active tool's 4 primary colors
                     viewModel.activeToolColors.forEachIndexed { index, colorVal ->
                         val isSelected = viewModel.activeColor == colorVal
+                        val swatchScale by animateFloatAsState(
+                            targetValue = if (isSelected) 1.25f else 1.0f,
+                            animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow),
+                            label = "color_swatch_scale"
+                        )
+                        val swatchOffsetY by androidx.compose.animation.core.animateDpAsState(
+                            targetValue = if (isSelected) (-3).dp else 0.dp,
+                            animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow),
+                            label = "color_swatch_offset"
+                        )
                         Box(
                             modifier = Modifier
                                 .size(28.dp)
+                                .graphicsLayer {
+                                    scaleX = swatchScale
+                                    scaleY = swatchScale
+                                    translationY = swatchOffsetY.toPx()
+                                }
                                 .clip(CircleShape)
                                 .background(Color(colorVal))
                                 .border(
@@ -6447,6 +6501,7 @@ fun FloatingPenSection(
                         onDoubleTap = { onToolDoubleTap(if (toolId == "fountain_pen" && viewModel.activeToolType == "ballpoint") "ballpoint" else toolId) },
                         toolId = toolId,
                         isSelected = isSelected,
+                        activeColor = Color(viewModel.activeColor),
                         onClick = {
                             viewModel.activeToolType = toolId
                             if (toolId == "shapes") {
@@ -6511,9 +6566,24 @@ fun FloatingPenSection(
             ) {
                 viewModel.activeToolColors.forEachIndexed { index, colorVal ->
                     val isSelected = viewModel.activeColor == colorVal
+                    val swatchScale by animateFloatAsState(
+                        targetValue = if (isSelected) 1.25f else 1.0f,
+                        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow),
+                        label = "floating_swatch_scale"
+                    )
+                    val swatchOffsetY by androidx.compose.animation.core.animateDpAsState(
+                        targetValue = if (isSelected) (-3).dp else 0.dp,
+                        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow),
+                        label = "floating_swatch_offset"
+                    )
                     Box(
                         modifier = Modifier
                             .size(28.dp)
+                            .graphicsLayer {
+                                scaleX = swatchScale
+                                scaleY = swatchScale
+                                translationY = swatchOffsetY.toPx()
+                            }
                             .clip(CircleShape)
                             .background(Color(colorVal))
                             .border(

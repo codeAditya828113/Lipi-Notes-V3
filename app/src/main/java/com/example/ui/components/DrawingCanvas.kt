@@ -65,6 +65,8 @@ import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.RestartAlt
+import androidx.compose.material.icons.filled.FitScreen
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
@@ -982,21 +984,12 @@ fun DrawingCanvas(
                             downTouchY = y
                             longPressJob?.cancel()
                             longPressJob = coroutineScope.launch {
-                                delay(400) // 400ms long press threshold
+                                delay(400) // 400ms long press threshold for images only
                                 val targetPage = touchedPage
                                 val targetNormX = startX
                                 val targetNormY = startY
 
-                                // A. Check for target shape
-                                val targetShape = strokes.lastOrNull { s ->
-                                    s.page == targetPage && !s.isHidden && run {
-                                        val bbox = SmartInkEngine.getBoundingBox(s)
-                                        val expandedBox = Rect(bbox.left - 30f, bbox.top - 30f, bbox.right + 30f, bbox.bottom + 30f)
-                                        expandedBox.contains(Offset(targetNormX, targetNormY)) || s.toolType == "shape" || s.fillShape
-                                    }
-                                }
-
-                                // B. Check for target image
+                                // Check for target image ONLY on long press
                                 var targetImgIdx: Int? = null
                                 var targetImgElem: com.example.data.ImageElement? = null
                                 for (i in images.indices.reversed()) {
@@ -1016,15 +1009,7 @@ fun DrawingCanvas(
                                     }
                                 }
 
-                                if (targetShape != null) {
-                                    selectedImageIndex = null
-                                    onShapeLongPressed(targetShape)
-                                    activeLassoInteraction = "move"
-                                    lastLassoTouchPoint = Offset(downTouchX, downTouchY)
-                                    try {
-                                        view.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
-                                    } catch (e: Exception) {}
-                                } else if (targetImgIdx != null && targetImgElem != null) {
+                                if (targetImgIdx != null && targetImgElem != null) {
                                     selectedImageIndex = targetImgIdx
                                     activeImageInteraction = "drag"
                                     lastFingerDragPoint = Offset(downTouchX, downTouchY)
@@ -2065,137 +2050,102 @@ fun DrawingCanvas(
             }
         }
 
-        // Floating Zoom Percentage Pill & Controls Overlay (Center-Right / Middle-Right)
+        // Floating Zoom Controls & Lock State Overlay (Bottom-Start)
         Box(
             modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .padding(end = 16.dp)
+                .align(Alignment.BottomStart)
+                .padding(start = 16.dp, bottom = 16.dp)
         ) {
             if (isZoomLocked) {
-                // When locked: show lock status pill
+                // When locked: ONLY show a small lock icon in the corner
                 Surface(
                     onClick = { isZoomLocked = false },
                     shape = CircleShape,
-                    color = Color(0xFF0F172A).copy(alpha = 0.92f),
-                    shadowElevation = 8.dp,
+                    color = Color(0xFF1E293B).copy(alpha = 0.9f),
+                    shadowElevation = 6.dp,
                     border = BorderStroke(1.dp, Color(0xFF3B82F6)),
-                    modifier = Modifier.padding(vertical = 4.dp)
+                    modifier = Modifier.size(38.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
+                    Box(contentAlignment = Alignment.Center) {
                         Icon(
                             imageVector = Icons.Default.Lock,
-                            contentDescription = "Unlock Canvas Scale",
+                            contentDescription = "Unlock Page",
                             tint = Color(0xFF3B82F6),
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Text(
-                            text = "${(scale * 100).toInt()}%",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
+                            modifier = Modifier.size(18.dp)
                         )
                     }
                 }
             } else {
-                // When unlocked: Floating zoom percentage pill appears during zoom/scroll or when hovered/tapped
+                // When unlocked: Zoom controls appear ONLY when scrolling/zooming and disappear after 2s inactivity
                 AnimatedVisibility(
                     visible = showZoomIndicator,
-                    enter = fadeIn() + slideInHorizontally(initialOffsetX = { it / 2 }),
-                    exit = fadeOut() + slideOutHorizontally(targetOffsetX = { it / 2 })
+                    enter = fadeIn() + slideInVertically(initialOffsetY = { it / 2 }),
+                    exit = fadeOut() + slideOutVertically(targetOffsetY = { it / 2 })
                 ) {
-                    var showPresetsMenu by remember { mutableStateOf(false) }
-
                     Card(
                         shape = CircleShape,
                         colors = CardDefaults.cardColors(
-                            containerColor = Color(0xFF0F172A).copy(alpha = 0.92f),
+                            containerColor = Color(0xFF1E293B).copy(alpha = 0.9f),
                             contentColor = Color.White
                         ),
                         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-                        border = BorderStroke(1.dp, Color(0xFF334155))
+                        border = BorderStroke(1.dp, Color(0xFF475569))
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             IconButton(
                                 onClick = {
                                     scale = (scale - 0.15f).coerceIn(0.5f, 3.5f)
                                     showZoomIndicator = true
                                 },
-                                modifier = Modifier.size(28.dp)
+                                modifier = Modifier.size(32.dp)
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Remove,
                                     contentDescription = "Zoom Out",
                                     tint = Color.White,
-                                    modifier = Modifier.size(16.dp)
+                                    modifier = Modifier.size(18.dp)
                                 )
                             }
 
-                            // Zoom percentage text pill
-                            Box {
-                                Surface(
-                                    onClick = {
-                                        if (scale != 1f) {
+                            // Zoom percentage text pill with single-tap 100% reset button
+                            Surface(
+                                onClick = {
+                                    scale = 1f
+                                    offset = Offset(0f, offset.y)
+                                    showZoomIndicator = true
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                color = Color(0xFF0F172A).copy(alpha = 0.6f),
+                                border = BorderStroke(0.5.dp, Color(0xFF475569))
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Text(
+                                        text = "${(scale * 100).toInt()}%",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
+                                    IconButton(
+                                        onClick = {
                                             scale = 1f
                                             offset = Offset(0f, offset.y)
-                                        } else {
-                                            showPresetsMenu = !showPresetsMenu
-                                        }
-                                        showZoomIndicator = true
-                                    },
-                                    shape = RoundedCornerShape(12.dp),
-                                    color = Color(0xFF1E293B),
-                                    modifier = Modifier.padding(horizontal = 2.dp)
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                            showZoomIndicator = true
+                                        },
+                                        modifier = Modifier.size(20.dp)
                                     ) {
-                                        Text(
-                                            text = "${(scale * 100).toInt()}%",
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = Color.White
-                                        )
                                         Icon(
-                                            imageVector = Icons.Default.ArrowDropDown,
-                                            contentDescription = "Zoom Presets",
-                                            tint = Color(0xFF94A3B8),
+                                            imageVector = Icons.Default.RestartAlt,
+                                            contentDescription = "Reset Zoom to 100%",
+                                            tint = if (scale != 1f) Color(0xFF60A5FA) else Color(0xFF94A3B8),
                                             modifier = Modifier.size(14.dp)
-                                        )
-                                    }
-                                }
-
-                                DropdownMenu(
-                                    expanded = showPresetsMenu,
-                                    onDismissRequest = { showPresetsMenu = false },
-                                    modifier = Modifier.background(Color(0xFF1E293B))
-                                ) {
-                                    val presets = listOf(0.5f, 0.8f, 1.0f, 1.25f, 1.5f, 2.0f, 3.0f)
-                                    presets.forEach { preset ->
-                                        DropdownMenuItem(
-                                            text = {
-                                                Text(
-                                                    text = "${(preset * 100).toInt()}%" + if (preset == 1.0f) " (Default)" else "",
-                                                    color = if (kotlin.math.abs(scale - preset) < 0.05f) Color(0xFF3B82F6) else Color.White,
-                                                    fontWeight = if (kotlin.math.abs(scale - preset) < 0.05f) FontWeight.Bold else FontWeight.Normal,
-                                                    fontSize = 13.sp
-                                                )
-                                            },
-                                            onClick = {
-                                                scale = preset
-                                                if (preset == 1.0f) offset = Offset(0f, offset.y)
-                                                showPresetsMenu = false
-                                                showZoomIndicator = true
-                                            }
                                         )
                                     }
                                 }
@@ -2206,32 +2156,32 @@ fun DrawingCanvas(
                                     scale = (scale + 0.15f).coerceIn(0.5f, 3.5f)
                                     showZoomIndicator = true
                                 },
-                                modifier = Modifier.size(28.dp)
+                                modifier = Modifier.size(32.dp)
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Add,
                                     contentDescription = "Zoom In",
                                     tint = Color.White,
-                                    modifier = Modifier.size(16.dp)
+                                    modifier = Modifier.size(18.dp)
                                 )
                             }
 
                             Box(
                                 modifier = Modifier
                                     .width(1.dp)
-                                    .height(16.dp)
-                                    .background(Color(0xFF334155))
+                                    .height(18.dp)
+                                    .background(Color(0xFF475569))
                             )
 
                             IconButton(
                                 onClick = { isZoomLocked = true },
-                                modifier = Modifier.size(28.dp)
+                                modifier = Modifier.size(32.dp)
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.LockOpen,
-                                    contentDescription = "Lock Canvas Zoom",
-                                    tint = Color(0xFF94A3B8),
-                                    modifier = Modifier.size(16.dp)
+                                    contentDescription = "Lock Page",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(18.dp)
                                 )
                             }
                         }
