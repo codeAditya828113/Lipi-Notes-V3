@@ -48,6 +48,9 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.Spring
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
@@ -2191,68 +2194,77 @@ fun DrawingCanvas(
         }
 
                 // Floating Photo Action Bar when an image is selected
-                if (selectedImageIndex != null && selectedImageIndex!! in images.indices) {
-                    val selImg = images[selectedImageIndex!!]
-                    val selIdx = selectedImageIndex!!
-                    Card(
-                        modifier = Modifier
-                            .align(Alignment.TopCenter)
-                            .padding(top = 16.dp),
-                        elevation = CardDefaults.cardElevation(8.dp),
-                        shape = RoundedCornerShape(20.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                AnimatedVisibility(
+                    visible = selectedImageIndex != null && selectedImageIndex!! in images.indices,
+                    enter = fadeIn(animationSpec = tween(220)) +
+                            scaleIn(initialScale = 0.85f, animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow)) +
+                            slideInVertically(initialOffsetY = { -it / 2 }, animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow)),
+                    exit = fadeOut(animationSpec = tween(180)) +
+                            scaleOut(targetScale = 0.85f, animationSpec = tween(180)) +
+                            slideOutVertically(targetOffsetY = { -it / 2 }),
+                    modifier = Modifier.align(Alignment.TopCenter)
+                ) {
+                    if (selectedImageIndex != null && selectedImageIndex!! in images.indices) {
+                        val selImg = images[selectedImageIndex!!]
+                        val selIdx = selectedImageIndex!!
+                        Card(
+                            modifier = Modifier.padding(top = 16.dp),
+                            elevation = CardDefaults.cardElevation(8.dp),
+                            shape = RoundedCornerShape(20.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                         ) {
-                            Text(
-                                text = "Photo",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.padding(horizontal = 4.dp)
-                            )
-
-                            Button(
-                                onClick = {
-                                    onImageLongPressed(selIdx, selImg)
-                                },
-                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                                shape = RoundedCornerShape(12.dp)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                             ) {
-                                Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(14.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Edit", fontSize = 11.sp)
-                            }
+                                Text(
+                                    text = "Photo",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.padding(horizontal = 4.dp)
+                                )
 
-                            OutlinedButton(
-                                onClick = {
-                                    val newRot = (selImg.rotation + 90f) % 360f
-                                    onImageUpdated(selIdx, selImg.copy(rotation = newRot))
-                                },
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Icon(Icons.Default.RotateRight, contentDescription = null, modifier = Modifier.size(14.dp))
-                            }
+                                Button(
+                                    onClick = {
+                                        onImageLongPressed(selIdx, selImg)
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(14.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Edit", fontSize = 11.sp)
+                                }
 
-                            IconButton(
-                                onClick = {
-                                    onImageDeleted(selIdx)
-                                    selectedImageIndex = null
-                                },
-                                modifier = Modifier.size(28.dp)
-                            ) {
-                                Icon(Icons.Default.Delete, contentDescription = "Delete Photo", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
-                            }
+                                OutlinedButton(
+                                    onClick = {
+                                        val newRot = (selImg.rotation + 90f) % 360f
+                                        onImageUpdated(selIdx, selImg.copy(rotation = newRot))
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Icon(Icons.Default.RotateRight, contentDescription = null, modifier = Modifier.size(14.dp))
+                                }
 
-                            IconButton(
-                                onClick = { selectedImageIndex = null },
-                                modifier = Modifier.size(28.dp)
-                            ) {
-                                Icon(Icons.Default.Close, contentDescription = "Deselect", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                                IconButton(
+                                    onClick = {
+                                        onImageDeleted(selIdx)
+                                        selectedImageIndex = null
+                                    },
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(Icons.Default.Delete, contentDescription = "Delete Photo", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+                                }
+
+                                IconButton(
+                                    onClick = { selectedImageIndex = null },
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(Icons.Default.Close, contentDescription = "Deselect", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                                }
                             }
                         }
                     }

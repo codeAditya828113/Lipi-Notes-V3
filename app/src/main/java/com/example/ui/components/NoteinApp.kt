@@ -258,10 +258,12 @@ fun NoteinApp(
                     AnimatedContent(
                         targetState = activeTab,
                         transitionSpec = {
-                            fadeIn(animationSpec = tween(220, easing = FastOutSlowInEasing)) +
-                                    slideInHorizontally(initialOffsetX = { if (targetState == "home") -it / 5 else it / 5 }, animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) togetherWith
-                                    fadeOut(animationSpec = tween(180, easing = FastOutSlowInEasing)) +
-                                    slideOutHorizontally(targetOffsetX = { if (targetState == "home") it / 5 else -it / 5 }, animationSpec = spring(stiffness = Spring.StiffnessMediumLow))
+                            (fadeIn(animationSpec = tween(220, easing = FastOutSlowInEasing)) +
+                                    scaleIn(initialScale = 0.96f, animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow)) +
+                                    slideInHorizontally(initialOffsetX = { if (targetState == "home") -it / 5 else it / 5 }, animationSpec = spring(stiffness = Spring.StiffnessMediumLow))) togetherWith
+                                    (fadeOut(animationSpec = tween(180, easing = FastOutSlowInEasing)) +
+                                    scaleOut(targetScale = 0.96f, animationSpec = tween(180, easing = FastOutSlowInEasing)) +
+                                    slideOutHorizontally(targetOffsetX = { if (targetState == "home") it / 5 else -it / 5 }, animationSpec = spring(stiffness = Spring.StiffnessMediumLow)))
                         },
                         label = "MainTabTransition"
                     ) { targetTab ->
@@ -6296,15 +6298,36 @@ fun CustomAIAssistantChip(
     label: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector
 ) {
+    val chipScale by animateFloatAsState(
+        targetValue = if (selected) 1.08f else 1.0f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow),
+        label = "ai_chip_scale"
+    )
+    val bgColor by animateColorAsState(
+        targetValue = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        animationSpec = tween(durationMillis = 200),
+        label = "ai_chip_bg"
+    )
+    val borderColor by animateColorAsState(
+        targetValue = if (selected) MaterialTheme.colorScheme.primary else Color.LightGray.copy(alpha = 0.3f),
+        animationSpec = tween(durationMillis = 200),
+        label = "ai_chip_border"
+    )
+
     androidx.compose.material3.Surface(
         onClick = onClick,
         shape = RoundedCornerShape(12.dp),
-        color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        color = bgColor,
         border = androidx.compose.foundation.BorderStroke(
             width = 1.dp,
-            color = if (selected) MaterialTheme.colorScheme.primary else Color.LightGray.copy(alpha = 0.3f)
+            color = borderColor
         ),
-        modifier = Modifier.padding(horizontal = 4.dp)
+        modifier = Modifier
+            .padding(horizontal = 4.dp)
+            .graphicsLayer {
+                scaleX = chipScale
+                scaleY = chipScale
+            }
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
