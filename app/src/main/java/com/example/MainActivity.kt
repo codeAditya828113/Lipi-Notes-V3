@@ -41,11 +41,16 @@ class MainActivity : ComponentActivity() {
 
     setContent {
       val isDark = when (viewModel.themeMode) {
-        "dark" -> true
+        "dark", "oled" -> true
         "light" -> false
         else -> isSystemInDarkTheme()
       }
-      MyApplicationTheme(darkTheme = isDark, dynamicColor = false) {
+      val isOled = viewModel.themeMode == "oled"
+      MyApplicationTheme(
+        darkTheme = isDark,
+        isOled = isOled,
+        dynamicColor = viewModel.dynamicColorEnabled
+      ) {
         Surface(modifier = Modifier.fillMaxSize()) {
           NoteinApp(viewModel = viewModel)
         }

@@ -56,10 +56,28 @@ private val LightColorScheme = lightColorScheme(
     outlineVariant = OutlineVariantLight
 )
 
+private val OledColorScheme = darkColorScheme(
+    primary = BluePrimaryContainer,
+    onPrimary = BlueOnPrimaryContainer,
+    primaryContainer = BluePrimary,
+    onPrimaryContainer = Color.White,
+    secondary = SlateSecondary,
+    onSecondary = DarkOnSurface,
+    secondaryContainer = Color(0xFF121212),
+    background = Color.Black,
+    onBackground = Color.White,
+    surface = Color.Black,
+    onSurface = Color.White,
+    surfaceVariant = Color(0xFF121212),
+    onSurfaceVariant = Color(0xFFB0BEC5),
+    outline = Color(0xFF333333),
+    outlineVariant = Color(0xFF222222)
+)
+
 @Composable
 fun MyApplicationTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    // Keep dynamicColor false by default to ensure custom high-contrast palette is preserved in sunlight
+    isOled: Boolean = false,
     dynamicColor: Boolean = false,
     content: @Composable () -> Unit,
 ) {
@@ -68,6 +86,7 @@ fun MyApplicationTheme(
             val context = LocalContext.current
             if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         }
+        isOled && darkTheme -> OledColorScheme
         darkTheme -> DarkColorScheme
         else -> LightColorScheme
     }

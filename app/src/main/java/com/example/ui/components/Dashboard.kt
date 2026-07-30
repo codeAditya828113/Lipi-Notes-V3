@@ -382,41 +382,15 @@ fun NovaDashboard(
             }
 
             if (notes.isEmpty()) {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 8.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.EditNote,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
-                            modifier = Modifier.size(48.dp)
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "No notes created yet.",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = "Tap on 'Ruled Notebook' or 'Cornell Academic Pad' above to get started!",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.outline,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(top = 2.dp)
-                        )
+                EmptyStateView(
+                    title = "No notes or drawings yet",
+                    subtitle = "Tap on 'Ruled Study Notebook' or 'Cornell Academic Pad' above to create your first note!",
+                    actionText = "+ Create New Note",
+                    onActionClick = {
+                        viewModel.createNewNote("New Note", "ruled")
+                        onNavigateToNotes()
                     }
-                }
+                )
             } else {
                 LazyRow(
                     modifier = Modifier.fillMaxWidth(),

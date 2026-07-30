@@ -8,6 +8,8 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.asAndroidPath
+import android.net.Uri
 import android.graphics.Bitmap
 import android.media.MediaRecorder
 import android.util.Log
@@ -805,14 +807,361 @@ class NoteViewModel(
     var dailyTaskGoalTarget by mutableIntStateOf(3)
     private var lastStudyDateString = ""
 
-    // Theme Mode
+    // Theme Mode & Dynamic Color
     var themeMode by mutableStateOf(sharedPrefs.getString("theme_mode", "system") ?: "system")
+        private set
+
+    var dynamicColorEnabled by mutableStateOf(sharedPrefs.getBoolean("dynamic_color_enabled", true))
         private set
 
     fun updateThemeMode(mode: String) {
         themeMode = mode
         sharedPrefs.edit().putString("theme_mode", mode).apply()
         logSyncEvent("Theme changed to $mode")
+    }
+
+    fun toggleDynamicColor(enabled: Boolean) {
+        dynamicColorEnabled = enabled
+        sharedPrefs.edit().putBoolean("dynamic_color_enabled", enabled).apply()
+        logSyncEvent("Dynamic color toggled: $enabled")
+    }
+
+    // Onboarding State
+    var showOnboardingDialog by mutableStateOf(!sharedPrefs.getBoolean("has_completed_onboarding", false))
+        private set
+
+    fun dismissOnboardingDialog() {
+        showOnboardingDialog = false
+        sharedPrefs.edit().putBoolean("has_completed_onboarding", true).apply()
+    }
+
+    fun showOnboardingFlowManually() {
+        showOnboardingDialog = true
+    }
+
+    // Grid vs List view mode
+    var isGridView by mutableStateOf(sharedPrefs.getBoolean("is_grid_view", true))
+        private set
+
+    fun toggleGridView() {
+        isGridView = !isGridView
+        sharedPrefs.edit().putBoolean("is_grid_view", isGridView).apply()
+    }
+
+    // Tag Filtering
+    var selectedTagFilter by mutableStateOf("All")
+        private set
+
+    fun selectTagFilter(tag: String) {
+        selectedTagFilter = tag
+    }
+
+    fun updateNoteTags(note: NoteEntity, newTags: String) {
+        viewModelScope.launch {
+            val updated = note.copy(tags = newTags, lastModifiedTime = System.currentTimeMillis())
+            repository.insertNote(updated)
+            if (selectedNote?.id == note.id) {
+                selectedNote = updated
+            }
+            logSyncEvent("Updated tags for note ID: ${note.id}")
+        }
+    }
+
+    fun toggleNotePin(note: NoteEntity) {
+        viewModelScope.launch {
+            val updated = note.copy(isPinned = !note.isPinned, lastModifiedTime = System.currentTimeMillis())
+            repository.insertNote(updated)
+            if (selectedNote?.id == note.id) {
+                selectedNote = updated
+            }
+            logSyncEvent("Toggled pin state for note ID: ${note.id}")
+        }
+    }
+
+    // Biometric & App Lock
+    var appLockPin by mutableStateOf(sharedPrefs.getString("app_lock_pin", "") ?: "")
+        private set
+    var isAppUnlocked by mutableStateOf(appLockPin.isEmpty())
+        private set
+
+    fun updateAppLockPin(pin: String) {
+        appLockPin = pin
+        sharedPrefs.edit().putString("app_lock_pin", pin).apply()
+        isAppUnlocked = pin.isEmpty()
+    }
+
+    fun unlockAppWithPin(pin: String): Boolean {
+        if (appLockPin.isEmpty() || pin == appLockPin) {
+            isAppUnlocked = true
+            return true
+        }
+        return false
+    }
+
+    fun lockNoteWithPin(note: NoteEntity, pin: String) {
+        viewModelScope.launch {
+            val updated = note.copy(isLocked = true, pinCode = pin, lastModifiedTime = System.currentTimeMillis())
+            repository.insertNote(updated)
+            if (selectedNote?.id == note.id) {
+                selectedNote = updated
+            }
+            logSyncEvent("Locked note ID: ${note.id}")
+        }
+    }
+
+    fun unlockNoteWithPin(note: NoteEntity, pin: String): Boolean {
+        if (note.pinCode.isEmpty() || note.pinCode == pin) {
+            viewModelScope.launch {
+                val updated = note.copy(isLocked = false, pinCode = "", lastModifiedTime = System.currentTimeMillis())
+                repository.insertNote(updated)
+                if (selectedNote?.id == note.id) {
+                    selectedNote = updated
+                }
+            }
+            return true
+        }
+        return false
+    }
+
+    // Native Android Sharing
+    fun shareNote(context: Context, note: NoteEntity) {
+        val shareText = StringBuilder().apply {
+            append("📝 ").append(note.title).append("\n\n")
+            if (note.content.isNotBlank()) {
+                append(note.content).append("\n\n")
+            }
+            if (!note.summary.isNullOrBlank()) {
+                append("✨ Summary: ").append(note.summary).append("\n\n")
+            }
+            if (!note.audioTranscription.isNullOrBlank()) {
+                append("🎙️ Transcription: ").append(note.audioTranscription).append("\n\n")
+            }
+            if (note.tags.isNotBlank()) {
+                append("🏷️ Tags: ").append(note.tags).append("\n")
+            }
+            append("Shared via Lipi Notes")
+        }.toString()
+
+        val sendIntent = android.content.Intent().apply {
+            action = android.content.Intent.ACTION_SEND
+            putExtra(android.content.Intent.EXTRA_TITLE, note.title)
+            putExtra(android.content.Intent.EXTRA_TEXT, shareText)
+            type = "text/plain"
+        }
+        val shareIntent = android.content.Intent.createChooser(sendIntent, "Share Note via")
+        shareIntent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(shareIntent)
+    }
+
+    fun shareCanvasAsImage(context: Context, strokes: List<Stroke>, width: Int, height: Int) {
+        if (width <= 0 || height <= 0) return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                val canvas = android.graphics.Canvas(bitmap)
+                canvas.drawColor(android.graphics.Color.WHITE)
+                val paint = android.graphics.Paint().apply {
+                    isAntiAlias = true
+                    style = android.graphics.Paint.Style.STROKE
+                    strokeCap = android.graphics.Paint.Cap.ROUND
+                    strokeJoin = android.graphics.Paint.Join.ROUND
+                }
+
+                for (s in strokes) {
+                    paint.color = s.color
+                    paint.strokeWidth = s.width
+                    val path = androidx.compose.ui.graphics.Path().apply {
+                        if (s.points.isNotEmpty()) {
+                            moveTo(s.points.first().x, s.points.first().y)
+                            for (p in s.points.drop(1)) {
+                                lineTo(p.x, p.y)
+                            }
+                        }
+                    }.asAndroidPath()
+                    canvas.drawPath(path, paint)
+                }
+
+                val cacheFile = File(context.cacheDir, "canvas_share_${System.currentTimeMillis()}.png")
+                FileOutputStream(cacheFile).use { out ->
+                    bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+                }
+
+                val imageUri = androidx.core.content.FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    cacheFile
+                )
+
+                val shareIntent = android.content.Intent().apply {
+                    action = android.content.Intent.ACTION_SEND
+                    putExtra(android.content.Intent.EXTRA_STREAM, imageUri)
+                    type = "image/png"
+                    addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+
+                val chooser = android.content.Intent.createChooser(shareIntent, "Share Drawing via")
+                chooser.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(chooser)
+            } catch (e: Exception) {
+                Log.e("NoteViewModel", "Failed to share canvas image: ${e.message}", e)
+            }
+        }
+    }
+
+    // Local JSON Export & Import Backup
+    fun exportNotesToJson(context: Context) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val notesList = allNotes.value
+                val jsonArray = JSONArray()
+                notesList.forEach { note ->
+                    val obj = JSONObject().apply {
+                        put("id", note.id)
+                        put("title", note.title)
+                        put("content", note.content)
+                        put("createdTime", note.createdTime)
+                        put("lastModifiedTime", note.lastModifiedTime)
+                        put("templateType", note.templateType)
+                        put("pageColor", note.pageColor)
+                        put("summary", note.summary ?: "")
+                        put("tags", note.tags)
+                        put("drawingData", note.drawingData)
+                        put("imagesData", note.imagesData)
+                    }
+                    jsonArray.put(obj)
+                }
+
+                val exportJson = JSONObject().apply {
+                    put("appName", "Lipi Notes")
+                    put("exportTimestamp", System.currentTimeMillis())
+                    put("noteCount", notesList.size)
+                    put("notes", jsonArray)
+                }.toString(2)
+
+                val backupFile = File(context.cacheDir, "lipi_notes_backup_${System.currentTimeMillis()}.json")
+                backupFile.writeText(exportJson)
+
+                val uri = androidx.core.content.FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    backupFile
+                )
+
+                val shareIntent = android.content.Intent().apply {
+                    action = android.content.Intent.ACTION_SEND
+                    putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                    type = "application/json"
+                    addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+
+                val chooser = android.content.Intent.createChooser(shareIntent, "Export Backup File via")
+                chooser.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(chooser)
+                logSyncEvent("Exported ${notesList.size} notes to JSON backup.")
+            } catch (e: Exception) {
+                Log.e("NoteViewModel", "Export failed: ${e.message}", e)
+            }
+        }
+    }
+
+    fun importNotesFromJson(context: Context, uri: Uri) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val jsonText = context.contentResolver.openInputStream(uri)?.use { stream ->
+                    stream.bufferedReader().use { it.readText() }
+                } ?: return@launch
+
+                val rootObj = JSONObject(jsonText)
+                val notesArray = rootObj.optJSONArray("notes") ?: JSONArray()
+                var importedCount = 0
+
+                for (i in 0 until notesArray.length()) {
+                    val item = notesArray.getJSONObject(i)
+                    val title = item.optString("title", "Imported Note")
+                    val content = item.optString("content", "")
+                    val template = item.optString("templateType", "blank")
+                    val pageColor = item.optLong("pageColor", 0xFFFFFFFFL)
+                    val tags = item.optString("tags", "")
+                    val summary = item.optString("summary", "")
+                    val drawingData = item.optString("drawingData", "[]")
+                    val imagesData = item.optString("imagesData", "[]")
+
+                    val entity = NoteEntity(
+                        title = title,
+                        content = content,
+                        templateType = template,
+                        pageColor = pageColor,
+                        tags = tags,
+                        summary = if (summary.isNotBlank()) summary else null,
+                        drawingData = drawingData,
+                        imagesData = imagesData,
+                        lastModifiedTime = System.currentTimeMillis()
+                    )
+                    repository.insertNote(entity)
+                    importedCount++
+                }
+
+                logSyncEvent("Successfully imported $importedCount notes from backup JSON!")
+                withContext(Dispatchers.Main) {
+                    android.widget.Toast.makeText(context, "Imported $importedCount notes!", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                Log.e("NoteViewModel", "Import failed: ${e.message}", e)
+                withContext(Dispatchers.Main) {
+                    android.widget.Toast.makeText(context, "Failed to import backup: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    // AI Assistance Features
+    var isAiAssisting by mutableStateOf(false)
+        private set
+
+    fun aiSummarizeActiveNote() {
+        val note = selectedNote ?: return
+        if (note.content.isBlank() && currentStrokes.isEmpty()) return
+        isAiAssisting = true
+        viewModelScope.launch {
+            val textToSummarize = note.content.ifBlank { "Handwritten drawing with ${currentStrokes.size} strokes." }
+            val summaryResult = GeminiClient.summarizeText(textToSummarize)
+            val updated = note.copy(summary = summaryResult, lastModifiedTime = System.currentTimeMillis())
+            repository.insertNote(updated)
+            selectedNote = updated
+            isAiAssisting = false
+            logSyncEvent("Generated AI summary for note ID: ${note.id}")
+        }
+    }
+
+    fun aiTranslateActiveNote(targetLang: String) {
+        val note = selectedNote ?: return
+        if (note.content.isBlank()) return
+        isAiAssisting = true
+        viewModelScope.launch {
+            val translated = GeminiClient.translateText(note.content, targetLang)
+            val updated = note.copy(
+                content = "${note.content}\n\n--- Translation ($targetLang) ---\n$translated",
+                lastModifiedTime = System.currentTimeMillis()
+            )
+            repository.insertNote(updated)
+            selectedNote = updated
+            isAiAssisting = false
+            logSyncEvent("Translated note ID: ${note.id} into $targetLang")
+        }
+    }
+
+    fun aiPolishGrammarActiveNote() {
+        val note = selectedNote ?: return
+        if (note.content.isBlank()) return
+        isAiAssisting = true
+        viewModelScope.launch {
+            val polished = GeminiClient.fixGrammar(note.content)
+            val updated = note.copy(content = polished, lastModifiedTime = System.currentTimeMillis())
+            repository.insertNote(updated)
+            selectedNote = updated
+            isAiAssisting = false
+            logSyncEvent("Polished grammar for note ID: ${note.id}")
+        }
     }
 
     // OTA Update States

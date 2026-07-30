@@ -23,5 +23,10 @@ data class NoteEntity(
     val summary: String? = null, // AI summary / categorization tag
     val drawingData: String = "[]", // Serialized drawing strokes
     val imagesData: String = "[]", // Serialized images
-    val isSynced: Boolean = false // Sync status
+    val isSynced: Boolean = false, // Sync status
+    val tags: String = "", // Comma-separated tags e.g. "work,personal"
+    val isPinned: Boolean = false,
+    val isLocked: Boolean = false,
+    val pinCode: String = "",
+    val cardColor: Long = 0x00000000L // 0 means default theme card color
 )

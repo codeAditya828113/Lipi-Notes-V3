@@ -183,6 +183,67 @@ object GeminiClient {
             "Audio transcription failed: ${e.message}"
         }
     }
+
+    /**
+     * Generates a text response for AI assistance features.
+     */
+    suspend fun generateText(prompt: String): String = withContext(Dispatchers.IO) {
+        val apiKey = BuildConfig.GEMINI_API_KEY
+        if (apiKey.isEmpty() || apiKey == "MY_GEMINI_API_KEY") {
+            return@withContext "Gemini API key is not configured in AI Studio."
+        }
+
+        try {
+            val requestJson = JSONObject().apply {
+                put("contents", JSONArray().apply {
+                    put(JSONObject().apply {
+                        put("parts", JSONArray().apply {
+                            put(JSONObject().apply {
+                                put("text", prompt)
+                            })
+                        })
+                    })
+                })
+            }
+
+            val requestBody = requestJson.toString().toRequestBody(mediaTypeJson)
+            val request = Request.Builder()
+                .url("$BASE_URL?key=$apiKey")
+                .post(requestBody)
+                .build()
+
+            okHttpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    throw Exception("API call error: ${response.code} ${response.message}")
+                }
+                val bodyString = response.body?.string() ?: throw Exception("Empty response.")
+                val responseJson = JSONObject(bodyString)
+                val candidates = responseJson.optJSONArray("candidates")
+                val firstCandidate = candidates?.optJSONObject(0)
+                val content = firstCandidate?.optJSONObject("content")
+                val parts = content?.optJSONArray("parts")
+                val firstPart = parts?.optJSONObject(0)
+                firstPart?.optString("text") ?: "No response generated."
+            }
+        } catch (e: Exception) {
+            "AI generation failed: ${e.message}"
+        }
+    }
+
+    suspend fun summarizeText(text: String): String {
+        val prompt = "Provide a concise summary and 3 key takeaways for the following note content:\n\n$text"
+        return generateText(prompt)
+    }
+
+    suspend fun translateText(text: String, targetLang: String): String {
+        val prompt = "Translate the following text accurately into $targetLang:\n\n$text"
+        return generateText(prompt)
+    }
+
+    suspend fun fixGrammar(text: String): String {
+        val prompt = "Improve the clarity, grammar, and formatting of the following note while preserving the original intent:\n\n$text"
+        return generateText(prompt)
+    }
 }
 
 data class HandwritingAnalysisResult(

@@ -327,6 +327,12 @@ fun NoteinApp(
         )
     }
 
+    if (viewModel.showOnboardingDialog) {
+        OnboardingDialog(
+            onDismiss = { viewModel.dismissOnboardingDialog() }
+        )
+    }
+
     if (viewModel.showGoogleSearchDialog) {
         GoogleSearchDialog(
             initialQuery = viewModel.googleSearchQuery,
@@ -1152,10 +1158,25 @@ fun NoteListHeader(
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text("System Theme") },
+                            text = { Text("OLED Black Theme") },
+                            onClick = {
+                                showThemeMenu = false
+                                viewModel?.updateThemeMode("oled")
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("System Default") },
                             onClick = {
                                 showThemeMenu = false
                                 viewModel?.updateThemeMode("system")
+                            }
+                        )
+                        HorizontalDivider()
+                        DropdownMenuItem(
+                            text = { Text(if (viewModel?.dynamicColorEnabled == true) "✓ Material You Active" else "Material You Dynamic Color") },
+                            onClick = {
+                                showThemeMenu = false
+                                viewModel?.toggleDynamicColor(!(viewModel?.dynamicColorEnabled ?: false))
                             }
                         )
                     }
@@ -1479,6 +1500,7 @@ fun NoteList(
     starredNoteIds: Set<Int> = emptySet(),
     onToggleStar: (Int) -> Unit = {}
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     if (notes.isEmpty()) {
         Box(
             modifier = Modifier
@@ -1717,6 +1739,42 @@ fun NoteList(
                             onClick = { 
                                 showContextMenu = false
                                 showCustomizeTemplateDialog = true
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.Share,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp),
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Share Note")
+                                }
+                            },
+                            onClick = {
+                                showContextMenu = false
+                                viewModel?.shareNote(context, note)
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.PushPin,
+                                        contentDescription = null,
+                                        tint = if (note.isPinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(if (note.isPinned) "Unpin Note" else "Pin to Top")
+                                }
+                            },
+                            onClick = {
+                                showContextMenu = false
+                                viewModel?.toggleNotePin(note)
                             }
                         )
                         DropdownMenuItem(
