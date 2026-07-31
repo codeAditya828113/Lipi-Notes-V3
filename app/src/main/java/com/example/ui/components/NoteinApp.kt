@@ -548,6 +548,198 @@ fun NoteinApp(
 }
 
 @Composable
+fun NoteWorkspaceTabBar(
+    notes: List<NoteEntity>,
+    selectedNote: NoteEntity?,
+    viewModel: NoteViewModel,
+    onCreateNoteClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    if (viewModel.isFullscreen) return
+
+    Row(
+        verticalAlignment = Alignment.Bottom,
+        modifier = modifier
+            .fillMaxWidth()
+            .background(Color(0xFFF1F5F9))
+            .padding(horizontal = 8.dp, vertical = 0.dp)
+    ) {
+        val openNotes = remember(notes, viewModel.openNoteIds) {
+            notes.filter { it.id in viewModel.openNoteIds }
+        }
+
+        Row(
+            modifier = Modifier
+                .weight(1f)
+                .horizontalScroll(rememberScrollState())
+                .padding(top = 6.dp),
+            verticalAlignment = Alignment.Bottom
+        ) {
+            // "All Notes" Tab
+            val isAllNotesSelected = (selectedNote == null)
+            val allNotesBg by animateColorAsState(
+                targetValue = if (isAllNotesSelected) Color.White else Color(0xFFE2E8F0),
+                animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing),
+                label = "allNotesBg"
+            )
+            val allNotesTextColor by animateColorAsState(
+                targetValue = if (isAllNotesSelected) Color(0xFF0F172A) else Color(0xFF475569),
+                animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing),
+                label = "allNotesTextColor"
+            )
+            val allNotesIconColor by animateColorAsState(
+                targetValue = if (isAllNotesSelected) Color(0xFF2563EB) else Color(0xFF64748B),
+                animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing),
+                label = "allNotesIconColor"
+            )
+
+            Surface(
+                modifier = Modifier
+                    .padding(horizontal = 2.dp)
+                    .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)),
+                color = allNotesBg,
+                border = if (isAllNotesSelected) BorderStroke(1.dp, Color(0xFFCBD5E1)) else null
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .clickable { viewModel.selectNote(null) }
+                        .padding(horizontal = 14.dp, vertical = 10.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Folder,
+                        contentDescription = "All Notes Tab",
+                        tint = allNotesIconColor,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "All Notes",
+                        fontSize = 13.sp,
+                        fontWeight = if (isAllNotesSelected) FontWeight.Bold else FontWeight.Medium,
+                        color = allNotesTextColor,
+                        maxLines = 1
+                    )
+                }
+            }
+
+            // Open Note Tabs
+            openNotes.forEach { note ->
+                val isTabSelected = (selectedNote?.id == note.id)
+                val baseIconTint = if (note.templateType == "pdf") Color(0xFFD32F2F) else Color(0xFF3B82F6)
+
+                val tabBg by animateColorAsState(
+                    targetValue = if (isTabSelected) Color.White else Color(0xFFE2E8F0),
+                    animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing),
+                    label = "tabBg"
+                )
+                val tabTextColor by animateColorAsState(
+                    targetValue = if (isTabSelected) Color(0xFF0F172A) else Color(0xFF475569),
+                    animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing),
+                    label = "tabTextColor"
+                )
+                val tabIconTint by animateColorAsState(
+                    targetValue = if (isTabSelected) baseIconTint else baseIconTint.copy(alpha = 0.7f),
+                    animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing),
+                    label = "tabIconTint"
+                )
+
+                Surface(
+                    modifier = Modifier
+                        .padding(horizontal = 2.dp)
+                        .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)),
+                    color = tabBg,
+                    border = if (isTabSelected) BorderStroke(1.dp, Color(0xFFCBD5E1)) else null
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .clickable { viewModel.selectNote(note) }
+                            .padding(horizontal = 14.dp, vertical = 10.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (note.templateType == "pdf") Icons.Default.PictureAsPdf else Icons.Default.Description,
+                            contentDescription = null,
+                            tint = tabIconTint,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = note.title,
+                            fontSize = 13.sp,
+                            fontWeight = if (isTabSelected) FontWeight.Bold else FontWeight.Medium,
+                            color = tabTextColor,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.widthIn(max = 140.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        IconButton(
+                            onClick = { viewModel.closeNote(note) },
+                            modifier = Modifier.size(16.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Close Note",
+                                tint = Color(0xFF94A3B8),
+                                modifier = Modifier.size(12.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            // New Tab Button
+            IconButton(
+                onClick = onCreateNoteClick,
+                modifier = Modifier
+                    .padding(bottom = 6.dp, start = 6.dp)
+                    .size(28.dp)
+                    .background(Color.White, CircleShape)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Add,
+                    contentDescription = "New Note Tab",
+                    tint = Color(0xFF475569),
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+        }
+
+        // Right side header controls
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            modifier = Modifier.padding(bottom = 6.dp, start = 8.dp)
+        ) {
+            IconButton(
+                onClick = { viewModel.isFullscreen = !viewModel.isFullscreen },
+                modifier = Modifier.size(32.dp).testTag("fullscreen_toggle_button")
+            ) {
+                Icon(
+                    imageVector = if (viewModel.isFullscreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
+                    contentDescription = "Toggle Immersive Fullscreen",
+                    tint = Color(0xFF475569),
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+
+            IconButton(
+                onClick = onCreateNoteClick,
+                modifier = Modifier.size(32.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.ArrowDropDown,
+                    contentDescription = "Templates Menu",
+                    tint = Color(0xFF475569),
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
 fun NoteWorkspace(
     notes: List<NoteEntity>,
     selectedNote: NoteEntity?,
@@ -638,112 +830,150 @@ fun NoteWorkspace(
         }
     }
 
-    if (selectedNote != null) {
-        Box(modifier = Modifier.fillMaxSize()) {
-            NoteEditorCanvas(
-                viewModel = viewModel,
-                selectedNote = selectedNote,
-                notes = notes,
-                onCreateNoteClick = onCreateNoteClick,
-                onBackClick = { viewModel.selectNote(null) },
-                isSidebarExpanded = false,
-                onToggleSidebar = {},
-                isNoteListExpanded = true,
-                onToggleNoteList = {}
-            )
-        }
-    } else {
-        Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-            Column(modifier = Modifier.fillMaxSize()) {
-                NoteListHeader(
-                    searchKeyword = searchKeyword,
-                    onSearchChange = onSearchChange,
-                    onCreateNoteClick = onCreateNoteClick,
-                    onImportPdfClick = { pdfPickerLauncher.launch("application/pdf") },
-                    onImportDocxClick = { docxPickerLauncher.launch("application/vnd.openxmlformats-officedocument.wordprocessingml.document") },
-                    selectedFilter = selectedFilter,
-                    onFilterSelected = onFilterSelected,
-                    onMenuClick = onOpenMenu,
-                    onHomeClick = onHomeClick,
-                    isTablet = false,
-                    viewModel = viewModel,
-                    isGridView = isGridView,
-                    onToggleGridView = { isGridView = !isGridView },
-                    selectedSortOption = selectedSortOption,
-                    onSortOptionSelected = { selectedSortOption = it }
-                )
-                NoteList(
-                    notes = filteredNotes,
-                    selectedNote = null,
-                    onSelect = { viewModel.selectNote(it) },
-                    onDelete = { viewModel.deleteNote(it) },
-                    onRename = { note, newTitle -> viewModel.renameNote(note, newTitle) },
-                    onDuplicate = { viewModel.duplicateNote(it) },
-                    viewModel = viewModel,
-                    isGridView = isGridView,
-                    starredNoteIds = starredNoteIds,
-                    onToggleStar = { id ->
-                        starredNoteIds = if (starredNoteIds.contains(id)) starredNoteIds - id else starredNoteIds + id
-                    }
-                )
-            }
-            
-            // Floating Action Buttons on bottom right
-            var expandedFab by remember { mutableStateOf(false) }
-            Column(
-                modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 32.dp, end = 32.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                androidx.compose.animation.AnimatedVisibility(
-                    visible = expandedFab,
-                    enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.slideInVertically(initialOffsetY = { it / 2 }),
-                    exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.slideOutVertically(targetOffsetY = { it / 2 })
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        FloatingActionButton(
-                            onClick = { 
-                                expandedFab = false
-                                pdfPickerLauncher.launch("application/pdf") 
-                            },
-                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                            shape = CircleShape,
-                            modifier = Modifier.size(48.dp)
-                        ) {
-                            Icon(Icons.Default.PictureAsPdf, contentDescription = "Import PDF", modifier = Modifier.size(24.dp))
-                        }
-                        FloatingActionButton(
-                            onClick = { 
-                                expandedFab = false
-                                onCreateNoteClick() 
-                            },
-                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                            shape = CircleShape,
-                            modifier = Modifier.size(48.dp)
-                        ) {
-                            Icon(Icons.Default.NoteAdd, contentDescription = "Create Notebook", modifier = Modifier.size(24.dp))
-                        }
-                    }
-                }
+    Column(modifier = Modifier.fillMaxSize()) {
+        NoteWorkspaceTabBar(
+            notes = notes,
+            selectedNote = selectedNote,
+            viewModel = viewModel,
+            onCreateNoteClick = onCreateNoteClick
+        )
 
-                FloatingActionButton(
-                    onClick = { expandedFab = !expandedFab },
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                    shape = CircleShape,
-                    modifier = Modifier.size(64.dp)
+        AnimatedContent(
+            targetState = selectedNote?.id ?: -1,
+            transitionSpec = {
+                (fadeIn(animationSpec = tween(220, easing = FastOutSlowInEasing)) +
+                        scaleIn(initialScale = 0.98f, animationSpec = tween(220, easing = FastOutSlowInEasing)))
+                    .togetherWith(
+                        fadeOut(animationSpec = tween(180, easing = FastOutSlowInEasing)) +
+                        scaleOut(targetScale = 0.98f, animationSpec = tween(180, easing = FastOutSlowInEasing))
+                    )
+            },
+            label = "WorkspaceNoteSwitchAnimation",
+            modifier = Modifier.weight(1f).fillMaxWidth()
+        ) { targetNoteId ->
+            val activeNote = notes.find { it.id == targetNoteId }
+            if (activeNote != null) {
+                Box(modifier = Modifier.fillMaxSize()) {
+                    NoteEditorCanvas(
+                        viewModel = viewModel,
+                        selectedNote = activeNote,
+                        notes = notes,
+                        onCreateNoteClick = onCreateNoteClick,
+                        onBackClick = { viewModel.selectNote(null) },
+                        isSidebarExpanded = false,
+                        onToggleSidebar = {},
+                        isNoteListExpanded = true,
+                        onToggleNoteList = {}
+                    )
+                }
+            } else {
+                Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        NoteListHeader(
+                            searchKeyword = searchKeyword,
+                            onSearchChange = onSearchChange,
+                            onCreateNoteClick = onCreateNoteClick,
+                            onImportPdfClick = { pdfPickerLauncher.launch("application/pdf") },
+                            onImportDocxClick = { docxPickerLauncher.launch("application/vnd.openxmlformats-officedocument.wordprocessingml.document") },
+                            selectedFilter = selectedFilter,
+                            onFilterSelected = onFilterSelected,
+                            onMenuClick = onOpenMenu,
+                            onHomeClick = onHomeClick,
+                            isTablet = false,
+                            viewModel = viewModel,
+                            isGridView = isGridView,
+                            onToggleGridView = { isGridView = !isGridView },
+                            selectedSortOption = selectedSortOption,
+                            onSortOptionSelected = { selectedSortOption = it }
+                        )
+
+                        AnimatedContent(
+                            targetState = selectedFilter,
+                            transitionSpec = {
+                                (fadeIn(animationSpec = tween(220, easing = FastOutSlowInEasing)) +
+                                        slideInVertically(animationSpec = tween(220, easing = FastOutSlowInEasing), initialOffsetY = { 20 }))
+                                    .togetherWith(
+                                        fadeOut(animationSpec = tween(160, easing = FastOutSlowInEasing))
+                                    )
+                            },
+                            label = "FilterSectionSwitchAnimation",
+                            modifier = Modifier.weight(1f).fillMaxWidth()
+                        ) { _ ->
+                            NoteList(
+                                notes = filteredNotes,
+                                selectedNote = null,
+                                onSelect = { viewModel.selectNote(it) },
+                                onDelete = { viewModel.deleteNote(it) },
+                                onRename = { note, newTitle -> viewModel.renameNote(note, newTitle) },
+                                onDuplicate = { viewModel.duplicateNote(it) },
+                                viewModel = viewModel,
+                                isGridView = isGridView,
+                                starredNoteIds = starredNoteIds,
+                                onToggleStar = { id ->
+                                    starredNoteIds = if (starredNoteIds.contains(id)) starredNoteIds - id else starredNoteIds + id
+                                }
+                            )
+                        }
+                    }
+                
+                // Floating Action Buttons on bottom right
+                var expandedFab by remember { mutableStateOf(false) }
+                Column(
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 32.dp, end = 32.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    val icon = if (expandedFab) Icons.Default.Close else Icons.Default.Add
-                    Icon(icon, contentDescription = "Menu", modifier = Modifier.size(32.dp))
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = expandedFab,
+                        enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.slideInVertically(initialOffsetY = { it / 2 }),
+                        exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.slideOutVertically(targetOffsetY = { it / 2 })
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            FloatingActionButton(
+                                onClick = { 
+                                    expandedFab = false
+                                    pdfPickerLauncher.launch("application/pdf") 
+                                },
+                                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                shape = CircleShape,
+                                modifier = Modifier.size(48.dp)
+                            ) {
+                                Icon(Icons.Default.PictureAsPdf, contentDescription = "Import PDF", modifier = Modifier.size(24.dp))
+                            }
+                            FloatingActionButton(
+                                onClick = { 
+                                    expandedFab = false
+                                    onCreateNoteClick() 
+                                },
+                                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                shape = CircleShape,
+                                modifier = Modifier.size(48.dp)
+                            ) {
+                                Icon(Icons.Default.NoteAdd, contentDescription = "Create Notebook", modifier = Modifier.size(24.dp))
+                            }
+                        }
+                    }
+
+                    FloatingActionButton(
+                        onClick = { expandedFab = !expandedFab },
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        shape = CircleShape,
+                        modifier = Modifier.size(64.dp)
+                    ) {
+                        val icon = if (expandedFab) Icons.Default.Close else Icons.Default.Add
+                        Icon(icon, contentDescription = "Menu", modifier = Modifier.size(32.dp))
+                    }
                 }
             }
         }
     }
+}
 }
 
 @Composable
@@ -3488,128 +3718,7 @@ fun NoteEditorCanvas(
             }
     ) {
         if (!viewModel.isFullscreen) {
-            // TIER 1: Top Tier (Browser-like tabs for different notes + Core Actions)
-        Row(
-            verticalAlignment = Alignment.Bottom,
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Color(0xFFF1F5F9)) // Clean light gray browser header
-                .padding(horizontal = 8.dp, vertical = 0.dp)
-        ) {
-            // Tabs Row
-            val openNotes = notes.filter { it.id in viewModel.openNoteIds }
-            Row(
-                modifier = Modifier
-                    .weight(1f)
-                    .horizontalScroll(rememberScrollState())
-                    .padding(top = 6.dp),
-                verticalAlignment = Alignment.Bottom
-            ) {
-                openNotes.forEach { note ->
-                    val isTabSelected = note.id == selectedNote.id
-                    val tabIconTint = if (note.templateType == "pdf") Color(0xFFD32F2F) else Color(0xFF3B82F6)
-                    
-                    Surface(
-                        modifier = Modifier
-                            .padding(horizontal = 2.dp)
-                            .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)),
-                        color = if (isTabSelected) Color.White else Color(0xFFE2E8F0),
-                        border = if (isTabSelected) BorderStroke(1.dp, Color(0xFFCBD5E1)) else null
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .clickable { viewModel.selectNote(note) }
-                                .padding(horizontal = 16.dp, vertical = 10.dp)
-                        ) {
-                            Icon(
-                                imageVector = if (note.templateType == "pdf") Icons.Default.PictureAsPdf else Icons.Default.Description,
-                                contentDescription = null,
-                                tint = tabIconTint,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = note.title,
-                                fontSize = 13.sp,
-                                fontWeight = if (isTabSelected) FontWeight.Bold else FontWeight.Medium,
-                                color = if (isTabSelected) Color(0xFF0F172A) else Color(0xFF475569),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.widthIn(max = 140.dp)
-                            )
-                            Spacer(modifier = Modifier.width(10.dp))
-                            IconButton(
-                                onClick = {
-                                    viewModel.closeNote(note)
-                                },
-                                modifier = Modifier.size(16.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = "Close Note",
-                                    tint = Color(0xFF94A3B8),
-                                    modifier = Modifier.size(12.dp)
-                                )
-                            }
-                        }
-                    }
-                }
-
-                // New Tab Button
-                IconButton(
-                    onClick = onCreateNoteClick,
-                    modifier = Modifier
-                        .padding(bottom = 6.dp, start = 6.dp)
-                        .size(28.dp)
-                        .background(Color.White, CircleShape)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Add,
-                        contentDescription = "New Note Tab",
-                        tint = Color(0xFF475569),
-                        modifier = Modifier.size(16.dp)
-                    )
-                }
-            }
-
-            // Right side of browser header controls
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                modifier = Modifier.padding(bottom = 6.dp, start = 8.dp)
-            ) {
-                // Fullscreen Immersive Toggle button
-                IconButton(
-                    onClick = {
-                        viewModel.isFullscreen = !viewModel.isFullscreen
-                    },
-                    modifier = Modifier.size(32.dp).testTag("fullscreen_toggle_button")
-                ) {
-                    Icon(
-                        imageVector = if (viewModel.isFullscreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
-                        contentDescription = "Toggle Immersive Fullscreen",
-                        tint = Color(0xFF475569),
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
-                
-                // Dropdown icon [ ▾ ]
-                IconButton(
-                    onClick = onCreateNoteClick,
-                    modifier = Modifier.size(32.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.ArrowDropDown,
-                        contentDescription = "Templates Menu",
-                        tint = Color(0xFF475569),
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
-            }
-        }
-
-        // TIER 2: Two-Tier horizontal toolbar
+            // TIER 2: Two-Tier horizontal toolbar
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -4486,23 +4595,27 @@ fun NoteEditorCanvas(
                     Box(
                         modifier = Modifier
                             .align(Alignment.TopEnd)
-                            .padding(12.dp)
-                            .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                            .padding(
+                                top = if (viewModel.isFullscreen) 72.dp else 12.dp,
+                                end = 16.dp
+                            )
+                            .background(Color.Black.copy(alpha = 0.65f), RoundedCornerShape(12.dp))
+                            .clickable { showFullscreenTimerDialog = true }
+                            .padding(horizontal = 10.dp, vertical = 6.dp)
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.HourglassTop,
-                                contentDescription = null,
-                                tint = Color.White,
-                                modifier = Modifier.size(12.dp)
+                                contentDescription = "Focus Timer",
+                                tint = MaterialTheme.colorScheme.primaryContainer,
+                                modifier = Modifier.size(14.dp)
                             )
                             Text(
                                 text = formattedTime,
-                                fontSize = 11.sp,
+                                fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White,
                                 fontFamily = FontFamily.Monospace

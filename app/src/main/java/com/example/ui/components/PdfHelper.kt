@@ -363,7 +363,7 @@ object PdfHelper {
     }
 
     /**
-     * Exports any note (with all its stylus annotations/strokes and underlying PDF pages/templates) to a flattened PDF file
+     * Exports any note (with all its stylus annotations/strokes, front cover page, and underlying PDF pages/templates) to a flattened PDF file
      */
     fun exportNoteToPdf(
         context: Context? = null,
@@ -373,7 +373,12 @@ object PdfHelper {
         strokes: List<com.example.data.Stroke>,
         images: List<com.example.data.ImageElement> = emptyList(),
         pageCount: Int,
-        title: String
+        title: String,
+        coverType: String = "none",
+        coverTitle: String = "",
+        coverSubtitle: String = "",
+        coverAuthor: String = "",
+        coverExtra: String = ""
     ) {
         val document = PdfDocument()
         try {
@@ -385,8 +390,48 @@ object PdfHelper {
                 isAntiAlias = true
             }
 
+            var pdfPageIndex = 1
+
+            // 0. Render Front Cover Page if cover details or title are present
+            val shouldIncludeCover = coverType != "none" || coverTitle.isNotBlank() || title.isNotBlank()
+            if (shouldIncludeCover) {
+                val coverPageInfo = PdfDocument.PageInfo.Builder(600, 800, pdfPageIndex).create()
+                val coverPage = document.startPage(coverPageInfo)
+                drawFrontCoverPage(
+                    canvas = coverPage.canvas,
+                    title = title,
+                    coverTitle = coverTitle,
+                    coverSubtitle = coverSubtitle,
+                    coverAuthor = coverAuthor,
+                    coverExtra = coverExtra,
+                    coverType = coverType,
+                    pageCount = pageCount
+                )
+
+                // Also draw any user annotations on page 0 or page 1 if strokes exist for cover
+                val coverStrokes = strokes.filter { it.page == 0 }
+                for (stroke in coverStrokes) {
+                    if (stroke.points.size > 1 && stroke.toolType != "eraser") {
+                        strokePaint.color = stroke.color
+                        strokePaint.strokeWidth = stroke.width
+                        val path = android.graphics.Path()
+                        stroke.points.forEachIndexed { idx, pt ->
+                            if (idx == 0) {
+                                path.moveTo(pt.x, pt.y)
+                            } else {
+                                path.lineTo(pt.x, pt.y)
+                            }
+                        }
+                        coverPage.canvas.drawPath(path, strokePaint)
+                    }
+                }
+
+                document.finishPage(coverPage)
+                pdfPageIndex++
+            }
+
             for (pageIndex in 1..pageCount) {
-                val pageInfo = PdfDocument.PageInfo.Builder(600, 800, pageIndex).create()
+                val pageInfo = PdfDocument.PageInfo.Builder(600, 800, pdfPageIndex).create()
                 val page = document.startPage(pageInfo)
                 val canvas = page.canvas
 
@@ -469,6 +514,7 @@ object PdfHelper {
                 }
 
                 document.finishPage(page)
+                pdfPageIndex++
             }
 
             FileOutputStream(outputFile).use { out ->
@@ -479,5 +525,140 @@ object PdfHelper {
         } finally {
             document.close()
         }
+    }
+
+    private fun drawFrontCoverPage(
+        canvas: Canvas,
+        title: String,
+        coverTitle: String,
+        coverSubtitle: String,
+        coverAuthor: String,
+        coverExtra: String,
+        coverType: String,
+        pageCount: Int
+    ) {
+        val displayTitle = if (coverTitle.isNotBlank()) coverTitle else if (title.isNotBlank()) title else "Notebook"
+        val isDarkTheme = coverType.contains("dark") || coverType.contains("luxury") || coverType.contains("tech") || coverType.contains("3d")
+
+        val bgPaint = Paint().apply {
+            color = if (isDarkTheme) android.graphics.Color.rgb(15, 23, 42) else android.graphics.Color.rgb(248, 250, 252)
+            style = Paint.Style.FILL
+        }
+        canvas.drawRect(0f, 0f, 600f, 800f, bgPaint)
+
+        // Outer & Inner Accent Border
+        val borderPaint = Paint().apply {
+            color = if (isDarkTheme) android.graphics.Color.rgb(59, 130, 246) else android.graphics.Color.rgb(37, 99, 235)
+            style = Paint.Style.STROKE
+            strokeWidth = 6f
+            isAntiAlias = true
+        }
+        canvas.drawRoundRect(RectF(24f, 24f, 576f, 776f), 16f, 16f, borderPaint)
+
+        val innerBorderPaint = Paint().apply {
+            color = if (isDarkTheme) android.graphics.Color.argb(100, 148, 163, 184) else android.graphics.Color.argb(100, 203, 213, 225)
+            style = Paint.Style.STROKE
+            strokeWidth = 2f
+            isAntiAlias = true
+        }
+        canvas.drawRoundRect(RectF(32f, 32f, 568f, 768f), 12f, 12f, innerBorderPaint)
+
+        // Decorative Top Header Ribbon
+        val ribbonPaint = Paint().apply {
+            color = if (isDarkTheme) android.graphics.Color.rgb(30, 41, 59) else android.graphics.Color.rgb(226, 232, 240)
+            style = Paint.Style.FILL
+        }
+        canvas.drawRect(33f, 33f, 567f, 120f, ribbonPaint)
+
+        val headerTextPaint = Paint().apply {
+            color = if (isDarkTheme) android.graphics.Color.rgb(148, 163, 184) else android.graphics.Color.rgb(71, 85, 105)
+            textSize = 14f
+            isAntiAlias = true
+            typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+            textAlign = Paint.Align.CENTER
+        }
+        canvas.drawText("LIPI DIGITAL NOTEBOOK  •  FRONT COVER", 300f, 75f, headerTextPaint)
+
+        // Title Text
+        val titlePaint = Paint().apply {
+            color = if (isDarkTheme) android.graphics.Color.WHITE else android.graphics.Color.rgb(15, 23, 42)
+            textSize = 32f
+            isAntiAlias = true
+            typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+            textAlign = Paint.Align.CENTER
+        }
+
+        if (displayTitle.length > 25) {
+            val mid = displayTitle.length / 2
+            var splitIdx = displayTitle.lastIndexOf(' ', mid)
+            if (splitIdx == -1) splitIdx = mid
+            val line1 = displayTitle.substring(0, splitIdx)
+            val line2 = displayTitle.substring(splitIdx).trim()
+            canvas.drawText(line1, 300f, 280f, titlePaint)
+            canvas.drawText(line2, 300f, 325f, titlePaint)
+        } else {
+            canvas.drawText(displayTitle, 300f, 300f, titlePaint)
+        }
+
+        // Decorative Accent Line under Title
+        val linePaint = Paint().apply {
+            color = if (isDarkTheme) android.graphics.Color.rgb(245, 158, 11) else android.graphics.Color.rgb(37, 99, 235)
+            strokeWidth = 4f
+            isAntiAlias = true
+        }
+        canvas.drawLine(200f, 360f, 400f, 360f, linePaint)
+
+        // Subtitle Text
+        if (coverSubtitle.isNotBlank()) {
+            val subtitlePaint = Paint().apply {
+                color = if (isDarkTheme) android.graphics.Color.rgb(203, 213, 225) else android.graphics.Color.rgb(71, 85, 105)
+                textSize = 20f
+                isAntiAlias = true
+                typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.ITALIC)
+                textAlign = Paint.Align.CENTER
+            }
+            canvas.drawText(coverSubtitle, 300f, 410f, subtitlePaint)
+        }
+
+        // Bottom Box for Author, Extra Details, Date, Page Count
+        val footerBoxPaint = Paint().apply {
+            color = if (isDarkTheme) android.graphics.Color.rgb(30, 41, 59) else android.graphics.Color.rgb(241, 245, 249)
+            style = Paint.Style.FILL
+        }
+        canvas.drawRoundRect(RectF(60f, 540f, 540f, 720f), 12f, 12f, footerBoxPaint)
+
+        val labelPaint = Paint().apply {
+            color = if (isDarkTheme) android.graphics.Color.rgb(148, 163, 184) else android.graphics.Color.rgb(100, 116, 139)
+            textSize = 14f
+            isAntiAlias = true
+            typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+        }
+
+        val valuePaint = Paint().apply {
+            color = if (isDarkTheme) android.graphics.Color.WHITE else android.graphics.Color.rgb(15, 23, 42)
+            textSize = 15f
+            isAntiAlias = true
+            typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.NORMAL)
+        }
+
+        var yPos = 575f
+        val authorText = if (coverAuthor.isNotBlank()) coverAuthor else "Default User"
+        canvas.drawText("AUTHOR:", 80f, yPos, labelPaint)
+        canvas.drawText(authorText, 180f, yPos, valuePaint)
+
+        if (coverExtra.isNotBlank()) {
+            yPos += 30f
+            canvas.drawText("DETAILS:", 80f, yPos, labelPaint)
+            canvas.drawText(coverExtra, 180f, yPos, valuePaint)
+        }
+
+        val dateStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
+        yPos += 30f
+        canvas.drawText("DATE:", 80f, yPos, labelPaint)
+        canvas.drawText(dateStr, 180f, yPos, valuePaint)
+
+        yPos += 30f
+        canvas.drawText("PAGES:", 80f, yPos, labelPaint)
+        canvas.drawText("$pageCount Pages", 180f, yPos, valuePaint)
     }
 }

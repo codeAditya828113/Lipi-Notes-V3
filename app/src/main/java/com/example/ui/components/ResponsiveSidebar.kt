@@ -407,6 +407,7 @@ fun ResponsiveSidebar(
                         onClick = {
                             onTabChange("notes")
                             onFilterChange("All Notes")
+                            viewModel.selectNote(null)
                         }
                     )
                 }
@@ -419,6 +420,7 @@ fun ResponsiveSidebar(
                         onClick = {
                             onTabChange("notes")
                             onFilterChange("Handwritten")
+                            viewModel.selectNote(null)
                         }
                     )
                 }
@@ -431,6 +433,7 @@ fun ResponsiveSidebar(
                         onClick = {
                             onTabChange("notes")
                             onFilterChange("PDFs")
+                            viewModel.selectNote(null)
                         }
                     )
                 }
@@ -443,6 +446,7 @@ fun ResponsiveSidebar(
                         onClick = {
                             onTabChange("notes")
                             onFilterChange("Templates")
+                            viewModel.selectNote(null)
                         }
                     )
                 }

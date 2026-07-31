@@ -9,6 +9,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -28,6 +29,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -239,6 +241,9 @@ fun AdvancedTemplateDialog(
         0xFFE3F2FD  // Light Blue
     )
 
+    val configuration = LocalConfiguration.current
+    val isLargeScreen = configuration.screenWidthDp > 600
+
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
@@ -246,8 +251,8 @@ fun AdvancedTemplateDialog(
         Surface(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(24.dp),
-            shape = RoundedCornerShape(16.dp),
+                .padding(if (isLargeScreen) 24.dp else 0.dp),
+            shape = if (isLargeScreen) RoundedCornerShape(16.dp) else RoundedCornerShape(0.dp),
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 8.dp
         ) {
@@ -260,10 +265,10 @@ fun AdvancedTemplateDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Spacer(modifier = Modifier.width(48.dp)) // Balance
+                    if (isLargeScreen) Spacer(modifier = Modifier.width(48.dp)) // Balance
                     Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         Text(
-                            text = "Template Library",
+                            text = "Library",
                             fontSize = 18.sp,
                             fontWeight = if (selectedTab == 0) FontWeight.Bold else FontWeight.Normal,
                             color = if (selectedTab == 0) MaterialTheme.colorScheme.primary else Color.Gray,
@@ -284,9 +289,125 @@ fun AdvancedTemplateDialog(
 
                 Divider()
 
-                Row(modifier = Modifier.weight(1f)) {
-                    // Left Panel (Categories & Content)
-                    Box(modifier = Modifier.weight(3f).fillMaxHeight()) {
+                if (isLargeScreen) {
+                    Row(modifier = Modifier.weight(1f)) {
+                        // Left Panel (Categories & Content)
+                        Box(modifier = Modifier.weight(3f).fillMaxHeight()) {
+                            if (selectedMode == 0) {
+                                CoverSelectionPanel(
+                                    selectedCover = currentCoverType,
+                                    onCoverSelected = { currentCoverType = it },
+                                    coverTitle = coverTitle,
+                                    coverSubtitle = coverSubtitle,
+                                    coverAuthor = coverAuthor,
+                                    coverExtra = coverExtra,
+                                    onTitleChange = { coverTitle = it },
+                                    onSubtitleChange = { coverSubtitle = it },
+                                    onAuthorChange = { coverAuthor = it },
+                                    onExtraChange = { coverExtra = it }
+                                )
+                            } else {
+                                PaperSelectionPanel(
+                                    selectedTemplate = currentTemplateType,
+                                    selectedColor = currentPageColor,
+                                    availableColors = pageColors,
+                                    onTemplateSelected = { currentTemplateType = it },
+                                    onColorSelected = { currentPageColor = it }
+                                )
+                            }
+                        }
+                        
+                        Divider(modifier = Modifier.fillMaxHeight().width(1.dp))
+
+                        // Right Panel (Structure)
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            // Cover Item
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(160.dp)
+                                    .clickable { selectedMode = 0 },
+                                border = BorderStroke(2.dp, if (selectedMode == 0) MaterialTheme.colorScheme.primary else Color.Transparent),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                            ) {
+                                Column(
+                                    modifier = Modifier.fillMaxSize().padding(8.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center
+                                ) {
+                                    Text("Cover", fontWeight = FontWeight.SemiBold)
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Box(
+                                        modifier = Modifier
+                                            .size(80.dp, 100.dp)
+                                            .background(Color.White)
+                                            .border(1.dp, Color.LightGray)
+                                    ) {
+                                        Text(currentCoverType, fontSize = 8.sp, modifier = Modifier.align(Alignment.Center))
+                                    }
+                                }
+                            }
+
+                            // Paper Item
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(160.dp)
+                                    .clickable { selectedMode = 1 },
+                                border = BorderStroke(2.dp, if (selectedMode == 1) MaterialTheme.colorScheme.primary else Color.Transparent),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                            ) {
+                                Column(
+                                    modifier = Modifier.fillMaxSize().padding(8.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center
+                                ) {
+                                    Text("Paper", fontWeight = FontWeight.SemiBold)
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Box(
+                                        modifier = Modifier
+                                            .size(80.dp, 100.dp)
+                                            .background(Color(currentPageColor))
+                                            .border(1.dp, Color.LightGray)
+                                            .clipToBounds()
+                                    ) {
+                                        PageTemplateCanvasPreview(
+                                            templateType = currentTemplateType,
+                                            pageColor = currentPageColor,
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.weight(1f))
+                            
+                            Button(
+                                onClick = { onSave(currentTemplateType, currentCoverType, currentPageColor, coverTitle, coverSubtitle, coverAuthor, coverExtra) },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Apply Settings")
+                            }
+                        }
+                    }
+                } else {
+                    // Mobile Layout: TabRow for Cover/Paper and Apply button at bottom
+                    TabRow(selectedTabIndex = selectedMode) {
+                        Tab(selected = selectedMode == 0, onClick = { selectedMode = 0 }) {
+                            Text("Cover", modifier = Modifier.padding(16.dp))
+                        }
+                        Tab(selected = selectedMode == 1, onClick = { selectedMode = 1 }) {
+                            Text("Paper", modifier = Modifier.padding(16.dp))
+                        }
+                    }
+                    Box(modifier = Modifier.weight(1f)) {
                         if (selectedMode == 0) {
                             CoverSelectionPanel(
                                 selectedCover = currentCoverType,
@@ -310,80 +431,8 @@ fun AdvancedTemplateDialog(
                             )
                         }
                     }
-                    
-                    Divider(modifier = Modifier.fillMaxHeight().width(1.dp))
-
-                    // Right Panel (Structure)
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight()
-                            .padding(16.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        // Cover Item
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(160.dp)
-                                .clickable { selectedMode = 0 },
-                            border = BorderStroke(2.dp, if (selectedMode == 0) MaterialTheme.colorScheme.primary else Color.Transparent),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-                        ) {
-                            Column(
-                                modifier = Modifier.fillMaxSize().padding(8.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.Center
-                            ) {
-                                Text("Cover", fontWeight = FontWeight.SemiBold)
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Box(
-                                    modifier = Modifier
-                                        .size(80.dp, 100.dp)
-                                        .background(Color.White)
-                                        .border(1.dp, Color.LightGray)
-                                ) {
-                                    // Mini preview of cover
-                                    Text(currentCoverType, fontSize = 8.sp, modifier = Modifier.align(Alignment.Center))
-                                }
-                            }
-                        }
-
-                        // Paper Item
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(160.dp)
-                                .clickable { selectedMode = 1 },
-                            border = BorderStroke(2.dp, if (selectedMode == 1) MaterialTheme.colorScheme.primary else Color.Transparent),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-                        ) {
-                            Column(
-                                modifier = Modifier.fillMaxSize().padding(8.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.Center
-                            ) {
-                                Text("Paper", fontWeight = FontWeight.SemiBold)
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Box(
-                                    modifier = Modifier
-                                        .size(80.dp, 100.dp)
-                                        .background(Color(currentPageColor))
-                                        .border(1.dp, Color.LightGray)
-                                        .clipToBounds()
-                                ) {
-                                    PageTemplateCanvasPreview(
-                                        templateType = currentTemplateType,
-                                        pageColor = currentPageColor,
-                                        modifier = Modifier.fillMaxSize()
-                                    )
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.weight(1f))
-                        
+                    Divider()
+                    Box(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
                         Button(
                             onClick = { onSave(currentTemplateType, currentCoverType, currentPageColor, coverTitle, coverSubtitle, coverAuthor, coverExtra) },
                             modifier = Modifier.fillMaxWidth()
@@ -410,17 +459,17 @@ fun CoverSelectionPanel(
     selectedCover: String,
     onCoverSelected: (String) -> Unit
 ) {
-    var selectedCategory by remember { mutableStateOf("Subject Covers 📚") }
-    val categories = listOf("Subject Covers 📚", "3D Covers 🔥", "Academic", "Journals", "Creative", "Basic", "Illustration")
+    var selectedCategory by remember { mutableStateOf("Subject Covers \uD83D\uDCDA") }
+    val categories = listOf("Subject Covers \uD83D\uDCDA", "3D Covers \uD83D\uDD25", "Academic", "Journals", "Creative", "Basic", "Illustration")
     
     val covers = mapOf(
-        "Subject Covers 📚" to listOf(
+        "Subject Covers \uD83D\uDCDA" to listOf(
             "subject_math", "subject_gk_gs", "subject_current_affairs", "subject_reasoning",
             "subject_hindi", "subject_english", "subject_science", "subject_sst",
             "subject_sanskrit", "subject_computer", "subject_physics", "subject_chemistry",
             "subject_biology", "subject_history"
         ),
-        "3D Covers 🔥" to listOf("3d_academic", "3d_journal", "3d_tech", "3d_creative", "3d_luxury", "3d_glass", "3d_nature", "3d_minimal"),
+        "3D Covers \uD83D\uDD25" to listOf("3d_academic", "3d_journal", "3d_tech", "3d_creative", "3d_luxury", "3d_glass", "3d_nature", "3d_minimal"),
         "Academic" to listOf("science", "earth", "language", "english", "math"),
         "Journals" to listOf("journal", "daily"),
         "Creative" to listOf("treehouse"),
@@ -428,103 +477,186 @@ fun CoverSelectionPanel(
         "Illustration" to listOf("tiger", "reader", "sketch", "wash", "ink", "car")
     )
 
-    Row(modifier = Modifier.fillMaxSize()) {
-        // Categories
-        LazyColumn(
-            modifier = Modifier
-                .width(120.dp)
-                .fillMaxHeight()
-                .background(Color(0xFFF8F9FA))
-        ) {
-            items(categories) { cat ->
-                val isSelected = selectedCategory == cat
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { selectedCategory = cat }
-                        .background(if (isSelected) Color.White else Color.Transparent)
-                        .padding(vertical = 16.dp, horizontal = 12.dp)
-                ) {
-                    Text(
-                        text = cat,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                        color = if (isSelected) MaterialTheme.colorScheme.primary else Color.DarkGray
-                    )
-                }
-            }
-        }
+    val isLargeScreen = LocalConfiguration.current.screenWidthDp > 600
 
-                // Cover Grid and Editor
-        Column(modifier = Modifier.weight(1f).fillMaxHeight().padding(16.dp)) {
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(3),
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
+    if (isLargeScreen) {
+        Row(modifier = Modifier.fillMaxSize()) {
+            // Categories
+            LazyColumn(
+                modifier = Modifier
+                    .width(120.dp)
+                    .fillMaxHeight()
+                    .background(Color(0xFFF8F9FA))
             ) {
-                val currentCovers = covers[selectedCategory] ?: emptyList()
-                items(currentCovers) { cover ->
-                    val isSelected = selectedCover == cover
-                    val scale by animateFloatAsState(
-                        targetValue = if (isSelected) 1.05f else 1.0f,
-                        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow),
-                        label = "coverScale"
-                    )
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
+                items(categories) { cat ->
+                    val isSelected = selectedCategory == cat
+                    Box(
                         modifier = Modifier
-                            .graphicsLayer {
-                                scaleX = scale
-                                scaleY = scale
-                            }
-                            .clickable { onCoverSelected(cover) }
+                            .fillMaxWidth()
+                            .clickable { selectedCategory = cat }
+                            .background(if (isSelected) Color.White else Color.Transparent)
+                            .padding(vertical = 16.dp, horizontal = 12.dp)
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .aspectRatio(0.7f)
-                                .border(
-                                    width = if (isSelected) 3.dp else 1.dp,
-                                    color = if (isSelected) MaterialTheme.colorScheme.primary else Color.LightGray,
-                                    shape = RoundedCornerShape(8.dp)
-                                )
-                        ) {
-                            RenderCover(
-                                coverType = cover,
-                                title = coverTitle,
-                                subtitle = coverSubtitle,
-                                author = coverAuthor,
-                                extra = coverExtra,
-                                modifier = Modifier.fillMaxSize().padding(if (isSelected) 3.dp else 1.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(cover.capitalize(), fontSize = 12.sp)
+                        Text(
+                            text = cat,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                            color = if (isSelected) MaterialTheme.colorScheme.primary else Color.DarkGray,
+                            fontSize = 14.sp
+                        )
                     }
                 }
             }
-            
-            // Editable Fields
-            if (selectedCover != "none" && selectedCover != "dark" && selectedCover != "light" && selectedCategory != "Illustration") {
-                Spacer(modifier = Modifier.height(16.dp))
-                Divider()
-                Spacer(modifier = Modifier.height(16.dp))
-                Text("Customize Cover", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(value = coverTitle, onValueChange = onTitleChange, label = { Text("Title / Subject") }, modifier = Modifier.weight(1f), singleLine = true)
-                    OutlinedTextField(value = coverAuthor, onValueChange = onAuthorChange, label = { Text("Author / Name") }, modifier = Modifier.weight(1f), singleLine = true)
+
+            // Cover Grid and Editor
+            Column(modifier = Modifier.weight(1f).fillMaxHeight().padding(16.dp)) {
+                CoverGridAndEditor(
+                    selectedCategory = selectedCategory,
+                    covers = covers,
+                    selectedCover = selectedCover,
+                    onCoverSelected = onCoverSelected,
+                    coverTitle = coverTitle,
+                    coverSubtitle = coverSubtitle,
+                    coverAuthor = coverAuthor,
+                    coverExtra = coverExtra,
+                    onTitleChange = onTitleChange,
+                    onSubtitleChange = onSubtitleChange,
+                    onAuthorChange = onAuthorChange,
+                    onExtraChange = onExtraChange
+                )
+            }
+        }
+    } else {
+        Column(modifier = Modifier.fillMaxSize()) {
+            // Horizontal Categories
+            LazyRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFFF8F9FA)),
+                contentPadding = PaddingValues(horizontal = 8.dp)
+            ) {
+                items(categories) { cat ->
+                    val isSelected = selectedCategory == cat
+                    Box(
+                        modifier = Modifier
+                            .clickable { selectedCategory = cat }
+                            .background(if (isSelected) Color.White else Color.Transparent)
+                            .padding(vertical = 12.dp, horizontal = 12.dp)
+                    ) {
+                        Text(
+                            text = cat,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                            color = if (isSelected) MaterialTheme.colorScheme.primary else Color.DarkGray,
+                            fontSize = 14.sp
+                        )
+                    }
                 }
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(value = coverSubtitle, onValueChange = onSubtitleChange, label = { Text("Subtitle") }, modifier = Modifier.weight(1f), singleLine = true)
-                    OutlinedTextField(value = coverExtra, onValueChange = onExtraChange, label = { Text("Extra (Year/Class)") }, modifier = Modifier.weight(1f), singleLine = true)
-                }
+            }
+            Divider()
+
+            // Cover Grid and Editor
+            Column(modifier = Modifier.weight(1f).fillMaxWidth().padding(16.dp)) {
+                CoverGridAndEditor(
+                    selectedCategory = selectedCategory,
+                    covers = covers,
+                    selectedCover = selectedCover,
+                    onCoverSelected = onCoverSelected,
+                    coverTitle = coverTitle,
+                    coverSubtitle = coverSubtitle,
+                    coverAuthor = coverAuthor,
+                    coverExtra = coverExtra,
+                    onTitleChange = onTitleChange,
+                    onSubtitleChange = onSubtitleChange,
+                    onAuthorChange = onAuthorChange,
+                    onExtraChange = onExtraChange
+                )
             }
         }
     }
 }
 
+@Composable
+fun ColumnScope.CoverGridAndEditor(
+    selectedCategory: String,
+    covers: Map<String, List<String>>,
+    selectedCover: String,
+    onCoverSelected: (String) -> Unit,
+    coverTitle: String,
+    coverSubtitle: String,
+    coverAuthor: String,
+    coverExtra: String,
+    onTitleChange: (String) -> Unit,
+    onSubtitleChange: (String) -> Unit,
+    onAuthorChange: (String) -> Unit,
+    onExtraChange: (String) -> Unit
+) {
+    LazyVerticalGrid(
+        columns = GridCells.Adaptive(100.dp),
+        modifier = Modifier.weight(1f).fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        val currentCovers = covers[selectedCategory] ?: emptyList()
+        items(currentCovers) { cover ->
+            val isSelected = selectedCover == cover
+            val scale by animateFloatAsState(
+                targetValue = if (isSelected) 1.05f else 1.0f,
+                animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow),
+                label = "coverScale"
+            )
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                    .graphicsLayer {
+                        scaleX = scale
+                        scaleY = scale
+                    }
+                    .clickable { onCoverSelected(cover) }
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(0.7f)
+                        .border(
+                            width = if (isSelected) 3.dp else 1.dp,
+                            color = if (isSelected) MaterialTheme.colorScheme.primary else Color.LightGray,
+                            shape = RoundedCornerShape(8.dp)
+                        )
+                ) {
+                    RenderCover(
+                        coverType = cover,
+                        title = coverTitle,
+                        subtitle = coverSubtitle,
+                        author = coverAuthor,
+                        extra = coverExtra,
+                        modifier = Modifier.fillMaxSize().padding(if (isSelected) 3.dp else 1.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(cover.capitalize(), fontSize = 12.sp)
+            }
+        }
+    }
+    
+    // Editable Fields
+    if (selectedCover != "none" && selectedCover != "dark" && selectedCover != "light" && selectedCategory != "Illustration") {
+        Spacer(modifier = Modifier.height(16.dp))
+        Divider()
+        Spacer(modifier = Modifier.height(16.dp))
+        Text("Customize Cover", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(value = coverTitle, onValueChange = onTitleChange, label = { Text("Title / Subject") }, modifier = Modifier.weight(1f), singleLine = true)
+            OutlinedTextField(value = coverAuthor, onValueChange = onAuthorChange, label = { Text("Author / Name") }, modifier = Modifier.weight(1f), singleLine = true)
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(value = coverSubtitle, onValueChange = onSubtitleChange, label = { Text("Subtitle") }, modifier = Modifier.weight(1f), singleLine = true)
+            OutlinedTextField(value = coverExtra, onValueChange = onExtraChange, label = { Text("Extra") }, modifier = Modifier.weight(1f), singleLine = true)
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun PaperSelectionPanel(
     selectedTemplate: String,
@@ -542,15 +674,17 @@ fun PaperSelectionPanel(
         "Legal" to listOf("legal-ruled", "legal-blank")
     )
 
+    val isLargeScreen = LocalConfiguration.current.screenWidthDp > 600
+
     Column(modifier = Modifier.fillMaxSize()) {
         // Top options
-        Row(
+        FlowRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(Color(0xFFF8F9FA))
                 .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Rule:", fontWeight = FontWeight.Bold)
@@ -574,10 +708,6 @@ fun PaperSelectionPanel(
                         }
                     }
                 }
-                IconButton(onClick = { /* Add custom color */ }, modifier = Modifier.size(24.dp)) {
-                    Icon(Icons.Default.Add, contentDescription = "Add Color")
-                }
-                Text("Add More Colors", fontSize = 12.sp, color = Color.Gray)
             }
 
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -591,38 +721,108 @@ fun PaperSelectionPanel(
             }
         }
 
-        Row(modifier = Modifier.weight(1f)) {
-            // Categories
-            LazyColumn(
+        if (isLargeScreen) {
+            Row(modifier = Modifier.weight(1f)) {
+                // Categories
+                LazyColumn(
+                    modifier = Modifier
+                        .width(120.dp)
+                        .fillMaxHeight()
+                        .background(Color(0xFFF8F9FA))
+                ) {
+                    items(categories) { cat ->
+                        val isSelected = selectedCategory == cat
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { selectedCategory = cat }
+                                .background(if (isSelected) Color.White else Color.Transparent)
+                                .padding(vertical = 16.dp, horizontal = 12.dp)
+                        ) {
+                            Text(
+                                text = cat,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                color = if (isSelected) MaterialTheme.colorScheme.primary else Color.DarkGray,
+                                fontSize = 14.sp
+                            )
+                        }
+                    }
+                }
+
+                // Template Grid
+                LazyVerticalGrid(
+                    columns = GridCells.Adaptive(100.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    val currentTemplates = templates[selectedCategory] ?: emptyList()
+                    items(currentTemplates) { template ->
+                        val isSelected = selectedTemplate == template
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.clickable { onTemplateSelected(template) }
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .aspectRatio(0.75f)
+                                    .background(Color(selectedColor))
+                                    .border(
+                                        width = if (isSelected) 3.dp else 1.dp,
+                                        color = if (isSelected) MaterialTheme.colorScheme.primary else Color.LightGray,
+                                        shape = RoundedCornerShape(8.dp)
+                                    )
+                                    .clip(RoundedCornerShape(8.dp))
+                            ) {
+                                PageTemplateCanvasPreview(
+                                    templateType = template,
+                                    pageColor = selectedColor,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(template.capitalize(), fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
+        } else {
+            // Horizontal Categories
+            LazyRow(
                 modifier = Modifier
-                    .width(120.dp)
-                    .fillMaxHeight()
-                    .background(Color(0xFFF8F9FA))
+                    .fillMaxWidth()
+                    .background(Color(0xFFF8F9FA)),
+                contentPadding = PaddingValues(horizontal = 8.dp)
             ) {
                 items(categories) { cat ->
                     val isSelected = selectedCategory == cat
                     Box(
                         modifier = Modifier
-                            .fillMaxWidth()
                             .clickable { selectedCategory = cat }
                             .background(if (isSelected) Color.White else Color.Transparent)
-                            .padding(vertical = 16.dp, horizontal = 12.dp)
+                            .padding(vertical = 12.dp, horizontal = 12.dp)
                     ) {
                         Text(
                             text = cat,
                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                            color = if (isSelected) MaterialTheme.colorScheme.primary else Color.DarkGray
+                            color = if (isSelected) MaterialTheme.colorScheme.primary else Color.DarkGray,
+                            fontSize = 14.sp
                         )
                     }
                 }
             }
-
+            Divider()
+            
             // Template Grid
             LazyVerticalGrid(
-                columns = GridCells.Fixed(4),
+                columns = GridCells.Adaptive(100.dp),
                 modifier = Modifier
                     .weight(1f)
-                    .fillMaxHeight()
+                    .fillMaxWidth()
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
                 horizontalArrangement = Arrangement.spacedBy(16.dp)

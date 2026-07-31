@@ -2268,14 +2268,19 @@ class NoteViewModel(
                 strokes = currentStrokes,
                 images = imagesToExport,
                 pageCount = pdfPageCount,
-                title = note.title
+                title = note.title,
+                coverType = note.coverType,
+                coverTitle = note.coverTitle,
+                coverSubtitle = note.coverSubtitle,
+                coverAuthor = note.coverAuthor,
+                coverExtra = note.coverExtra
             )
             
             tempFile.inputStream().use { input ->
                 input.copyTo(outputStream)
             }
             tempFile.delete()
-            logSyncEvent("Exported note '${note.title}' as PDF document with images.")
+            logSyncEvent("Exported note '${note.title}' as PDF document with front cover page and images.")
         } catch (e: Exception) {
             e.printStackTrace()
             logSyncEvent("Failed to export PDF: ${e.localizedMessage}")
@@ -2288,20 +2293,40 @@ class NoteViewModel(
         try {
             val paragraphs = mutableListOf<String>()
             
-            paragraphs.add("Lipi Export: ${note.title}")
-            paragraphs.add("Created on: " + java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault()).format(java.util.Date(note.createdTime)))
+            val displayTitle = if (note.coverTitle.isNotBlank()) note.coverTitle else note.title
+            val styleName = if (note.coverType != "none") note.coverType.uppercase() else "CLASSIC"
+            
+            paragraphs.add("==================================================")
+            paragraphs.add("               FRONT COVER PAGE                   ")
+            paragraphs.add("==================================================")
+            paragraphs.add("TITLE: $displayTitle")
+            if (note.coverSubtitle.isNotBlank()) {
+                paragraphs.add("SUBTITLE: ${note.coverSubtitle}")
+            }
+            paragraphs.add("AUTHOR: " + (if (note.coverAuthor.isNotBlank()) note.coverAuthor else "Default User"))
+            if (note.coverExtra.isNotBlank()) {
+                paragraphs.add("DETAILS: ${note.coverExtra}")
+            }
+            paragraphs.add("COVER STYLE: $styleName")
+            paragraphs.add("DATE: " + java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault()).format(java.util.Date(note.createdTime)))
+            paragraphs.add("TOTAL PAGES: $pdfPageCount")
+            paragraphs.add("==================================================")
+            paragraphs.add("")
             
             if (!note.summary.isNullOrBlank()) {
                 paragraphs.add("AI SUMMARY / CATEGORY:")
                 paragraphs.add(note.summary)
+                paragraphs.add("")
             }
             if (!note.content.isNullOrBlank()) {
                 paragraphs.add("HANDWRITTEN OCR TEXT:")
                 paragraphs.add(note.content)
+                paragraphs.add("")
             }
             if (!note.audioTranscription.isNullOrBlank()) {
                 paragraphs.add("VOICE DICTATION TRANSCRIPT:")
                 paragraphs.add(note.audioTranscription)
+                paragraphs.add("")
             }
 
             val docxFile = File(application.filesDir, "note_${note.id}.docx")
@@ -2393,7 +2418,7 @@ class NoteViewModel(
         saveToUndoStack()
         hasUnsavedChanges = true
         if (activeToolType == "eraser") {
-            performEraserAction(point)
+            performEraserActionForBatch(listOf(point))
         } else if (activeToolType == "lasso") {
             val bbox = lassoBoundingBox
             if (bbox != null && lassoSelectedStrokes.isNotEmpty() &&
@@ -2459,7 +2484,7 @@ class NoteViewModel(
             return
         }
         if (activeToolType == "eraser") {
-            points.forEach { performEraserAction(it) }
+            performEraserActionForBatch(points)
         } else if (activeToolType == "lasso" && isDraggingSelection) {
             val lastPoint = points.last()
             val dx = lastPoint.x - lastLassoDragPoint.x
@@ -2495,6 +2520,11 @@ class NoteViewModel(
     }
 
     fun handleStrokeEnded() {
+        if (activeToolType == "eraser") {
+            saveActiveCanvasStrokes()
+            activeStroke = null
+            return
+        }
         if (activeToolType == "lasso") {
             if (isDraggingSelection) {
                 isDraggingSelection = false
@@ -2648,68 +2678,160 @@ class NoteViewModel(
         logSyncEvent("Cleared all strokes on page $pdfPage")
     }
 
-    private fun performEraserAction(point: Point) {
+    private fun performEraserActionForBatch(points: List<Point>) {
+        if (points.isEmpty()) return
         if (eraserMode == "clear_all") {
             clearAllCanvasStrokes()
             return
         }
+
         val eraseRadius = activeWidth.coerceAtLeast(15f)
-        
+        val eraseRadiusSq = eraseRadius * eraseRadius
+        val isPdfOrDocx = selectedNote?.templateType == "pdf" || selectedNote?.templateType == "docx"
+
         if (eraserMode == "precise") {
             var changed = false
-            val updatedStrokes = mutableListOf<Stroke>()
+            val updatedStrokes = ArrayList<Stroke>(currentStrokes.size)
+
             currentStrokes.forEach { stroke ->
-                if ((selectedNote?.templateType == "pdf" || selectedNote?.templateType == "docx") && stroke.page != pdfPage) {
+                if (isPdfOrDocx && stroke.page != pdfPage) {
                     updatedStrokes.add(stroke)
                 } else {
-                    val currentSegment = mutableListOf<Point>()
-                    val splitStrokes = mutableListOf<Stroke>()
+                    var minX = Float.MAX_VALUE
+                    var maxX = -Float.MAX_VALUE
+                    var minY = Float.MAX_VALUE
+                    var maxY = -Float.MAX_VALUE
                     stroke.points.forEach { pt ->
-                        val dx = pt.x - point.x
-                        val dy = pt.y - point.y
-                        val isInside = (dx * dx + dy * dy) < (eraseRadius * eraseRadius)
-                        if (isInside) {
-                            changed = true
-                            if (currentSegment.isNotEmpty()) {
-                                splitStrokes.add(stroke.copy(points = currentSegment.toList()))
-                                currentSegment.clear()
-                            }
-                        } else {
-                            currentSegment.add(pt)
+                        if (pt.x < minX) minX = pt.x
+                        if (pt.x > maxX) maxX = pt.x
+                        if (pt.y < minY) minY = pt.y
+                        if (pt.y > maxY) maxY = pt.y
+                    }
+
+                    var bboxOverlap = false
+                    for (i in points.indices) {
+                        val erPt = points[i]
+                        if (erPt.x >= minX - eraseRadius && erPt.x <= maxX + eraseRadius &&
+                            erPt.y >= minY - eraseRadius && erPt.y <= maxY + eraseRadius
+                        ) {
+                            bboxOverlap = true
+                            break
                         }
                     }
-                    if (currentSegment.isNotEmpty()) {
-                        splitStrokes.add(stroke.copy(points = currentSegment.toList()))
-                    }
-                    if (splitStrokes.isNotEmpty()) {
-                        updatedStrokes.addAll(splitStrokes)
-                    } else if (!changed) {
+
+                    if (!bboxOverlap) {
                         updatedStrokes.add(stroke)
+                    } else {
+                        var strokeWasModified = false
+                        val currentSegment = ArrayList<Point>()
+                        val splitStrokes = ArrayList<Stroke>()
+
+                        stroke.points.forEach { pt ->
+                            var erased = false
+                            for (i in points.indices) {
+                                val erPt = points[i]
+                                val dx = pt.x - erPt.x
+                                val dy = pt.y - erPt.y
+                                if ((dx * dx + dy * dy) < eraseRadiusSq) {
+                                    erased = true
+                                    break
+                                }
+                            }
+
+                            if (erased) {
+                                strokeWasModified = true
+                                if (currentSegment.size >= 2) {
+                                    splitStrokes.add(stroke.copy(points = ArrayList(currentSegment)))
+                                }
+                                currentSegment.clear()
+                            } else {
+                                currentSegment.add(pt)
+                            }
+                        }
+
+                        if (currentSegment.size >= 2) {
+                            splitStrokes.add(stroke.copy(points = ArrayList(currentSegment)))
+                        }
+
+                        if (strokeWasModified) {
+                            changed = true
+                            updatedStrokes.addAll(splitStrokes)
+                        } else {
+                            updatedStrokes.add(stroke)
+                        }
                     }
                 }
             }
+
             if (changed) {
                 currentStrokes = updatedStrokes
-                saveActiveCanvasStrokes()
             }
         } else {
             // "stroke" mode
-            val remainingStrokes = currentStrokes.filter { stroke ->
-                if ((selectedNote?.templateType == "pdf" || selectedNote?.templateType == "docx") && stroke.page != pdfPage) {
-                    true // keep other pages' annotations intact
+            var changed = false
+            val remainingStrokes = ArrayList<Stroke>(currentStrokes.size)
+
+            currentStrokes.forEach { stroke ->
+                if (isPdfOrDocx && stroke.page != pdfPage) {
+                    remainingStrokes.add(stroke)
                 } else {
-                    stroke.points.none { pt ->
-                        val dx = pt.x - point.x
-                        val dy = pt.y - point.y
-                        (dx * dx + dy * dy) < (eraseRadius * eraseRadius)
+                    var minX = Float.MAX_VALUE
+                    var maxX = -Float.MAX_VALUE
+                    var minY = Float.MAX_VALUE
+                    var maxY = -Float.MAX_VALUE
+                    stroke.points.forEach { pt ->
+                        if (pt.x < minX) minX = pt.x
+                        if (pt.x > maxX) maxX = pt.x
+                        if (pt.y < minY) minY = pt.y
+                        if (pt.y > maxY) maxY = pt.y
+                    }
+
+                    var bboxOverlap = false
+                    for (i in points.indices) {
+                        val erPt = points[i]
+                        if (erPt.x >= minX - eraseRadius && erPt.x <= maxX + eraseRadius &&
+                            erPt.y >= minY - eraseRadius && erPt.y <= maxY + eraseRadius
+                        ) {
+                            bboxOverlap = true
+                            break
+                        }
+                    }
+
+                    if (!bboxOverlap) {
+                        remainingStrokes.add(stroke)
+                    } else {
+                        var hit = false
+                        for (j in stroke.points.indices) {
+                            val pt = stroke.points[j]
+                            for (i in points.indices) {
+                                val erPt = points[i]
+                                val dx = pt.x - erPt.x
+                                val dy = pt.y - erPt.y
+                                if ((dx * dx + dy * dy) < eraseRadiusSq) {
+                                    hit = true
+                                    break
+                                }
+                            }
+                            if (hit) break
+                        }
+
+                        if (hit) {
+                            changed = true
+                        } else {
+                            remainingStrokes.add(stroke)
+                        }
                     }
                 }
             }
-            if (remainingStrokes.size != currentStrokes.size) {
+
+            if (changed) {
                 currentStrokes = remainingStrokes
-                saveActiveCanvasStrokes()
             }
         }
+    }
+
+    private fun performEraserAction(point: Point) {
+        performEraserActionForBatch(listOf(point))
     }
 
     // Save active drawing to local SQLite Database
