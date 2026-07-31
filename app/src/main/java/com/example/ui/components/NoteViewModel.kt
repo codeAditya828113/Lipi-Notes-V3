@@ -55,6 +55,16 @@ import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 
+data class NoteConflict(
+    val title: String,
+    val localNote: NoteEntity,
+    val cloudNoteObj: JSONObject,
+    val localModifiedTime: Long,
+    val cloudModifiedTime: Long,
+    val localContentPreview: String,
+    val cloudContentPreview: String
+)
+
 class NoteViewModel(
     private val application: Application,
     private val repository: NoteRepository
@@ -616,7 +626,7 @@ class NoteViewModel(
     var transcriptionResult by mutableStateOf<String?>(null)
         private set
 
-    // Google Drive Sync states
+    // Google Drive Sync & Conflict states
     var isSyncing by mutableStateOf(false)
         private set
     var lastSyncTime by mutableStateOf("Never")
@@ -624,6 +634,139 @@ class NoteViewModel(
     var autoBackupEnabled by mutableStateOf(false)
         private set
     val syncLogs = MutableStateFlow<List<String>>(listOf("Cloud synchronization engine offline."))
+
+    var pendingNoteConflicts by mutableStateOf<List<NoteConflict>>(emptyList())
+    var showConflictDialog by mutableStateOf(false)
+    private var pendingBackupSettingsObj: JSONObject? = null
+
+    fun dismissConflictDialog() {
+        showConflictDialog = false
+        pendingNoteConflicts = emptyList()
+    }
+
+    fun resolveSingleConflict(conflict: NoteConflict, strategy: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val existingNotes = repository.allNotes.first()
+            when (strategy) {
+                "KEEP_LOCAL" -> {
+                    logSyncEvent("Resolved conflict for '${conflict.title}': Kept Local Version.")
+                }
+                "KEEP_CLOUD" -> {
+                    parseAndSaveNoteFromJsonObject(conflict.cloudNoteObj, existingNotes, forceOverwriteId = conflict.localNote.id)
+                    logSyncEvent("Resolved conflict for '${conflict.title}': Overwritten with Cloud Version.")
+                }
+                "CREATE_COPY" -> {
+                    parseAndSaveNoteFromJsonObject(conflict.cloudNoteObj, existingNotes, forceNewNote = true)
+                    logSyncEvent("Resolved conflict for '${conflict.title}': Created Cloud Copy.")
+                }
+            }
+            withContext(Dispatchers.Main) {
+                val updatedList = pendingNoteConflicts.filter { it != conflict }
+                pendingNoteConflicts = updatedList
+                if (updatedList.isEmpty()) {
+                    showConflictDialog = false
+                    applyPendingBackupSettings()
+                    logSyncEvent("🎉 All note conflicts successfully resolved!")
+                }
+            }
+        }
+    }
+
+    fun resolveAllConflicts(strategy: String) {
+        val conflictsToResolve = pendingNoteConflicts
+        if (conflictsToResolve.isEmpty()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val existingNotes = repository.allNotes.first()
+            conflictsToResolve.forEach { conflict ->
+                when (strategy) {
+                    "KEEP_LOCAL" -> {
+                        logSyncEvent("Resolved conflict for '${conflict.title}': Kept Local Version.")
+                    }
+                    "KEEP_CLOUD" -> {
+                        parseAndSaveNoteFromJsonObject(conflict.cloudNoteObj, existingNotes, forceOverwriteId = conflict.localNote.id)
+                        logSyncEvent("Resolved conflict for '${conflict.title}': Overwritten with Cloud Version.")
+                    }
+                    "CREATE_COPY" -> {
+                        parseAndSaveNoteFromJsonObject(conflict.cloudNoteObj, existingNotes, forceNewNote = true)
+                        logSyncEvent("Resolved conflict for '${conflict.title}': Created Cloud Copy.")
+                    }
+                }
+            }
+            withContext(Dispatchers.Main) {
+                pendingNoteConflicts = emptyList()
+                showConflictDialog = false
+                applyPendingBackupSettings()
+                logSyncEvent("🎉 Resolved all ${conflictsToResolve.size} conflicts using '$strategy' mode!")
+            }
+        }
+    }
+
+    private suspend fun applyPendingBackupSettings() {
+        val settingsObj = pendingBackupSettingsObj ?: return
+        val restoredStreak = settingsObj.optInt("studyStreakDays", studyStreakDays)
+        val restoredGoal = settingsObj.optInt("dailyGoalTargetMinutes", dailyGoalTargetMinutes)
+        val restoredTaskGoal = settingsObj.optInt("dailyTaskGoalTarget", dailyTaskGoalTarget)
+        val restoredStudySecs = settingsObj.optInt("dailyStudySeconds", dailyStudySeconds)
+        val restoredLastStudyDate = settingsObj.optString("lastStudyDateString", lastStudyDateString)
+        val restoredTheme = settingsObj.optString("themeMode", themeMode)
+
+        withContext(Dispatchers.Main) {
+            studyStreakDays = restoredStreak
+            dailyGoalTargetMinutes = restoredGoal
+            dailyTaskGoalTarget = restoredTaskGoal
+            dailyStudySeconds = restoredStudySecs
+            lastStudyDateString = restoredLastStudyDate
+            themeMode = restoredTheme
+        }
+
+        sharedPrefs.edit()
+            .putInt("study_streak_days", restoredStreak)
+            .putInt("daily_goal_minutes", restoredGoal)
+            .putInt("daily_task_goal", restoredTaskGoal)
+            .putInt("daily_study_seconds", restoredStudySecs)
+            .putString("last_study_date", restoredLastStudyDate)
+            .putString("theme_mode", restoredTheme)
+            .apply()
+
+        pendingBackupSettingsObj = null
+    }
+
+    fun triggerSampleConflictTest() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val notes = repository.allNotes.first()
+            val targetNote = notes.firstOrNull() ?: run {
+                val newNote = NoteEntity(title = "Sample Note for Conflict Test", content = "Original local content version 1.0", createdTime = System.currentTimeMillis(), lastModifiedTime = System.currentTimeMillis())
+                val id = repository.insertNote(newNote).toInt()
+                newNote.copy(id = id)
+            }
+
+            val cloudObj = JSONObject().apply {
+                put("id", targetNote.id)
+                put("title", targetNote.title)
+                put("content", "${targetNote.content}\n\n[CLOUD RESTORED UPDATE: Added new research notes from Google Drive sync]")
+                put("createdTime", targetNote.createdTime)
+                put("lastModifiedTime", System.currentTimeMillis() + 3600000L)
+                put("drawingData", "[]")
+                put("imagesData", "[]")
+            }
+
+            val sampleConflict = NoteConflict(
+                title = targetNote.title,
+                localNote = targetNote,
+                cloudNoteObj = cloudObj,
+                localModifiedTime = targetNote.lastModifiedTime,
+                cloudModifiedTime = System.currentTimeMillis() + 3600000L,
+                localContentPreview = targetNote.content.take(120).ifBlank { "Original Local Note Content" },
+                cloudContentPreview = "${targetNote.content}\n\n[CLOUD RESTORED UPDATE: Added new research notes from Google Drive sync]".take(120)
+            )
+
+            withContext(Dispatchers.Main) {
+                pendingNoteConflicts = listOf(sampleConflict)
+                showConflictDialog = true
+                logSyncEvent("⚠️ Version conflict detected for '${targetNote.title}'. User dialogue opened.")
+            }
+        }
+    }
 
     private var mediaRecorder: MediaRecorder? = null
 
@@ -3181,14 +3324,26 @@ class NoteViewModel(
         return noteObj
     }
 
-    private suspend fun parseAndSaveNoteFromJsonObject(noteObj: JSONObject, existingNotes: List<NoteEntity>): Boolean {
-        val title = noteObj.optString("title", "Untitled")
-        val createdTime = noteObj.optLong("createdTime", System.currentTimeMillis())
+    private suspend fun parseAndSaveNoteFromJsonObject(
+        noteObj: JSONObject,
+        existingNotes: List<NoteEntity>,
+        forceOverwriteId: Int? = null,
+        forceNewNote: Boolean = false
+    ): Boolean {
+        val rawTitle = noteObj.optString("title", "Untitled")
+        val title = if (forceNewNote && !rawTitle.contains("(Cloud Copy)")) "$rawTitle (Cloud Copy)" else rawTitle
+        val createdTime = if (forceNewNote) System.currentTimeMillis() else noteObj.optLong("createdTime", System.currentTimeMillis())
         val lastModifiedTime = noteObj.optLong("lastModifiedTime", System.currentTimeMillis())
 
-        val existingNote = existingNotes.find { 
-            (it.title == title && kotlin.math.abs(it.createdTime - createdTime) < 10000L) ||
-            (noteObj.has("id") && it.id == noteObj.getInt("id"))
+        val existingNote = if (forceNewNote) null else {
+            if (forceOverwriteId != null) {
+                existingNotes.find { it.id == forceOverwriteId }
+            } else {
+                existingNotes.find { 
+                    (it.title == rawTitle && kotlin.math.abs(it.createdTime - createdTime) < 10000L) ||
+                    (noteObj.has("id") && it.id == noteObj.getInt("id"))
+                }
+            }
         }
 
         val rawImagesData = noteObj.optString("imagesData", "[]")
@@ -3244,7 +3399,7 @@ class NoteViewModel(
             isSynced = true
         )
 
-        if (existingNote == null || lastModifiedTime >= existingNote.lastModifiedTime || existingNote.content.isBlank()) {
+        if (forceOverwriteId != null || forceNewNote || existingNote == null || lastModifiedTime >= existingNote.lastModifiedTime || existingNote.content.isBlank()) {
             val savedId = repository.insertNote(noteToSave).toInt()
             val targetId = if (savedId > 0) savedId else (existingNote?.id ?: 0)
 
@@ -3290,7 +3445,7 @@ class NoteViewModel(
         return backupRoot.toString(2)
     }
 
-    suspend fun restoreBackupFromJsonString(jsonText: String): Int = withContext(Dispatchers.IO) {
+    suspend fun restoreBackupFromJsonString(jsonText: String, conflictStrategy: String? = null): Int = withContext(Dispatchers.IO) {
         if (jsonText.isBlank()) return@withContext 0
         try {
             val backupRoot = JSONObject(jsonText)
@@ -3299,15 +3454,61 @@ class NoteViewModel(
 
             var restoredNotesCount = 0
             val existingNotes = repository.allNotes.first()
+            val detectedConflicts = mutableListOf<NoteConflict>()
 
             for (i in 0 until notesArray.length()) {
                 val noteObj = notesArray.getJSONObject(i)
+                val rawTitle = noteObj.optString("title", "Untitled")
+                val createdTime = noteObj.optLong("createdTime", System.currentTimeMillis())
+
+                val existingNote = existingNotes.find { 
+                    (it.title == rawTitle && kotlin.math.abs(it.createdTime - createdTime) < 10000L) ||
+                    (noteObj.has("id") && it.id == noteObj.getInt("id"))
+                }
+
+                if (existingNote != null && conflictStrategy == null) {
+                    val localContent = existingNote.content
+                    val cloudContent = noteObj.optString("content", "")
+                    val localDrawing = existingNote.drawingData
+                    val cloudDrawing = noteObj.optString("drawingData", "[]")
+                    val localTime = existingNote.lastModifiedTime
+                    val cloudTime = noteObj.optLong("lastModifiedTime", System.currentTimeMillis())
+
+                    val isDiff = (localContent != cloudContent) ||
+                            (localDrawing != cloudDrawing) ||
+                            (kotlin.math.abs(localTime - cloudTime) > 10000L)
+
+                    if (isDiff) {
+                        val localPreview = localContent.take(120).ifBlank { "Original local content / handwritten notes" }
+                        val cloudPreview = cloudContent.take(120).ifBlank { "Cloud backup content / handwritten notes" }
+                        detectedConflicts.add(
+                            NoteConflict(
+                                title = rawTitle,
+                                localNote = existingNote,
+                                cloudNoteObj = noteObj,
+                                localModifiedTime = localTime,
+                                cloudModifiedTime = cloudTime,
+                                localContentPreview = localPreview,
+                                cloudContentPreview = cloudPreview
+                            )
+                        )
+                        continue
+                    }
+                }
+
                 if (parseAndSaveNoteFromJsonObject(noteObj, existingNotes)) {
                     restoredNotesCount++
                 }
             }
 
-            if (settingsObj != null) {
+            if (detectedConflicts.isNotEmpty() && conflictStrategy == null) {
+                withContext(Dispatchers.Main) {
+                    pendingNoteConflicts = detectedConflicts
+                    pendingBackupSettingsObj = settingsObj
+                    showConflictDialog = true
+                    logSyncEvent("⚠️ Found ${detectedConflicts.size} version conflict(s) between local and cloud notes. Resolution dialogue displayed.")
+                }
+            } else if (settingsObj != null) {
                 val restoredStreak = settingsObj.optInt("studyStreakDays", studyStreakDays)
                 val restoredGoal = settingsObj.optInt("dailyGoalTargetMinutes", dailyGoalTargetMinutes)
                 val restoredTaskGoal = settingsObj.optInt("dailyTaskGoalTarget", dailyTaskGoalTarget)

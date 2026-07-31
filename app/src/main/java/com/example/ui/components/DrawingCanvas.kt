@@ -330,6 +330,14 @@ fun DrawingCanvas(
             }
         }
 
+        val view = LocalView.current
+        val motionEventPredictor = remember(view) {
+            try {
+                androidx.input.motionprediction.MotionEventPredictor.newInstance(view)
+            } catch (e: Exception) {
+                null
+            }
+        }
         val strokePathCache = remember { HashMap<Stroke, Path>() }
         val imageBitmaps = rememberImageBitmaps(images)
         LaunchedEffect(widthPx, heightPx, templateType, pdfPageCount) {
@@ -476,6 +484,9 @@ fun DrawingCanvas(
                     val isStylus = stylusPointerIndex != null
                     if (isStylus) {
                         activePointerIndex = stylusPointerIndex!!
+                        try {
+                            motionEventPredictor?.record(motionEvent)
+                        } catch (_: Exception) {}
                     } else {
                         activePointerIndex = 0
                     }
@@ -963,11 +974,16 @@ fun DrawingCanvas(
                     val finalX = toNormalizedX(snappedX, touchedPage)
                     val finalY = toNormalizedY(snappedY, touchedPage)
 
-                    // Detect stylus pressure if available, fallback to 1.0
+                    // Detect stylus pressure & tilt if available
                     val pressure = if (isStylus) {
                         try { motionEvent.getPressure(activePointerIndex) } catch (e: Exception) { motionEvent.pressure }
                     } else {
                         1.0f
+                    }
+                    val tilt = if (isStylus) {
+                        try { motionEvent.getAxisValue(MotionEvent.AXIS_TILT, activePointerIndex) } catch (e: Exception) { 0f }
+                    } else {
+                        0f
                     }
 
                     when (action) {
@@ -981,7 +997,7 @@ fun DrawingCanvas(
                             
                             val startX = toNormalizedX(snappedX, touchedPage).coerceIn(0f, 600f)
                             val startY = toNormalizedY(snappedY, touchedPage).coerceIn(0f, getNormH(touchedPage))
-                            onStrokeStarted(Point(startX, startY, pressure))
+                            onStrokeStarted(Point(startX, startY, pressure, tilt))
 
                             downTouchX = x
                             downTouchY = y
@@ -1038,6 +1054,10 @@ fun DrawingCanvas(
                                     val hp = if (isStylus) {
                                         try { motionEvent.getHistoricalPressure(activePointerIndex, i) } catch (e: Exception) { motionEvent.getHistoricalPressure(i) }
                                     } else 1.0f
+                                    val ht = if (isStylus) {
+                                        try { motionEvent.getHistoricalAxisValue(MotionEvent.AXIS_TILT, activePointerIndex, i) } catch (e: Exception) { tilt }
+                                    } else 0f
+
                                     val pivotX = widthPx / 2f
                                     val pivotY = heightPx / 2f
                                     val mHx = (hx - pivotX - offset.x) / scale + pivotX
@@ -1071,11 +1091,44 @@ fun DrawingCanvas(
 
                                     val fHx = toNormalizedX(snappedHx, strokeStartedPage).coerceIn(0f, 600f)
                                     val fHy = toNormalizedY(snappedHy, strokeStartedPage).coerceIn(0f, normH)
-                                    pointsList.add(Point(fHx, fHy, hp))
+                                    pointsList.add(Point(fHx, fHy, hp, ht))
                                 }
                                 val finalXVal = toNormalizedX(snappedX, strokeStartedPage).coerceIn(0f, 600f)
                                 val finalYVal = toNormalizedY(snappedY, strokeStartedPage).coerceIn(0f, normH)
-                                pointsList.add(Point(finalXVal, finalYVal, pressure))
+                                pointsList.add(Point(finalXVal, finalYVal, pressure, tilt))
+
+                                // Low-latency predictive path processing using MotionEventPredictor
+                                if (isStylus && motionEventPredictor != null) {
+                                    try {
+                                        val predictedEvent = motionEventPredictor.predict()
+                                        if (predictedEvent != null) {
+                                            val predHist = predictedEvent.historySize
+                                            val pivotX = widthPx / 2f
+                                            val pivotY = heightPx / 2f
+                                            for (i in 0 until predHist) {
+                                                val px = try { predictedEvent.getHistoricalX(activePointerIndex, i) } catch (e: Exception) { predictedEvent.getHistoricalX(i) }
+                                                val py = try { predictedEvent.getHistoricalY(activePointerIndex, i) } catch (e: Exception) { predictedEvent.getHistoricalY(i) }
+                                                val pp = try { predictedEvent.getHistoricalPressure(activePointerIndex, i) } catch (e: Exception) { pressure }
+                                                val pt = try { predictedEvent.getHistoricalAxisValue(MotionEvent.AXIS_TILT, activePointerIndex, i) } catch (e: Exception) { tilt }
+                                                val mPx = (px - pivotX - offset.x) / scale + pivotX
+                                                val mPy = (py - pivotY - offset.y) / scale + pivotY
+                                                val fPx = toNormalizedX(mPx, strokeStartedPage).coerceIn(0f, 600f)
+                                                val fPy = toNormalizedY(mPy, strokeStartedPage).coerceIn(0f, normH)
+                                                pointsList.add(Point(fPx, fPy, pp, pt))
+                                            }
+                                            val predX = try { predictedEvent.getX(activePointerIndex) } catch (e: Exception) { predictedEvent.x }
+                                            val predY = try { predictedEvent.getY(activePointerIndex) } catch (e: Exception) { predictedEvent.y }
+                                            val predP = try { predictedEvent.getPressure(activePointerIndex) } catch (e: Exception) { pressure }
+                                            val predT = try { predictedEvent.getAxisValue(MotionEvent.AXIS_TILT, activePointerIndex) } catch (e: Exception) { tilt }
+                                            val mPx = (predX - pivotX - offset.x) / scale + pivotX
+                                            val mPy = (predY - pivotY - offset.y) / scale + pivotY
+                                            val fPx = toNormalizedX(mPx, strokeStartedPage).coerceIn(0f, 600f)
+                                            val fPy = toNormalizedY(mPy, strokeStartedPage).coerceIn(0f, normH)
+                                            pointsList.add(Point(fPx, fPy, predP, predT))
+                                        }
+                                    } catch (_: Exception) {}
+                                }
+
                                 if (pointsList.isNotEmpty()) {
                                     onStrokeDragged(pointsList)
                                 }

@@ -148,4 +148,5 @@ dependencies {
         exclude(group = "org.apache.httpcomponents")
     }
     implementation("com.google.mlkit:text-recognition:16.0.1")
+    implementation("androidx.input:input-motionprediction:1.0.0-beta03")
 }

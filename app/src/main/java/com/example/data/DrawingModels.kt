@@ -9,14 +9,15 @@ data class FadingStroke(
 data class Point(
     val x: Float,
     val y: Float,
-    val pressure: Float = 1.0f
+    val pressure: Float = 1.0f,
+    val tilt: Float = 0f
 )
 
 data class Stroke(
     val points: List<Point>,
     val color: Int,
     val width: Float,
-    val toolType: String = "pen", // "pen", "highlighter", "eraser"
+    val toolType: String = "pen", // "pen", "fountain", "pencil", "highlighter", "eraser"
     val page: Int = 1,
     val isHidden: Boolean = false,
     val fillShape: Boolean = false,
@@ -25,7 +26,7 @@ data class Stroke(
 ) {
     // Utility to serialize this single stroke
     fun serialize(): String {
-        val pointsStr = points.joinToString(";") { "${it.x},${it.y},${it.pressure}" }
+        val pointsStr = points.joinToString(";") { "${it.x},${it.y},${it.pressure},${it.tilt}" }
         return "$color|$width|$toolType|$page|${if(isHidden) 1 else 0}|${if(fillShape) 1 else 0}|$fillOpacity|${if(isRainbow) 1 else 0}|$pointsStr"
     }
 }
@@ -81,7 +82,8 @@ object StrokeSerializer {
                         Point(
                             x = coords[0].toFloat(),
                             y = coords[1].toFloat(),
-                            pressure = coords.getOrNull(2)?.toFloat() ?: 1.0f
+                            pressure = coords.getOrNull(2)?.toFloat() ?: 1.0f,
+                            tilt = coords.getOrNull(3)?.toFloat() ?: 0f
                         )
                     } else null
                 }
