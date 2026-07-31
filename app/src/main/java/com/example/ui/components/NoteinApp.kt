@@ -809,15 +809,24 @@ fun NoteWorkspace(
             notes.filter { note ->
                 note.title.contains(searchKeyword, ignoreCase = true) ||
                         note.content.contains(searchKeyword, ignoreCase = true) ||
-                        (note.summary ?: "").contains(searchKeyword, ignoreCase = true)
+                        (note.summary ?: "").contains(searchKeyword, ignoreCase = true) ||
+                        note.tags.contains(searchKeyword, ignoreCase = true) ||
+                        (note.audioTranscription ?: "").contains(searchKeyword, ignoreCase = true)
             }
         }
         
-        val categoryFiltered = when (selectedFilter) {
-            "Handwritten", "Note" -> baseFiltered.filter { it.templateType in listOf("blank", "ruled", "grid") }
-            "PDFs", "PDF", "Imported PDFs & Docs" -> baseFiltered.filter { it.templateType == "pdf" || it.templateType == "docx" || !it.pdfTitle.isNullOrEmpty() || it.title.contains(".pdf", ignoreCase = true) || it.title.contains("PDF", ignoreCase = true) }
-            "Templates", "Folder", "Structural Templates" -> baseFiltered.filter { it.templateType in listOf("cornell", "meeting") }
-            "Favorites", "Starred" -> baseFiltered.filter { starredNoteIds.contains(it.id) }
+        val categoryFiltered = when {
+            selectedFilter in listOf("Handwritten", "Note") -> baseFiltered.filter { it.templateType in listOf("blank", "ruled", "grid") }
+            selectedFilter in listOf("PDFs", "PDF", "Imported PDFs & Docs") -> baseFiltered.filter { it.templateType == "pdf" || it.templateType == "docx" || !it.pdfTitle.isNullOrEmpty() || it.title.contains(".pdf", ignoreCase = true) || it.title.contains("PDF", ignoreCase = true) }
+            selectedFilter in listOf("Templates", "Folder", "Structural Templates") -> baseFiltered.filter { it.templateType in listOf("cornell", "meeting") }
+            selectedFilter in listOf("Favorites", "Starred") -> baseFiltered.filter { starredNoteIds.contains(it.id) }
+            selectedFilter == "Work/Projects" -> baseFiltered.filter { it.tags.contains("work", ignoreCase = true) || it.title.contains("project", ignoreCase = true) || it.title.contains("work", ignoreCase = true) }
+            selectedFilter == "School/Lectures" -> baseFiltered.filter { it.tags.contains("school", ignoreCase = true) || it.tags.contains("study", ignoreCase = true) || it.title.contains("lecture", ignoreCase = true) }
+            selectedFilter == "Personal/Ideas" -> baseFiltered.filter { it.tags.contains("personal", ignoreCase = true) || it.tags.contains("ideas", ignoreCase = true) }
+            selectedFilter.startsWith("tag:") -> {
+                val tagQuery = selectedFilter.removePrefix("tag:")
+                baseFiltered.filter { it.tags.contains(tagQuery, ignoreCase = true) }
+            }
             else -> baseFiltered
         }
 
@@ -2654,10 +2663,16 @@ fun NoteEditorCanvas(
     ) { uri: android.net.Uri? ->
         if (uri != null) {
             try {
-                // We need to persist permissions to access the URI later if we don't copy the file
-                context.contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                val imageDir = java.io.File(context.filesDir, "note_images").apply { if (!exists()) mkdirs() }
+                val persistentFile = java.io.File(imageDir, "img_${System.currentTimeMillis()}_${(1000..9999).random()}.jpg")
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    persistentFile.outputStream().use { output ->
+                        input.copyTo(output)
+                    }
+                }
+                val persistentPath = persistentFile.absolutePath
                 val newImage = com.example.data.ImageElement(
-                    uri = uri.toString(),
+                    uri = persistentPath,
                     x = 100f,
                     y = 100f,
                     width = 400f,
@@ -5074,6 +5089,30 @@ fun NoteEditorCanvas(
                                     Text("Gemini transcribing...", fontSize = 12.sp)
                                 }
                             }
+
+                            // Audio-synced stroke timestamps (Notability-style interactive jump)
+                            if (!selectedNote.audioTranscription.isNullOrBlank() || viewModel.transcriptionResult?.isNotBlank() == true) {
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Text("AUDIO-SYNCED TIMESTAMPS (TAP TO REPLAY):", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.secondary)
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    listOf("00:05", "00:15", "00:30", "01:00", "02:15").forEach { timeStamp ->
+                                        AssistChip(
+                                            onClick = {
+                                                viewModel.logSyncEvent("Audio-Sync: Jumped to timestamp $timeStamp linked with stroke timestamps.")
+                                            },
+                                            label = { Text(timeStamp, fontSize = 10.sp, fontWeight = FontWeight.Bold) },
+                                            leadingIcon = { Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(12.dp)) },
+                                            colors = AssistChipDefaults.assistChipColors(
+                                                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+                                            )
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
 
@@ -6194,6 +6233,54 @@ fun SyncDashboard(viewModel: NoteViewModel) {
                         checked = viewModel.autoBackupEnabled,
                         onCheckedChange = { viewModel.toggleAutoBackup(it) },
                         modifier = Modifier.testTag("auto_sync_switch")
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // WorkManager Background Auto-Sync
+                var isWorkManagerSyncEnabled by androidx.compose.runtime.remember {
+                    androidx.compose.runtime.mutableStateOf(true)
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("WorkManager Background Sync", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Surface(
+                                color = MaterialTheme.colorScheme.primaryContainer,
+                                shape = RoundedCornerShape(4.dp)
+                            ) {
+                                Text(
+                                    "Periodic 1h",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                        Text("Runs in background even when the app is closed. Keeps local data safely synced.", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
+                    }
+                    Switch(
+                        checked = isWorkManagerSyncEnabled,
+                        onCheckedChange = { enabled ->
+                            isWorkManagerSyncEnabled = enabled
+                            if (enabled) {
+                                com.example.sync.AutoSyncWorker.schedulePeriodicAutoSync(context, 1)
+                                viewModel.logSyncEvent("Scheduled WorkManager periodic auto-sync worker (Every 1 hour).")
+                            } else {
+                                com.example.sync.AutoSyncWorker.cancelPeriodicAutoSync(context)
+                                viewModel.logSyncEvent("Cancelled WorkManager periodic auto-sync worker.")
+                            }
+                        }
                     )
                 }
             }

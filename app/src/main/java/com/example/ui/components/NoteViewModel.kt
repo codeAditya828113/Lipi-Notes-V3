@@ -1071,35 +1071,7 @@ class NoteViewModel(
                     stream.bufferedReader().use { it.readText() }
                 } ?: return@launch
 
-                val rootObj = JSONObject(jsonText)
-                val notesArray = rootObj.optJSONArray("notes") ?: JSONArray()
-                var importedCount = 0
-
-                for (i in 0 until notesArray.length()) {
-                    val item = notesArray.getJSONObject(i)
-                    val title = item.optString("title", "Imported Note")
-                    val content = item.optString("content", "")
-                    val template = item.optString("templateType", "blank")
-                    val pageColor = item.optLong("pageColor", 0xFFFFFFFFL)
-                    val tags = item.optString("tags", "")
-                    val summary = item.optString("summary", "")
-                    val drawingData = item.optString("drawingData", "[]")
-                    val imagesData = item.optString("imagesData", "[]")
-
-                    val entity = NoteEntity(
-                        title = title,
-                        content = content,
-                        templateType = template,
-                        pageColor = pageColor,
-                        tags = tags,
-                        summary = if (summary.isNotBlank()) summary else null,
-                        drawingData = drawingData,
-                        imagesData = imagesData,
-                        lastModifiedTime = System.currentTimeMillis()
-                    )
-                    repository.insertNote(entity)
-                    importedCount++
-                }
+                val importedCount = restoreBackupFromJsonString(jsonText)
 
                 logSyncEvent("Successfully imported $importedCount notes from backup JSON!")
                 withContext(Dispatchers.Main) {
@@ -1627,7 +1599,7 @@ class NoteViewModel(
                     }
 
                     val fileLength = connection.contentLength
-                    val updateDir = application.getExternalCacheDir() ?: application.cacheDir
+                    val updateDir = application.cacheDir
                     val apkFile = File(updateDir, "update.apk")
                     if (apkFile.exists()) {
                         apkFile.delete()
@@ -1945,6 +1917,9 @@ class NoteViewModel(
             pdfPage = 1 // reset pdf page
             transcriptionResult = note.audioTranscription
             
+            val maxStrokePage = currentStrokes.maxOfOrNull { it.page } ?: 1
+            val maxImagePage = currentImages.maxOfOrNull { it.page } ?: 1
+            
             if (note.templateType == "pdf" || note.templateType == "docx") {
                 val pdfFile = File(application.filesDir, "note_${note.id}.pdf")
                 if (!pdfFile.exists()) {
@@ -1952,7 +1927,7 @@ class NoteViewModel(
                 }
                 val originalCount = PdfHelper.getPdfPageCount(pdfFile)
                 val storedCount = sharedPrefs.getInt("note_page_count_${note.id}", originalCount)
-                pdfPageCount = storedCount.coerceAtLeast(originalCount)
+                pdfPageCount = maxOf(storedCount, originalCount, maxStrokePage, maxImagePage, 1)
 
                 // Auto extract text with Google ML Kit if content is blank
                 if (note.content.isBlank()) {
@@ -1960,8 +1935,9 @@ class NoteViewModel(
                 }
             } else {
                 val storedCount = sharedPrefs.getInt("note_page_count_${note.id}", 1)
-                pdfPageCount = storedCount.coerceAtLeast(1)
+                pdfPageCount = maxOf(storedCount, maxStrokePage, maxImagePage, 1)
             }
+            sharedPrefs.edit().putInt("note_page_count_${note.id}", pdfPageCount).apply()
         } else {
             sharedPrefs.edit().remove("last_opened_note_id").apply()
             currentStrokes = emptyList()
@@ -3143,6 +3119,149 @@ class NoteViewModel(
         logSyncEvent("Automated cloud backup to Google Drive " + if (enabled) "ENABLED" else "DISABLED")
     }
 
+    private fun buildNoteJsonObject(note: NoteEntity): JSONObject {
+        val noteObj = JSONObject()
+        noteObj.put("id", note.id)
+        noteObj.put("title", note.title)
+        noteObj.put("content", note.content)
+        noteObj.put("createdTime", note.createdTime)
+        noteObj.put("lastModifiedTime", note.lastModifiedTime)
+        noteObj.put("templateType", note.templateType)
+        noteObj.put("coverType", note.coverType)
+        noteObj.put("pageColor", note.pageColor)
+        noteObj.put("coverTitle", note.coverTitle)
+        noteObj.put("coverSubtitle", note.coverSubtitle)
+        noteObj.put("coverAuthor", note.coverAuthor)
+        noteObj.put("coverExtra", note.coverExtra)
+        noteObj.put("pdfTitle", note.pdfTitle ?: "")
+        noteObj.put("audioPath", note.audioPath ?: "")
+        noteObj.put("audioTranscription", note.audioTranscription ?: "")
+        noteObj.put("summary", note.summary ?: "")
+        noteObj.put("drawingData", note.drawingData)
+        noteObj.put("imagesData", note.imagesData)
+        noteObj.put("isSynced", true)
+
+        val strokes = StrokeSerializer.deserializeStrokes(note.drawingData)
+        val images = com.example.data.ImageElementSerializer.deserializeImages(note.imagesData)
+        val maxStrokePage = strokes.maxOfOrNull { it.page } ?: 1
+        val maxImagePage = images.maxOfOrNull { it.page } ?: 1
+        val storedCount = sharedPrefs.getInt("note_page_count_${note.id}", 1)
+        val pageCount = maxOf(storedCount, maxStrokePage, maxImagePage, 1)
+        noteObj.put("pageCount", pageCount)
+
+        if (images.isNotEmpty()) {
+            val imagesBase64Obj = JSONObject()
+            images.forEach { img ->
+                if (img.uri.isNotBlank()) {
+                    try {
+                        val cleanPath = img.uri.removePrefix("file://").removePrefix("file:")
+                        val file = File(cleanPath)
+                        val relativeFile = File(application.filesDir, cleanPath)
+                        val bytesToEncode: ByteArray? = when {
+                            file.exists() -> file.readBytes()
+                            relativeFile.exists() -> relativeFile.readBytes()
+                            img.uri.startsWith("content://") -> {
+                                application.contentResolver.openInputStream(android.net.Uri.parse(img.uri))?.use { it.readBytes() }
+                            }
+                            else -> null
+                        }
+
+                        if (bytesToEncode != null && bytesToEncode.isNotEmpty()) {
+                            val base64Str = android.util.Base64.encodeToString(bytesToEncode, android.util.Base64.NO_WRAP)
+                            imagesBase64Obj.put(img.uri, base64Str)
+                        }
+                    } catch (e: Exception) {
+                        Log.w("NoteViewModel", "Could not encode image '${img.uri}': ${e.message}")
+                    }
+                }
+            }
+            noteObj.put("imagesBase64", imagesBase64Obj)
+        }
+
+        return noteObj
+    }
+
+    private suspend fun parseAndSaveNoteFromJsonObject(noteObj: JSONObject, existingNotes: List<NoteEntity>): Boolean {
+        val title = noteObj.optString("title", "Untitled")
+        val createdTime = noteObj.optLong("createdTime", System.currentTimeMillis())
+        val lastModifiedTime = noteObj.optLong("lastModifiedTime", System.currentTimeMillis())
+
+        val existingNote = existingNotes.find { 
+            (it.title == title && kotlin.math.abs(it.createdTime - createdTime) < 10000L) ||
+            (noteObj.has("id") && it.id == noteObj.getInt("id"))
+        }
+
+        val rawImagesData = noteObj.optString("imagesData", "[]")
+        var imagesList = com.example.data.ImageElementSerializer.deserializeImages(rawImagesData)
+        val imagesBase64Obj = noteObj.optJSONObject("imagesBase64")
+
+        if (imagesBase64Obj != null && imagesList.isNotEmpty()) {
+            val imageDir = File(application.filesDir, "note_images").apply { if (!exists()) mkdirs() }
+            imagesList = imagesList.map { img ->
+                var finalUri = img.uri
+                val b64Str = imagesBase64Obj.optString(img.uri, "")
+                if (b64Str.isNotBlank()) {
+                    try {
+                        val bytes = android.util.Base64.decode(b64Str, android.util.Base64.NO_WRAP)
+                        val restoredFile = File(imageDir, "restored_img_${System.currentTimeMillis()}_${(1000..9999).random()}.jpg")
+                        restoredFile.writeBytes(bytes)
+                        finalUri = restoredFile.absolutePath
+                    } catch (e: Exception) {
+                        Log.e("NoteViewModel", "Failed to decode restored image Base64", e)
+                    }
+                } else if (!File(img.uri.removePrefix("file://")).exists()) {
+                    val relFile = File(application.filesDir, img.uri.removePrefix("file://"))
+                    if (relFile.exists()) {
+                        finalUri = relFile.absolutePath
+                    }
+                }
+                img.copy(uri = finalUri)
+            }
+        }
+
+        val restoredImagesData = com.example.data.ImageElementSerializer.serializeImages(imagesList)
+        val drawingDataStr = noteObj.optString("drawingData", "[]")
+
+        val noteToSave = NoteEntity(
+            id = existingNote?.id ?: 0,
+            title = title,
+            content = noteObj.optString("content", ""),
+            createdTime = createdTime,
+            lastModifiedTime = lastModifiedTime,
+            templateType = noteObj.optString("templateType", "blank"),
+            coverType = noteObj.optString("coverType", "none"),
+            pageColor = noteObj.optLong("pageColor", 0xFFFFFFFF),
+            coverTitle = noteObj.optString("coverTitle", ""),
+            coverSubtitle = noteObj.optString("coverSubtitle", ""),
+            coverAuthor = noteObj.optString("coverAuthor", ""),
+            coverExtra = noteObj.optString("coverExtra", ""),
+            pdfTitle = noteObj.optString("pdfTitle").ifBlank { null },
+            audioPath = noteObj.optString("audioPath").ifBlank { null },
+            audioTranscription = noteObj.optString("audioTranscription").ifBlank { null },
+            summary = noteObj.optString("summary").ifBlank { null },
+            drawingData = drawingDataStr,
+            imagesData = restoredImagesData,
+            isSynced = true
+        )
+
+        if (existingNote == null || lastModifiedTime >= existingNote.lastModifiedTime || existingNote.content.isBlank()) {
+            val savedId = repository.insertNote(noteToSave).toInt()
+            val targetId = if (savedId > 0) savedId else (existingNote?.id ?: 0)
+
+            val strokes = StrokeSerializer.deserializeStrokes(drawingDataStr)
+            val maxStrokePage = strokes.maxOfOrNull { it.page } ?: 1
+            val maxImagePage = imagesList.maxOfOrNull { it.page } ?: 1
+            val jsonPageCount = noteObj.optInt("pageCount", 1)
+            val finalPageCount = maxOf(jsonPageCount, maxStrokePage, maxImagePage, 1)
+
+            if (targetId > 0) {
+                sharedPrefs.edit().putInt("note_page_count_${targetId}", finalPageCount).apply()
+            }
+            return true
+        }
+        return false
+    }
+
     fun generateMasterBackupJsonString(): String {
         val notesList = allNotes.value
         val backupRoot = JSONObject()
@@ -3153,28 +3272,7 @@ class NoteViewModel(
 
         val notesArray = JSONArray()
         for (note in notesList) {
-            val noteObj = JSONObject().apply {
-                put("id", note.id)
-                put("title", note.title)
-                put("content", note.content)
-                put("createdTime", note.createdTime)
-                put("lastModifiedTime", note.lastModifiedTime)
-                put("templateType", note.templateType)
-                put("coverType", note.coverType)
-                put("pageColor", note.pageColor)
-                put("coverTitle", note.coverTitle)
-                put("coverSubtitle", note.coverSubtitle)
-                put("coverAuthor", note.coverAuthor)
-                put("coverExtra", note.coverExtra)
-                put("pdfTitle", note.pdfTitle ?: "")
-                put("audioPath", note.audioPath ?: "")
-                put("audioTranscription", note.audioTranscription ?: "")
-                put("summary", note.summary ?: "")
-                put("drawingData", note.drawingData)
-                put("imagesData", note.imagesData)
-                put("isSynced", true)
-            }
-            notesArray.put(noteObj)
+            notesArray.put(buildNoteJsonObject(note))
         }
         backupRoot.put("notes", notesArray)
 
@@ -3204,39 +3302,7 @@ class NoteViewModel(
 
             for (i in 0 until notesArray.length()) {
                 val noteObj = notesArray.getJSONObject(i)
-                val title = noteObj.optString("title", "Untitled")
-                val createdTime = noteObj.optLong("createdTime", System.currentTimeMillis())
-                val lastModifiedTime = noteObj.optLong("lastModifiedTime", System.currentTimeMillis())
-
-                val existingNote = existingNotes.find { 
-                    (it.title == title && kotlin.math.abs(it.createdTime - createdTime) < 10000L) ||
-                    (noteObj.has("id") && it.id == noteObj.getInt("id"))
-                }
-
-                val noteToSave = NoteEntity(
-                    id = existingNote?.id ?: 0,
-                    title = title,
-                    content = noteObj.optString("content", ""),
-                    createdTime = createdTime,
-                    lastModifiedTime = lastModifiedTime,
-                    templateType = noteObj.optString("templateType", "blank"),
-                    coverType = noteObj.optString("coverType", "none"),
-                    pageColor = noteObj.optLong("pageColor", 0xFFFFFFFF),
-                    coverTitle = noteObj.optString("coverTitle", ""),
-                    coverSubtitle = noteObj.optString("coverSubtitle", ""),
-                    coverAuthor = noteObj.optString("coverAuthor", ""),
-                    coverExtra = noteObj.optString("coverExtra", ""),
-                    pdfTitle = noteObj.optString("pdfTitle").ifBlank { null },
-                    audioPath = noteObj.optString("audioPath").ifBlank { null },
-                    audioTranscription = noteObj.optString("audioTranscription").ifBlank { null },
-                    summary = noteObj.optString("summary").ifBlank { null },
-                    drawingData = noteObj.optString("drawingData", "[]"),
-                    imagesData = noteObj.optString("imagesData", "[]"),
-                    isSynced = true
-                )
-
-                if (existingNote == null || lastModifiedTime >= existingNote.lastModifiedTime || existingNote.content.isBlank()) {
-                    repository.insertNote(noteToSave)
+                if (parseAndSaveNoteFromJsonObject(noteObj, existingNotes)) {
                     restoredNotesCount++
                 }
             }
@@ -3283,6 +3349,13 @@ class NoteViewModel(
             vaultFile.writeText(jsonText, Charsets.UTF_8)
             val masterFile = File(application.filesDir, "google_drive_vault_master.json")
             masterFile.writeText(jsonText, Charsets.UTF_8)
+
+            // External persistent cloud vault (persists even after app uninstall)
+            val extVaultDir = File(application.getExternalFilesDir(android.os.Environment.DIRECTORY_DOCUMENTS), "LipiNotes_CloudVault").apply { if (!exists()) mkdirs() }
+            val extVaultFile = File(extVaultDir, "google_drive_vault_${safeEmail.hashCode()}.json")
+            extVaultFile.writeText(jsonText, Charsets.UTF_8)
+            val extMasterFile = File(extVaultDir, "google_drive_vault_master.json")
+            extMasterFile.writeText(jsonText, Charsets.UTF_8)
         } catch (e: Exception) {
             Log.e("NoteViewModel", "Failed to save account vault", e)
         }
@@ -3291,9 +3364,21 @@ class NoteViewModel(
     suspend fun restoreFromGoogleDriveVault(email: String): Int = withContext(Dispatchers.IO) {
         try {
             val safeEmail = email.lowercase().trim()
+            val extVaultDir = File(application.getExternalFilesDir(android.os.Environment.DIRECTORY_DOCUMENTS), "LipiNotes_CloudVault")
+            val extVaultFile = File(extVaultDir, "google_drive_vault_${safeEmail.hashCode()}.json")
+            val extMasterFile = File(extVaultDir, "google_drive_vault_master.json")
             val vaultFile = File(application.filesDir, "google_drive_vault_${safeEmail.hashCode()}.json")
-            val targetFile = if (vaultFile.exists()) vaultFile else File(application.filesDir, "google_drive_vault_master.json")
-            if (targetFile.exists()) {
+            val masterFile = File(application.filesDir, "google_drive_vault_master.json")
+
+            val targetFile = when {
+                extVaultFile.exists() -> extVaultFile
+                extMasterFile.exists() -> extMasterFile
+                vaultFile.exists() -> vaultFile
+                masterFile.exists() -> masterFile
+                else -> null
+            }
+
+            if (targetFile != null && targetFile.exists()) {
                 val jsonText = targetFile.readText(Charsets.UTF_8)
                 return@withContext restoreBackupFromJsonString(jsonText)
             }
@@ -3514,57 +3599,12 @@ class NoteViewModel(
 
     fun exportLocalBackupToStream(outputStream: java.io.OutputStream): Boolean {
         return try {
-            val notesList = allNotes.value
-            val backupRoot = JSONObject()
-            backupRoot.put("version", 1)
-            backupRoot.put("app", "Lipi Notes")
-            backupRoot.put("exportedAt", System.currentTimeMillis())
-            backupRoot.put("noteCount", notesList.size)
-
-            val notesArray = org.json.JSONArray()
-            for (note in notesList) {
-                val noteObj = JSONObject().apply {
-                    put("id", note.id)
-                    put("title", note.title)
-                    put("content", note.content)
-                    put("createdTime", note.createdTime)
-                    put("lastModifiedTime", note.lastModifiedTime)
-                    put("templateType", note.templateType)
-                    put("coverType", note.coverType)
-                    put("pageColor", note.pageColor)
-                    put("coverTitle", note.coverTitle)
-                    put("coverSubtitle", note.coverSubtitle)
-                    put("coverAuthor", note.coverAuthor)
-                    put("coverExtra", note.coverExtra)
-                    put("pdfTitle", note.pdfTitle ?: "")
-                    put("audioPath", note.audioPath ?: "")
-                    put("audioTranscription", note.audioTranscription ?: "")
-                    put("summary", note.summary ?: "")
-                    put("drawingData", note.drawingData)
-                    put("imagesData", note.imagesData)
-                    put("isSynced", note.isSynced)
-                }
-                notesArray.put(noteObj)
-            }
-            backupRoot.put("notes", notesArray)
-
-            val settingsObj = JSONObject().apply {
-                put("studyStreakDays", studyStreakDays)
-                put("dailyGoalTargetMinutes", dailyGoalTargetMinutes)
-                put("dailyTaskGoalTarget", dailyTaskGoalTarget)
-                put("dailyStudySeconds", dailyStudySeconds)
-                put("lastStudyDateString", lastStudyDateString)
-                put("themeMode", themeMode)
-                put("ota_update_url", updateUrlSetting)
-            }
-            backupRoot.put("settings", settingsObj)
-
-            val jsonString = backupRoot.toString(2)
+            val jsonString = generateMasterBackupJsonString()
             outputStream.use { stream ->
                 stream.write(jsonString.toByteArray(Charsets.UTF_8))
                 stream.flush()
             }
-            logSyncEvent("Successfully exported local backup containing ${notesList.size} notes.")
+            logSyncEvent("Successfully exported local backup containing ${allNotes.value.size} notes.")
             true
         } catch (e: Exception) {
             Log.e("NoteViewModel", "Local backup export failed", e)
@@ -3576,67 +3616,8 @@ class NoteViewModel(
     fun restoreLocalBackupFromStream(inputStream: java.io.InputStream): Boolean {
         return try {
             val jsonText = inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
-            val backupRoot = JSONObject(jsonText)
-
-            val notesArray = backupRoot.optJSONArray("notes") ?: org.json.JSONArray()
-            val settingsObj = backupRoot.optJSONObject("settings")
-
-            var restoredNotesCount = 0
             viewModelScope.launch(Dispatchers.IO) {
-                for (i in 0 until notesArray.length()) {
-                    val noteObj = notesArray.getJSONObject(i)
-                    val note = NoteEntity(
-                        id = noteObj.optInt("id", 0),
-                        title = noteObj.optString("title", "Untitled"),
-                        content = noteObj.optString("content", ""),
-                        createdTime = noteObj.optLong("createdTime", System.currentTimeMillis()),
-                        lastModifiedTime = noteObj.optLong("lastModifiedTime", System.currentTimeMillis()),
-                        templateType = noteObj.optString("templateType", "blank"),
-                        coverType = noteObj.optString("coverType", "none"),
-                        pageColor = noteObj.optLong("pageColor", 0xFFFFFFFF),
-                        coverTitle = noteObj.optString("coverTitle", ""),
-                        coverSubtitle = noteObj.optString("coverSubtitle", ""),
-                        coverAuthor = noteObj.optString("coverAuthor", ""),
-                        coverExtra = noteObj.optString("coverExtra", ""),
-                        pdfTitle = noteObj.optString("pdfTitle").ifBlank { null },
-                        audioPath = noteObj.optString("audioPath").ifBlank { null },
-                        audioTranscription = noteObj.optString("audioTranscription").ifBlank { null },
-                        summary = noteObj.optString("summary").ifBlank { null },
-                        drawingData = noteObj.optString("drawingData", "[]"),
-                        imagesData = noteObj.optString("imagesData", "[]"),
-                        isSynced = noteObj.optBoolean("isSynced", false)
-                    )
-                    repository.insertNote(note)
-                    restoredNotesCount++
-                }
-
-                if (settingsObj != null) {
-                    val restoredStreak = settingsObj.optInt("studyStreakDays", studyStreakDays)
-                    val restoredGoal = settingsObj.optInt("dailyGoalTargetMinutes", dailyGoalTargetMinutes)
-                    val restoredTaskGoal = settingsObj.optInt("dailyTaskGoalTarget", dailyTaskGoalTarget)
-                    val restoredStudySecs = settingsObj.optInt("dailyStudySeconds", dailyStudySeconds)
-                    val restoredLastStudyDate = settingsObj.optString("lastStudyDateString", lastStudyDateString)
-                    val restoredTheme = settingsObj.optString("themeMode", themeMode)
-
-                    withContext(Dispatchers.Main) {
-                        studyStreakDays = restoredStreak
-                        dailyGoalTargetMinutes = restoredGoal
-                        dailyTaskGoalTarget = restoredTaskGoal
-                        dailyStudySeconds = restoredStudySecs
-                        lastStudyDateString = restoredLastStudyDate
-                        themeMode = restoredTheme
-                    }
-
-                    sharedPrefs.edit()
-                        .putInt("study_streak_days", restoredStreak)
-                        .putInt("daily_goal_minutes", restoredGoal)
-                        .putInt("daily_task_goal", restoredTaskGoal)
-                        .putInt("daily_study_seconds", restoredStudySecs)
-                        .putString("last_study_date", restoredLastStudyDate)
-                        .putString("theme_mode", restoredTheme)
-                        .apply()
-                }
-
+                val restoredNotesCount = restoreBackupFromJsonString(jsonText)
                 withContext(Dispatchers.Main) {
                     logSyncEvent("Restored $restoredNotesCount notes and app settings from local backup! 🎉")
                 }

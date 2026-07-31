@@ -5,6 +5,8 @@ import kotlinx.coroutines.flow.Flow
 class NoteRepository(private val noteDao: NoteDao) {
     val allNotes: Flow<List<NoteEntity>> = noteDao.getAllNotes()
 
+    suspend fun getAllNotesSync(): List<NoteEntity> = noteDao.getAllNotesList()
+
     suspend fun getNoteById(id: Int): NoteEntity? = noteDao.getNoteById(id)
 
     suspend fun insertNote(note: NoteEntity): Long = noteDao.insertNote(note)

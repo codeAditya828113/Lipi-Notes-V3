@@ -21,20 +21,22 @@ android {
     .map { it.toIntOrNull() ?: runNumber }
     .orElse(runNumber)
     .get()
+  val finalVersionCode = maxOf(customVersionCode, 200)
 
   defaultConfig {
     applicationId = "com.aistudio.novanotes.fcbecc"
     minSdk = 24
     targetSdk = 36
-    versionCode = customVersionCode
-    versionName = "1.0.$customVersionCode"
+    versionCode = finalVersionCode
+    versionName = "1.0.$finalVersionCode"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
 
   signingConfigs {
     create("appSigning") {
-      storeFile = file("${rootDir}/debug.keystore")
+      val ksFile = rootProject.file("debug.keystore")
+      storeFile = if (ksFile.exists()) ksFile else file("${rootDir}/debug.keystore")
       storePassword = "android"
       keyAlias = "androiddebugkey"
       keyPassword = "android"
@@ -95,6 +97,7 @@ dependencies {
   implementation(libs.androidx.navigation.compose)
   implementation(libs.androidx.room.ktx)
   implementation(libs.androidx.room.runtime)
+  implementation(libs.androidx.work.runtime.ktx)
   implementation(libs.coil.compose)
   implementation(libs.converter.moshi)
   implementation(libs.firebase.ai)

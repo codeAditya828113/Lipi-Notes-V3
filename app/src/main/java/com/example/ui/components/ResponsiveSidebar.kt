@@ -452,6 +452,114 @@ fun ResponsiveSidebar(
                 }
 
                 item {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = "NESTED DIRECTORIES",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.outline,
+                        modifier = Modifier.padding(start = 4.dp, bottom = 6.dp)
+                    )
+                }
+
+                item {
+                    FolderItem(
+                        icon = Icons.Default.FolderSpecial,
+                        label = "📁 Work / Projects",
+                        count = notes.count { it.tags.contains("work", ignoreCase = true) || it.title.contains("project", ignoreCase = true) },
+                        isSelected = activeTab == "notes" && selectedFilter == "Work/Projects",
+                        onClick = {
+                            onTabChange("notes")
+                            onFilterChange("Work/Projects")
+                            viewModel.selectNote(null)
+                        }
+                    )
+                }
+                item {
+                    FolderItem(
+                        icon = Icons.Default.FolderZip,
+                        label = "📁 School / Lectures",
+                        count = notes.count { it.tags.contains("school", ignoreCase = true) || it.tags.contains("study", ignoreCase = true) || it.title.contains("lecture", ignoreCase = true) },
+                        isSelected = activeTab == "notes" && selectedFilter == "School/Lectures",
+                        onClick = {
+                            onTabChange("notes")
+                            onFilterChange("School/Lectures")
+                            viewModel.selectNote(null)
+                        }
+                    )
+                }
+                item {
+                    FolderItem(
+                        icon = Icons.Default.CreateNewFolder,
+                        label = "📁 Personal / Ideas",
+                        count = notes.count { it.tags.contains("personal", ignoreCase = true) || it.tags.contains("ideas", ignoreCase = true) },
+                        isSelected = activeTab == "notes" && selectedFilter == "Personal/Ideas",
+                        onClick = {
+                            onTabChange("notes")
+                            onFilterChange("Personal/Ideas")
+                            viewModel.selectNote(null)
+                        }
+                    )
+                }
+
+                item {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = "COLORED TAGS",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.outline,
+                        modifier = Modifier.padding(start = 4.dp, bottom = 6.dp)
+                    )
+                }
+
+                item {
+                    FolderItem(
+                        icon = Icons.Default.Label,
+                        label = "#urgent (Critical)",
+                        count = notes.count { it.tags.contains("urgent", ignoreCase = true) },
+                        isSelected = activeTab == "notes" && selectedFilter == "tag:urgent",
+                        badgeColor = MaterialTheme.colorScheme.errorContainer,
+                        badgeTextColor = MaterialTheme.colorScheme.onErrorContainer,
+                        onClick = {
+                            onTabChange("notes")
+                            onFilterChange("tag:urgent")
+                            viewModel.selectNote(null)
+                        }
+                    )
+                }
+                item {
+                    FolderItem(
+                        icon = Icons.Default.Label,
+                        label = "#work (Professional)",
+                        count = notes.count { it.tags.contains("work", ignoreCase = true) },
+                        isSelected = activeTab == "notes" && selectedFilter == "tag:work",
+                        badgeColor = MaterialTheme.colorScheme.primaryContainer,
+                        badgeTextColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        onClick = {
+                            onTabChange("notes")
+                            onFilterChange("tag:work")
+                            viewModel.selectNote(null)
+                        }
+                    )
+                }
+                item {
+                    FolderItem(
+                        icon = Icons.Default.Label,
+                        label = "#study (Academics)",
+                        count = notes.count { it.tags.contains("study", ignoreCase = true) || it.tags.contains("school", ignoreCase = true) },
+                        isSelected = activeTab == "notes" && selectedFilter == "tag:study",
+                        badgeColor = MaterialTheme.colorScheme.tertiaryContainer,
+                        badgeTextColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                        onClick = {
+                            onTabChange("notes")
+                            onFilterChange("tag:study")
+                            viewModel.selectNote(null)
+                        }
+                    )
+                }
+
+                item {
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
                         text = "INTEGRATIONS",
