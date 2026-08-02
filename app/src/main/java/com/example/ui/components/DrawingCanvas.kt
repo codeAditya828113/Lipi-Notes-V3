@@ -800,9 +800,9 @@ fun DrawingCanvas(
                                         for (p in 1..pdfPageCount) {
                                             totalCanvasHeight += getPageHeight(p)
                                         }
-                                        val maxPositiveY = ((scale - 1f) * heightPx / 2f + 150f).coerceAtLeast(0f)
-                                        val minNegativeY = -(((totalCanvasHeight - heightPx / 2f) * scale - heightPx / 2f + 250f).coerceAtLeast(0f))
-                                        val maxScrollX = if (scale > 1.05f) ((scale - 1f) * widthPx / 2f).coerceAtLeast(0f) else 0f
+                                        val maxPositiveY = ((scale - 1f) * heightPx / 2f).coerceAtLeast(0f)
+                                        val minNegativeY = kotlin.math.min(maxPositiveY, -((totalCanvasHeight - heightPx / 2f) * scale - heightPx / 2f).coerceAtLeast(0f))
+                                        val maxScrollX = ((scale - 1f) * widthPx / 2f).coerceAtLeast(0f)
                                         
                                         offset = Offset(
                                             rawOffsetX.coerceIn(-maxScrollX, maxScrollX),
@@ -895,9 +895,9 @@ fun DrawingCanvas(
                                     for (p in 1..pdfPageCount) {
                                         totalHeight += getPageHeight(p)
                                     }
-                                    val maxPositiveY = ((scale - 1f) * heightPx / 2f + 100f).coerceAtLeast(0f)
-                                    val minNegativeY = -(((totalHeight - heightPx / 2f) * scale - heightPx / 2f + 200f).coerceAtLeast(0f))
-                                    val maxScrollX = ((scale - 1f) * widthPx / 2f + 100f).coerceAtLeast(0f)
+                                    val maxPositiveY = ((scale - 1f) * heightPx / 2f).coerceAtLeast(0f)
+                                    val minNegativeY = kotlin.math.min(maxPositiveY, -((totalHeight - heightPx / 2f) * scale - heightPx / 2f).coerceAtLeast(0f))
+                                    val maxScrollX = ((scale - 1f) * widthPx / 2f).coerceAtLeast(0f)
                                     
                                     offset = Offset(
                                         rawOffset.x.coerceIn(-maxScrollX, maxScrollX),
@@ -928,9 +928,9 @@ fun DrawingCanvas(
                                                 for (p in 1..pdfPageCount) {
                                                     totalHeight += getPageHeight(p)
                                                 }
-                                                val maxPositiveY = ((scale - 1f) * heightPx / 2f + 100f).coerceAtLeast(0f)
-                                                val minNegativeY = -(((totalHeight - heightPx / 2f) * scale - heightPx / 2f + 200f).coerceAtLeast(0f))
-                                                val maxScrollX = ((scale - 1f) * widthPx / 2f + 100f).coerceAtLeast(0f)
+                                                val maxPositiveY = ((scale - 1f) * heightPx / 2f).coerceAtLeast(0f)
+                                                val minNegativeY = kotlin.math.min(maxPositiveY, -((totalHeight - heightPx / 2f) * scale - heightPx / 2f).coerceAtLeast(0f))
+                                                val maxScrollX = ((scale - 1f) * widthPx / 2f).coerceAtLeast(0f)
 
                                                 val nextX = (offset.x + curVx * dt).coerceIn(-maxScrollX, maxScrollX)
                                                 val nextY = (offset.y + curVy * dt).coerceIn(minNegativeY, maxPositiveY)
@@ -2091,8 +2091,8 @@ fun DrawingCanvas(
             h
         }
 
-        val maxPositiveYScroll = ((scale - 1f) * heightPx / 2f + 100f).coerceAtLeast(0f)
-        val minNegativeYScroll = -(((totalCanvasHeight - heightPx / 2f) * scale - heightPx / 2f + 200f).coerceAtLeast(0f))
+        val maxPositiveYScroll = ((scale - 1f) * heightPx / 2f).coerceAtLeast(0f)
+        val minNegativeYScroll = kotlin.math.min(maxPositiveYScroll, -((totalCanvasHeight - heightPx / 2f) * scale - heightPx / 2f).coerceAtLeast(0f))
         val scrollRangeYVal = (maxPositiveYScroll - minNegativeYScroll).coerceAtLeast(1f)
         if (scale > 1.01f || (totalCanvasHeight - heightPx) > 10f) {
             val trackHeightPx = (heightPx.toFloat() - with(density) { 80.dp.toPx() }).coerceAtLeast(100f)
@@ -2154,7 +2154,7 @@ fun DrawingCanvas(
                                             showZoomIndicator = true
                                             val newProgress = ((thumbTopPx + dragAmount) / maxThumbOffsetPx).coerceIn(0f, 1f)
                                             val targetY = maxPositiveYScroll - newProgress * scrollRangeYVal
-                                            val maxScrollX = ((scale - 1f) * widthPx / 2f + 100f).coerceAtLeast(0f)
+                                            val maxScrollX = ((scale - 1f) * widthPx / 2f).coerceAtLeast(0f)
                                             offset = Offset(offset.x.coerceIn(-maxScrollX, maxScrollX), targetY)
                                         }
                                     )

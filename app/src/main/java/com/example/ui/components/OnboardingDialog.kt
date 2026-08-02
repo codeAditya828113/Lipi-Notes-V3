@@ -58,6 +58,27 @@ fun OnboardingDialog(
             illustrationType = "ai"
         ),
         OnboardingPageData(
+            title = "Document Annotation (PDF/DOCX)",
+            subtitle = "Import PDFs and Word documents, draw directly on them, extract handwritten text, and export them back with your annotations seamlessly.",
+            icon = Icons.Default.PictureAsPdf,
+            primaryColor = Color(0xFFE53935), // Red
+            illustrationType = "docs"
+        ),
+        OnboardingPageData(
+            title = "Tabs & Folder Organization",
+            subtitle = "Keep everything organized using custom folders. Switch between them instantly via the tab bar at the top of your workspace.",
+            icon = Icons.Default.Folder,
+            primaryColor = Color(0xFFFF9800), // Orange
+            illustrationType = "folder"
+        ),
+        OnboardingPageData(
+            title = "Interactive Hyperlinks",
+            subtitle = "Embed clickable hyperlinks into your text notes. Just tap them to instantly navigate to external web pages without leaving your context.",
+            icon = Icons.Default.Link,
+            primaryColor = Color(0xFF3F51B5), // Indigo
+            illustrationType = "link"
+        ),
+        OnboardingPageData(
             title = "Cloud Sync & Native Sharing",
             subtitle = "Sync seamlessly with Google Drive, export encrypted backups, and share PNG drawings to any app.",
             icon = Icons.Default.CloudSync,
@@ -242,6 +263,39 @@ fun OnboardingIllustration(
                     // Draw floating sparkles around center
                     drawCircle(color = color.copy(alpha = 0.2f), radius = w * 0.4f, center = Offset(w / 2, h / 2))
                     drawCircle(color = color.copy(alpha = 0.4f), radius = w * 0.25f, center = Offset(w / 2, h / 2))
+                }
+                "docs" -> {
+                    // Draw document stack
+                    drawRoundRect(
+                        color = color.copy(alpha = 0.15f),
+                        topLeft = Offset(w * 0.25f, h * 0.15f),
+                        size = Size(w * 0.5f, h * 0.7f),
+                        cornerRadius = CornerRadius(12f, 12f)
+                    )
+                    drawRoundRect(
+                        color = color.copy(alpha = 0.3f),
+                        topLeft = Offset(w * 0.2f, h * 0.2f),
+                        size = Size(w * 0.6f, h * 0.6f),
+                        cornerRadius = CornerRadius(12f, 12f)
+                    )
+                }
+                "folder" -> {
+                    // Draw a folder shape
+                    val folderPath = Path().apply {
+                        moveTo(w * 0.15f, h * 0.3f)
+                        lineTo(w * 0.35f, h * 0.3f)
+                        lineTo(w * 0.45f, h * 0.4f)
+                        lineTo(w * 0.85f, h * 0.4f)
+                        lineTo(w * 0.85f, h * 0.75f)
+                        lineTo(w * 0.15f, h * 0.75f)
+                        close()
+                    }
+                    drawPath(path = folderPath, color = color.copy(alpha = 0.3f))
+                }
+                "link" -> {
+                    // Draw a connected chain link abstract
+                    drawCircle(color = color.copy(alpha = 0.2f), radius = w * 0.2f, center = Offset(w * 0.35f, h * 0.5f))
+                    drawCircle(color = color.copy(alpha = 0.3f), radius = w * 0.2f, center = Offset(w * 0.65f, h * 0.5f))
                 }
                 else -> {
                     // Sync illustration

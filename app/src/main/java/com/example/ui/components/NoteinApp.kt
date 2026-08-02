@@ -34,6 +34,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.Canvas
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material.icons.Icons
@@ -2041,13 +2043,37 @@ fun NoteCardPreview(note: NoteEntity, modifier: Modifier = Modifier) {
                 }
             }
             "pdf" -> {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = Icons.Default.PictureAsPdf,
-                        contentDescription = "PDF Document",
-                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
-                        modifier = Modifier.size(32.dp)
+                val context = androidx.compose.ui.platform.LocalContext.current
+                var pdfBitmap by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<android.graphics.Bitmap?>(null) }
+                
+                androidx.compose.runtime.LaunchedEffect(note.id) {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        val pdfFile = java.io.File(context.filesDir, "note_${note.id}.pdf")
+                        if (pdfFile.exists()) {
+                            val bitmap = PdfHelper.renderPdfPageToBitmap(pdfFile, 0, 400, 600)
+                            if (bitmap != null) {
+                                pdfBitmap = bitmap
+                            }
+                        }
+                    }
+                }
+                
+                if (pdfBitmap != null) {
+                    androidx.compose.foundation.Image(
+                        bitmap = pdfBitmap!!.asImageBitmap(),
+                        contentDescription = "PDF Preview",
+                        modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(4.dp)),
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
                     )
+                } else {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Default.PictureAsPdf,
+                            contentDescription = "PDF Document",
+                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
                 }
             }
             else -> {
@@ -2086,9 +2112,58 @@ fun NoteCardPreview(note: NoteEntity, modifier: Modifier = Modifier) {
             }
 
             }
-        }
-        
 
+            val strokes = androidx.compose.runtime.remember(note.drawingData) {
+                try {
+                    com.example.data.StrokeSerializer.deserializeStrokes(note.drawingData)
+                        .filter { it.page == 1 && !it.isHidden }
+                } catch (e: Exception) {
+                    emptyList()
+                }
+            }
+            if (strokes.isNotEmpty()) {
+                Canvas(modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(4.dp))) {
+                    val scaleX = size.width / 1200f
+                    val scaleY = size.height / 1600f
+                    
+                    withTransform({
+                        scale(scaleX, scaleY, Offset.Zero)
+                    }) {
+                        strokes.forEach { stroke ->
+                            if (stroke.points.size >= 2) {
+                                val path = androidx.compose.ui.graphics.Path()
+                                path.moveTo(stroke.points.first().x, stroke.points.first().y)
+                                for (i in 1 until stroke.points.size) {
+                                    val current = stroke.points[i]
+                                    val prev = stroke.points[i - 1]
+                                    val midX = (prev.x + current.x) / 2
+                                    val midY = (prev.y + current.y) / 2
+                                    if (i == 1) {
+                                        path.lineTo(midX, midY)
+                                    } else {
+                                        path.quadraticTo(prev.x, prev.y, midX, midY)
+                                    }
+                                }
+                                path.lineTo(stroke.points.last().x, stroke.points.last().y)
+                                
+                                val color = Color(stroke.color)
+                                val width = stroke.width
+                                drawPath(
+                                    path = path,
+                                    color = color,
+                                    style = androidx.compose.ui.graphics.drawscope.Stroke(
+                                        width = width,
+                                        cap = androidx.compose.ui.graphics.StrokeCap.Round,
+                                        join = androidx.compose.ui.graphics.StrokeJoin.Round
+                                    ),
+                                    blendMode = if (stroke.toolType == "highlighter") androidx.compose.ui.graphics.BlendMode.Multiply else androidx.compose.ui.graphics.drawscope.DrawScope.DefaultBlendMode
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -7538,15 +7613,46 @@ fun StyledTextRenderer(content: String, modifier: Modifier = Modifier) {
                     }
                 }
                 
-                Text(
-                    text = displayLine,
-                    style = textStyle,
-                    fontFamily = fontFamily,
-                    fontWeight = fontWeight,
-                    fontStyle = fontStyle,
-                    color = textColor,
-                    letterSpacing = letterSpacing,
-                    lineHeight = lineHeight,
+                val linkRegex = Regex("\\[(.*?)\\]\\((.*?)\\)")
+                val annotatedString = androidx.compose.ui.text.buildAnnotatedString {
+                    var lastIndex = 0
+                    val matches = linkRegex.findAll(displayLine)
+                    for (match in matches) {
+                        append(displayLine.substring(lastIndex, match.range.first))
+                        val linkText = match.groupValues[1]
+                        val linkUrl = match.groupValues[2]
+                        
+                        pushStringAnnotation(tag = "URL", annotation = linkUrl)
+                        pushStyle(androidx.compose.ui.text.SpanStyle(color = Color(0xFF3B82F6), textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline))
+                        append(linkText)
+                        pop() // pop style
+                        pop() // pop annotation
+                        lastIndex = match.range.last + 1
+                    }
+                    append(displayLine.substring(lastIndex))
+                }
+                
+                val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+                androidx.compose.foundation.text.ClickableText(
+                    text = annotatedString,
+                    style = textStyle.copy(
+                        fontFamily = fontFamily,
+                        fontWeight = fontWeight,
+                        fontStyle = fontStyle,
+                        color = textColor,
+                        letterSpacing = letterSpacing,
+                        lineHeight = lineHeight
+                    ),
+                    onClick = { offset ->
+                        annotatedString.getStringAnnotations(tag = "URL", start = offset, end = offset)
+                            .firstOrNull()?.let { annotation ->
+                                try {
+                                    uriHandler.openUri(annotation.item)
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                }
+                            }
+                    },
                     modifier = Modifier.padding(vertical = 2.dp)
                 )
             }

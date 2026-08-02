@@ -632,6 +632,15 @@ fun ResponsiveSidebar(
                         onClick = { onTabChange("sync") }
                     )
                 }
+
+                item {
+                    FolderItem(
+                        icon = Icons.Default.Info,
+                        label = "App Tour & Guide",
+                        isSelected = false,
+                        onClick = { viewModel.showOnboardingFlowManually() }
+                    )
+                }
             }
 
             // 5. Stylus Smart settings panel (Integrated inside the sidebar!)
