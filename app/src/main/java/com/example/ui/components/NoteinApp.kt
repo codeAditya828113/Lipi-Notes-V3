@@ -827,11 +827,40 @@ fun NoteWorkspace(
             selectedFilter == "Work/Projects" -> baseFiltered.filter { it.tags.contains("work", ignoreCase = true) || it.title.contains("project", ignoreCase = true) || it.title.contains("work", ignoreCase = true) }
             selectedFilter == "School/Lectures" -> baseFiltered.filter { it.tags.contains("school", ignoreCase = true) || it.tags.contains("study", ignoreCase = true) || it.title.contains("lecture", ignoreCase = true) }
             selectedFilter == "Personal/Ideas" -> baseFiltered.filter { it.tags.contains("personal", ignoreCase = true) || it.tags.contains("ideas", ignoreCase = true) }
+            selectedFilter.startsWith("dir:") -> {
+                val dirId = selectedFilter.removePrefix("dir:")
+                val targetDir = viewModel.customDirectories.find { it.id == dirId }
+                val childDirIds = viewModel.customDirectories.filter { it.parentId == dirId }.map { it.id }
+                val dirName = targetDir?.name ?: ""
+                baseFiltered.filter { note ->
+                    note.tags.contains("dir:$dirId", ignoreCase = true) ||
+                    (dirName.isNotBlank() && note.tags.contains(dirName, ignoreCase = true)) ||
+                    (dirName.isNotBlank() && note.title.contains(dirName, ignoreCase = true)) ||
+                    childDirIds.any { childId -> note.tags.contains("dir:$childId", ignoreCase = true) }
+                }
+            }
             selectedFilter.startsWith("tag:") -> {
                 val tagQuery = selectedFilter.removePrefix("tag:")
-                baseFiltered.filter { it.tags.contains(tagQuery, ignoreCase = true) }
+                baseFiltered.filter { note ->
+                    note.tags.contains(tagQuery, ignoreCase = true) ||
+                    note.tags.contains("tag:$tagQuery", ignoreCase = true)
+                }
             }
-            else -> baseFiltered
+            else -> {
+                val matchingDir = viewModel.customDirectories.find { it.name.equals(selectedFilter, ignoreCase = true) }
+                if (matchingDir != null) {
+                    val dirId = matchingDir.id
+                    val childDirIds = viewModel.customDirectories.filter { it.parentId == dirId }.map { it.id }
+                    baseFiltered.filter { note ->
+                        note.tags.contains("dir:$dirId", ignoreCase = true) ||
+                        note.tags.contains(matchingDir.name, ignoreCase = true) ||
+                        note.title.contains(matchingDir.name, ignoreCase = true) ||
+                        childDirIds.any { childId -> note.tags.contains("dir:$childId", ignoreCase = true) }
+                    }
+                } else {
+                    baseFiltered
+                }
+            }
         }
 
         when (selectedSortOption) {
@@ -1647,36 +1676,54 @@ fun NoteListHeader(
         }
         
         Spacer(modifier = Modifier.height(24.dp))
-        
-        Box(modifier = Modifier.fillMaxWidth()) {
-            Row(horizontalArrangement = Arrangement.Center, modifier = Modifier.align(Alignment.Center)) {
-                val filters = listOf("All", "PDF", "Note", "Folder")
-                filters.forEach { filter ->
+         Box(modifier = Modifier.fillMaxWidth()) {
+            val baseFilters = listOf("All", "PDF", "Note", "Folder")
+            val customFilters = viewModel?.customDirectories?.filter { it.parentId == null }?.map { it.name } ?: emptyList()
+            val allFilters = baseFilters + customFilters
+
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.CenterStart)
+                    .padding(end = 80.dp)
+                    .horizontalScroll(rememberScrollState())
+            ) {
+                allFilters.forEach { filter ->
                     val isSelected = when (filter) {
                         "All" -> selectedFilter == "All Notes" || selectedFilter == "All"
                         "PDF" -> selectedFilter == "PDFs" || selectedFilter == "PDF" || selectedFilter == "Imported PDFs & Docs"
                         "Note" -> selectedFilter == "Handwritten" || selectedFilter == "Note"
                         "Folder" -> selectedFilter == "Templates" || selectedFilter == "Folder" || selectedFilter == "Structural Templates"
-                        else -> filter == selectedFilter
+                        else -> {
+                            val dir = viewModel?.customDirectories?.find { it.name == filter }
+                            if (dir != null) selectedFilter == "dir:${dir.id}" else filter == selectedFilter
+                        }
                     }
                     val targetFilter = when (filter) {
                         "All" -> "All Notes"
                         "PDF" -> "PDFs"
                         "Note" -> "Handwritten"
                         "Folder" -> "Templates"
-                        else -> filter
+                        else -> {
+                            val dir = viewModel?.customDirectories?.find { it.name == filter }
+                            if (dir != null) "dir:${dir.id}" else filter
+                        }
                     }
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         modifier = Modifier
                             .clickable { onFilterSelected(targetFilter) }
-                            .padding(horizontal = 16.dp)
+                            .padding(horizontal = 12.dp)
                     ) {
                         Text(
                             text = if (filter == "PDF") "PDF Notes" else if (filter == "Folder") "Templates" else filter,
                             fontSize = 18.sp,
                             fontWeight = if(isSelected) FontWeight.Medium else FontWeight.Normal,
-                            color = if(isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                            color = if(isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                         if (isSelected) {
                             Spacer(Modifier.height(6.dp))
@@ -1687,7 +1734,7 @@ fun NoteListHeader(
                     }
                 }
             }
-            
+              
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.align(Alignment.CenterEnd)) {
                 Box {
                     Canvas(
@@ -2359,44 +2406,44 @@ fun NoteList(
                         )
                     }
 
-                    if (showMoveDialog) {
-                        AlertDialog(
-                            onDismissRequest = { showMoveDialog = false },
-                            title = { Text("Move to Category / Notebook") },
-                            text = {
-                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    listOf(
-                                        "blank" to "Blank Paper",
-                                        "ruled" to "Ruled Notebook",
-                                        "grid" to "Grid Math Sheet",
-                                        "cornell" to "Cornell Notes",
-                                        "meeting" to "Meeting Summary"
-                                    ).forEach { (type, label) ->
-                                        TextButton(
-                                            onClick = {
-                                                viewModel?.updateNoteDesignAndCover(
-                                                    targetNote = note,
-                                                    templateType = type,
-                                                    coverType = "solid",
-                                                    pageColor = 0xFFFFFFFF,
-                                                    coverTitle = note.title,
-                                                    coverSubtitle = "",
-                                                    coverAuthor = "",
-                                                    coverExtra = ""
-                                                )
-                                                showMoveDialog = false
-                                            },
-                                            modifier = Modifier.fillMaxWidth()
-                                        ) {
-                                            Text(label, fontSize = 14.sp)
-                                        }
-                                    }
-                                }
+                    if (showMoveDialog && viewModel != null) {
+                        var showCreateDirDialog by remember { mutableStateOf(false) }
+                        var showCreateTagDialog by remember { mutableStateOf(false) }
+
+                        AssignDirectoryAndTagsDialog(
+                            note = note,
+                            directories = viewModel.customDirectories,
+                            tags = viewModel.customTags,
+                            onDismiss = { showMoveDialog = false },
+                            onUpdateTags = { newTags ->
+                                viewModel.updateNoteTags(note, newTags)
                             },
-                            confirmButton = {
-                                TextButton(onClick = { showMoveDialog = false }) { Text("Cancel") }
+                            onAddNewDirectory = {
+                                showCreateDirDialog = true
+                            },
+                            onAddNewTag = {
+                                showCreateTagDialog = true
                             }
                         )
+
+                        if (showCreateDirDialog) {
+                            DirectoryEditDialog(
+                                allDirectories = viewModel.customDirectories,
+                                onDismiss = { showCreateDirDialog = false },
+                                onSave = { name, parentId, colorHex ->
+                                    viewModel.addDirectory(name, parentId, colorHex)
+                                }
+                            )
+                        }
+
+                        if (showCreateTagDialog) {
+                            TagEditDialog(
+                                onDismiss = { showCreateTagDialog = false },
+                                onSave = { name, colorHex, textColorHex ->
+                                    viewModel.addTag(name, colorHex, textColorHex)
+                                }
+                            )
+                        }
                     }
                     
                     if (showCustomizeTemplateDialog) {
@@ -4430,6 +4477,55 @@ fun NoteEditorCanvas(
                             tint = Color(0xFF2563EB), // Blue for DOCX
                             modifier = Modifier.size(18.dp)
                         )
+                    }
+
+                    // Share Note Menu
+                    var showShareMenu by remember { mutableStateOf(false) }
+                    Box {
+                        IconButton(
+                            onClick = { showShareMenu = true },
+                            modifier = Modifier
+                                .size(32.dp)
+                                .testTag("share_note_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Share,
+                                contentDescription = "Share active note",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = showShareMenu,
+                            onDismissRequest = { showShareMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.PictureAsPdf, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color(0xFFE11D48))
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("Share as PDF")
+                                    }
+                                },
+                                onClick = {
+                                    showShareMenu = false
+                                    viewModel.shareActiveNote(context, "pdf")
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.Description, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color(0xFF2563EB))
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("Share as DOCX")
+                                    }
+                                },
+                                onClick = {
+                                    showShareMenu = false
+                                    viewModel.shareActiveNote(context, "docx")
+                                }
+                            )
+                        }
                     }
 
                     // Extract PDF Text (Google ML Kit)

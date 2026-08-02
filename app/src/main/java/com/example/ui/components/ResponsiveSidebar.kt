@@ -28,7 +28,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.DirectoryItem
 import com.example.data.NoteEntity
+import com.example.data.TagItem
 
 @Composable
 fun ResponsiveSidebar(
@@ -44,6 +46,13 @@ fun ResponsiveSidebar(
 ) {
     var isSettingsExpanded by remember { mutableStateOf(false) }
     var isAiToolsExpanded by remember { mutableStateOf(true) }
+
+    // Directory & Tag Management Dialog state
+    var directoryToEdit by remember { mutableStateOf<DirectoryItem?>(null) }
+    var isCreatingDirectory by remember { mutableStateOf(false) }
+    var defaultParentForNewDir by remember { mutableStateOf<String?>(null) }
+    var tagToEdit by remember { mutableStateOf<TagItem?>(null) }
+    var isCreatingTag by remember { mutableStateOf(false) }
 
     // Counts for Folder Badges
     val allCount = notes.size
@@ -453,110 +462,142 @@ fun ResponsiveSidebar(
 
                 item {
                     Spacer(modifier = Modifier.height(10.dp))
-                    Text(
-                        text = "NESTED DIRECTORIES",
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.outline,
-                        modifier = Modifier.padding(start = 4.dp, bottom = 6.dp)
-                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 4.dp, bottom = 6.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "NESTED DIRECTORIES",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.outline
+                        )
+                        IconButton(
+                            onClick = {
+                                defaultParentForNewDir = null
+                                isCreatingDirectory = true
+                            },
+                            modifier = Modifier.size(22.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CreateNewFolder,
+                                contentDescription = "Add Directory",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(15.dp)
+                            )
+                        }
+                    }
                 }
 
-                item {
-                    FolderItem(
-                        icon = Icons.Default.FolderSpecial,
-                        label = "📁 Work / Projects",
-                        count = notes.count { it.tags.contains("work", ignoreCase = true) || it.title.contains("project", ignoreCase = true) },
-                        isSelected = activeTab == "notes" && selectedFilter == "Work/Projects",
-                        onClick = {
-                            onTabChange("notes")
-                            onFilterChange("Work/Projects")
-                            viewModel.selectNote(null)
+                // Render Root level directories and their nested subdirectories
+                val rootDirectories = viewModel.customDirectories.filter { it.parentId == null }
+                rootDirectories.forEach { rootDir ->
+                    item(key = "dir_${rootDir.id}") {
+                        CustomDirectorySidebarRow(
+                            directory = rootDir,
+                            parentDirectoryName = null,
+                            notes = notes,
+                            isSelected = activeTab == "notes" && (selectedFilter == "dir:${rootDir.id}" || selectedFilter == rootDir.name),
+                            onSelect = {
+                                onTabChange("notes")
+                                onFilterChange("dir:${rootDir.id}")
+                                viewModel.selectNote(null)
+                            },
+                            onAddNote = {
+                                viewModel.addNoteToDirectory(rootDir)
+                                onTabChange("notes")
+                            },
+                            onAddSubdirectory = {
+                                defaultParentForNewDir = rootDir.id
+                                isCreatingDirectory = true
+                            },
+                            onEdit = {
+                                directoryToEdit = rootDir
+                            }
+                        )
+                    }
+
+                    val childDirectories = viewModel.customDirectories.filter { it.parentId == rootDir.id }
+                    childDirectories.forEach { childDir ->
+                        item(key = "dir_${childDir.id}") {
+                            CustomDirectorySidebarRow(
+                                directory = childDir,
+                                parentDirectoryName = rootDir.name,
+                                notes = notes,
+                                isSelected = activeTab == "notes" && (selectedFilter == "dir:${childDir.id}" || selectedFilter == childDir.name),
+                                onSelect = {
+                                    onTabChange("notes")
+                                    onFilterChange("dir:${childDir.id}")
+                                    viewModel.selectNote(null)
+                                },
+                                onAddNote = {
+                                    viewModel.addNoteToDirectory(childDir)
+                                    onTabChange("notes")
+                                },
+                                onAddSubdirectory = {
+                                    defaultParentForNewDir = childDir.id
+                                    isCreatingDirectory = true
+                                },
+                                onEdit = {
+                                    directoryToEdit = childDir
+                                }
+                            )
                         }
-                    )
-                }
-                item {
-                    FolderItem(
-                        icon = Icons.Default.FolderZip,
-                        label = "📁 School / Lectures",
-                        count = notes.count { it.tags.contains("school", ignoreCase = true) || it.tags.contains("study", ignoreCase = true) || it.title.contains("lecture", ignoreCase = true) },
-                        isSelected = activeTab == "notes" && selectedFilter == "School/Lectures",
-                        onClick = {
-                            onTabChange("notes")
-                            onFilterChange("School/Lectures")
-                            viewModel.selectNote(null)
-                        }
-                    )
-                }
-                item {
-                    FolderItem(
-                        icon = Icons.Default.CreateNewFolder,
-                        label = "📁 Personal / Ideas",
-                        count = notes.count { it.tags.contains("personal", ignoreCase = true) || it.tags.contains("ideas", ignoreCase = true) },
-                        isSelected = activeTab == "notes" && selectedFilter == "Personal/Ideas",
-                        onClick = {
-                            onTabChange("notes")
-                            onFilterChange("Personal/Ideas")
-                            viewModel.selectNote(null)
-                        }
-                    )
+                    }
                 }
 
                 item {
                     Spacer(modifier = Modifier.height(10.dp))
-                    Text(
-                        text = "COLORED TAGS",
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.outline,
-                        modifier = Modifier.padding(start = 4.dp, bottom = 6.dp)
-                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 4.dp, bottom = 6.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "COLORED TAGS",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.outline
+                        )
+                        IconButton(
+                            onClick = { isCreatingTag = true },
+                            modifier = Modifier.size(22.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = "Add Tag",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(15.dp)
+                            )
+                        }
+                    }
                 }
 
-                item {
-                    FolderItem(
-                        icon = Icons.Default.Label,
-                        label = "#urgent (Critical)",
-                        count = notes.count { it.tags.contains("urgent", ignoreCase = true) },
-                        isSelected = activeTab == "notes" && selectedFilter == "tag:urgent",
-                        badgeColor = MaterialTheme.colorScheme.errorContainer,
-                        badgeTextColor = MaterialTheme.colorScheme.onErrorContainer,
-                        onClick = {
-                            onTabChange("notes")
-                            onFilterChange("tag:urgent")
-                            viewModel.selectNote(null)
-                        }
-                    )
-                }
-                item {
-                    FolderItem(
-                        icon = Icons.Default.Label,
-                        label = "#work (Professional)",
-                        count = notes.count { it.tags.contains("work", ignoreCase = true) },
-                        isSelected = activeTab == "notes" && selectedFilter == "tag:work",
-                        badgeColor = MaterialTheme.colorScheme.primaryContainer,
-                        badgeTextColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                        onClick = {
-                            onTabChange("notes")
-                            onFilterChange("tag:work")
-                            viewModel.selectNote(null)
-                        }
-                    )
-                }
-                item {
-                    FolderItem(
-                        icon = Icons.Default.Label,
-                        label = "#study (Academics)",
-                        count = notes.count { it.tags.contains("study", ignoreCase = true) || it.tags.contains("school", ignoreCase = true) },
-                        isSelected = activeTab == "notes" && selectedFilter == "tag:study",
-                        badgeColor = MaterialTheme.colorScheme.tertiaryContainer,
-                        badgeTextColor = MaterialTheme.colorScheme.onTertiaryContainer,
-                        onClick = {
-                            onTabChange("notes")
-                            onFilterChange("tag:study")
-                            viewModel.selectNote(null)
-                        }
-                    )
+                viewModel.customTags.forEach { tag ->
+                    item(key = "tag_${tag.id}") {
+                        CustomTagSidebarRow(
+                            tag = tag,
+                            notes = notes,
+                            isSelected = activeTab == "notes" && selectedFilter == "tag:${tag.name}",
+                            onSelect = {
+                                onTabChange("notes")
+                                onFilterChange("tag:${tag.name}")
+                                viewModel.selectNote(null)
+                            },
+                            onAddNote = {
+                                viewModel.addNoteWithTag(tag)
+                                onTabChange("notes")
+                            },
+                            onEdit = {
+                                tagToEdit = tag
+                            }
+                        )
+                    }
                 }
 
                 item {
@@ -951,6 +992,281 @@ fun ResponsiveSidebar(
                         }
                     }
                 }
+            }
+        }
+    }
+
+    // Directory & Tag Management Dialogs
+    if (isCreatingDirectory || directoryToEdit != null) {
+        DirectoryEditDialog(
+            initialDirectory = directoryToEdit,
+            defaultParentId = defaultParentForNewDir,
+            allDirectories = viewModel.customDirectories,
+            onDismiss = {
+                isCreatingDirectory = false
+                directoryToEdit = null
+                defaultParentForNewDir = null
+            },
+            onSave = { name, parentId, colorHex ->
+                if (directoryToEdit == null) {
+                    viewModel.addDirectory(name, parentId, colorHex)
+                } else {
+                    viewModel.updateDirectory(directoryToEdit!!.id, name, parentId, colorHex)
+                }
+            },
+            onDelete = { dirId ->
+                viewModel.deleteDirectory(dirId)
+            }
+        )
+    }
+
+    if (isCreatingTag || tagToEdit != null) {
+        TagEditDialog(
+            initialTag = tagToEdit,
+            onDismiss = {
+                isCreatingTag = false
+                tagToEdit = null
+            },
+            onSave = { name, colorHex, textColorHex ->
+                if (tagToEdit == null) {
+                    viewModel.addTag(name, colorHex, textColorHex)
+                } else {
+                    viewModel.updateTag(tagToEdit!!.id, name, colorHex, textColorHex)
+                }
+            },
+            onDelete = { tagId ->
+                viewModel.deleteTag(tagId)
+            }
+        )
+    }
+}
+
+@Composable
+fun CustomDirectorySidebarRow(
+    directory: DirectoryItem,
+    parentDirectoryName: String? = null,
+    notes: List<NoteEntity>,
+    isSelected: Boolean,
+    onSelect: () -> Unit,
+    onAddNote: () -> Unit,
+    onAddSubdirectory: () -> Unit,
+    onEdit: () -> Unit
+) {
+    val dirId = directory.id
+    val dirName = directory.name
+    val noteCount = notes.count { note ->
+        note.tags.contains("dir:$dirId", ignoreCase = true) ||
+        note.tags.contains(dirName, ignoreCase = true) ||
+        note.title.contains(dirName, ignoreCase = true)
+    }
+    val indent = if (parentDirectoryName != null) 16.dp else 0.dp
+
+    Surface(
+        onClick = onSelect,
+        shape = RoundedCornerShape(10.dp),
+        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f) else Color.Transparent,
+        border = if (isSelected) BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)) else null,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = indent)
+            .height(40.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 8.dp)
+        ) {
+            Icon(
+                imageVector = if (parentDirectoryName != null) Icons.Default.SubdirectoryArrowRight else Icons.Default.Folder,
+                contentDescription = null,
+                tint = Color(directory.colorHex),
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = directory.name,
+                fontSize = 12.sp,
+                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                color = Color(directory.colorHex),
+                modifier = Modifier.weight(1f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            if (noteCount > 0) {
+                Box(
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .background(Color(directory.colorHex).copy(alpha = 0.15f))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        text = noteCount.toString(),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(directory.colorHex)
+                    )
+                }
+                Spacer(modifier = Modifier.width(4.dp))
+            }
+
+            IconButton(
+                onClick = onAddNote,
+                modifier = Modifier.size(26.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.NoteAdd,
+                    contentDescription = "Add Note to Directory",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(15.dp)
+                )
+            }
+
+            var showMenu by remember { mutableStateOf(false) }
+            Box {
+                IconButton(
+                    onClick = { showMenu = true },
+                    modifier = Modifier.size(24.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.MoreVert,
+                        contentDescription = "Directory Options",
+                        tint = MaterialTheme.colorScheme.outline,
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
+                DropdownMenu(
+                    expanded = showMenu,
+                    onDismissRequest = { showMenu = false }
+                ) {
+                    DropdownMenuItem(
+                        text = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.NoteAdd, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Add Note Here")
+                            }
+                        },
+                        onClick = {
+                            showMenu = false
+                            onAddNote()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.CreateNewFolder, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Add Subdirectory")
+                            }
+                        },
+                        onClick = {
+                            showMenu = false
+                            onAddSubdirectory()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Edit / Change Color")
+                            }
+                        },
+                        onClick = {
+                            showMenu = false
+                            onEdit()
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun CustomTagSidebarRow(
+    tag: TagItem,
+    notes: List<NoteEntity>,
+    isSelected: Boolean,
+    onSelect: () -> Unit,
+    onAddNote: () -> Unit,
+    onEdit: () -> Unit
+) {
+    val tagKey = tag.name
+    val noteCount = notes.count { note ->
+        note.tags.contains(tagKey, ignoreCase = true) ||
+        note.tags.contains("tag:$tagKey", ignoreCase = true)
+    }
+
+    Surface(
+        onClick = onSelect,
+        shape = RoundedCornerShape(10.dp),
+        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f) else Color.Transparent,
+        border = if (isSelected) BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)) else null,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(38.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 8.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(Color(tag.colorHex))
+                    .padding(horizontal = 6.dp, vertical = 3.dp)
+            ) {
+                Text(
+                    text = "#${tag.name}",
+                    color = Color(tag.textColorHex),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+
+            Spacer(modifier = Modifier.weight(1f))
+
+            if (noteCount > 0) {
+                Box(
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .background(Color(tag.colorHex).copy(alpha = 0.15f))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        text = noteCount.toString(),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(tag.colorHex)
+                    )
+                }
+                Spacer(modifier = Modifier.width(4.dp))
+            }
+
+            IconButton(
+                onClick = onAddNote,
+                modifier = Modifier.size(24.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.NoteAdd,
+                    contentDescription = "Add Note with Tag",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(15.dp)
+                )
+            }
+
+            IconButton(
+                onClick = onEdit,
+                modifier = Modifier.size(24.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Edit,
+                    contentDescription = "Edit Tag",
+                    tint = MaterialTheme.colorScheme.outline,
+                    modifier = Modifier.size(14.dp)
+                )
             }
         }
     }

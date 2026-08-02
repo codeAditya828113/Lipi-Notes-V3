@@ -24,6 +24,8 @@ import androidx.lifecycle.viewModelScope
 import com.example.data.AppDatabase
 import com.example.data.NoteDao
 import com.example.data.NoteEntity
+import com.example.data.DirectoryItem
+import com.example.data.TagItem
 import com.example.data.Stroke
 import com.example.data.NoteRepository
 import com.example.data.Point
@@ -774,6 +776,7 @@ class NoteViewModel(
 
     fun selectShape(stroke: Stroke) {
         clearLassoSelection()
+        activeStroke = null
         currentStrokes = currentStrokes.filter { it != stroke }
         lassoSelectedStrokes = listOf(stroke)
         lassoBoundingBox = SmartInkEngine.getBoundingBox(stroke)
@@ -1008,6 +1011,127 @@ class NoteViewModel(
             }
             logSyncEvent("Updated tags for note ID: ${note.id}")
         }
+    }
+
+    // --- DYNAMIC NESTED DIRECTORIES & COLORED TAGS MANAGEMENT ---
+    var customDirectories by mutableStateOf<List<DirectoryItem>>(loadDirectoriesFromPrefs())
+        private set
+
+    var customTags by mutableStateOf<List<TagItem>>(loadTagsFromPrefs())
+        private set
+
+    private fun loadDirectoriesFromPrefs(): List<DirectoryItem> {
+        val jsonStr = sharedPrefs.getString("custom_directories_json", "")
+        if (jsonStr.isNullOrBlank()) {
+            return DirectoryItem.DEFAULT_DIRECTORIES
+        }
+        return try {
+            val array = JSONArray(jsonStr)
+            val list = mutableListOf<DirectoryItem>()
+            for (i in 0 until array.length()) {
+                list.add(DirectoryItem.fromJsonObject(array.getJSONObject(i)))
+            }
+            if (list.isEmpty()) DirectoryItem.DEFAULT_DIRECTORIES else list
+        } catch (e: Exception) {
+            DirectoryItem.DEFAULT_DIRECTORIES
+        }
+    }
+
+    fun saveDirectoriesToPrefs() {
+        try {
+            val array = JSONArray()
+            customDirectories.forEach { array.put(it.toJsonObject()) }
+            sharedPrefs.edit().putString("custom_directories_json", array.toString()).apply()
+        } catch (e: Exception) {}
+    }
+
+    private fun loadTagsFromPrefs(): List<TagItem> {
+        val jsonStr = sharedPrefs.getString("custom_tags_json", "")
+        if (jsonStr.isNullOrBlank()) {
+            return TagItem.DEFAULT_TAGS
+        }
+        return try {
+            val array = JSONArray(jsonStr)
+            val list = mutableListOf<TagItem>()
+            for (i in 0 until array.length()) {
+                list.add(TagItem.fromJsonObject(array.getJSONObject(i)))
+            }
+            if (list.isEmpty()) TagItem.DEFAULT_TAGS else list
+        } catch (e: Exception) {
+            TagItem.DEFAULT_TAGS
+        }
+    }
+
+    fun saveTagsToPrefs() {
+        try {
+            val array = JSONArray()
+            customTags.forEach { array.put(it.toJsonObject()) }
+            sharedPrefs.edit().putString("custom_tags_json", array.toString()).apply()
+        } catch (e: Exception) {}
+    }
+
+    fun addDirectory(name: String, parentId: String? = null, colorHex: Long = 0xFF2196F3) {
+        val newDir = DirectoryItem(
+            id = "dir_${System.currentTimeMillis()}",
+            name = name.trim(),
+            parentId = parentId,
+            colorHex = colorHex
+        )
+        customDirectories = customDirectories + newDir
+        saveDirectoriesToPrefs()
+        logSyncEvent("Created directory '${name}'.")
+    }
+
+    fun updateDirectory(id: String, name: String, parentId: String?, colorHex: Long) {
+        customDirectories = customDirectories.map {
+            if (it.id == id) it.copy(name = name.trim(), parentId = parentId, colorHex = colorHex) else it
+        }
+        saveDirectoriesToPrefs()
+        logSyncEvent("Updated directory ID: $id.")
+    }
+
+    fun deleteDirectory(id: String) {
+        customDirectories = customDirectories.filter { it.id != id && it.parentId != id }
+        saveDirectoriesToPrefs()
+        logSyncEvent("Deleted directory ID: $id.")
+    }
+
+    fun addTag(name: String, colorHex: Long = 0xFF6200EE, textColorHex: Long = 0xFFFFFFFF) {
+        val cleanName = name.removePrefix("#").trim()
+        val newTag = TagItem(
+            id = "tag_${System.currentTimeMillis()}",
+            name = cleanName,
+            colorHex = colorHex,
+            textColorHex = textColorHex
+        )
+        customTags = customTags + newTag
+        saveTagsToPrefs()
+        logSyncEvent("Created tag '#$cleanName'.")
+    }
+
+    fun updateTag(id: String, name: String, colorHex: Long, textColorHex: Long) {
+        val cleanName = name.removePrefix("#").trim()
+        customTags = customTags.map {
+            if (it.id == id) it.copy(name = cleanName, colorHex = colorHex, textColorHex = textColorHex) else it
+        }
+        saveTagsToPrefs()
+        logSyncEvent("Updated tag ID: $id.")
+    }
+
+    fun deleteTag(id: String) {
+        customTags = customTags.filter { it.id != id }
+        saveTagsToPrefs()
+        logSyncEvent("Deleted tag ID: $id.")
+    }
+
+    fun addNoteToDirectory(dir: DirectoryItem, templateType: String = "blank") {
+        val title = "Note in ${dir.name}"
+        createNewNote(title = title, templateType = templateType, tags = "dir:${dir.id}, ${dir.name}")
+    }
+
+    fun addNoteWithTag(tag: TagItem, templateType: String = "blank") {
+        val title = "Note for #${tag.name}"
+        createNewNote(title = title, templateType = templateType, tags = "tag:${tag.name}, ${tag.name}")
     }
 
     fun toggleNotePin(note: NoteEntity) {
@@ -2267,11 +2391,12 @@ class NoteViewModel(
     }
 
     // Creating a fresh blank note
-    fun createNewNote(title: String, templateType: String) {
+    fun createNewNote(title: String, templateType: String, tags: String = "") {
         viewModelScope.launch {
             val freshNote = NoteEntity(
                 title = title,
                 templateType = templateType,
+                tags = tags,
                 pdfTitle = if (templateType == "pdf") "Study_Lecture_Notes.pdf" else null,
                 lastModifiedTime = System.currentTimeMillis()
             )
@@ -2473,6 +2598,49 @@ class NoteViewModel(
         } catch (e: Exception) {
             e.printStackTrace()
             logSyncEvent("Failed to export DOCX: ${e.localizedMessage}")
+        }
+    }
+
+    fun shareActiveNote(context: android.content.Context, format: String) {
+        val note = selectedNote ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val extension = if (format == "pdf") ".pdf" else ".docx"
+                val mimeType = if (format == "pdf") "application/pdf" else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                val safeTitle = note.title.replace(" ", "_").ifEmpty { "note" }
+                val tempFile = java.io.File(context.cacheDir, "${safeTitle}_share$extension")
+                
+                java.io.FileOutputStream(tempFile).use { fos ->
+                    if (format == "pdf") {
+                        exportActiveNoteToPdf(fos)
+                    } else {
+                        exportActiveNoteToDocx(fos)
+                    }
+                }
+                
+                val uri = androidx.core.content.FileProvider.getUriForFile(
+                    context, 
+                    "${context.packageName}.fileprovider", 
+                    tempFile
+                )
+                
+                val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                    type = mimeType
+                    putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                    putExtra(android.content.Intent.EXTRA_TITLE, note.title)
+                    putExtra(android.content.Intent.EXTRA_SUBJECT, note.title)
+                    addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                
+                context.startActivity(android.content.Intent.createChooser(shareIntent, "Share note via").apply {
+                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                })
+            } catch (e: Exception) {
+                e.printStackTrace()
+                withContext(Dispatchers.Main) {
+                    android.widget.Toast.makeText(context, "Error sharing note: ${e.localizedMessage}", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            }
         }
     }
 

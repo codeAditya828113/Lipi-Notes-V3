@@ -17,6 +17,13 @@ import com.example.ui.components.NoteinApp
 import com.example.ui.theme.MyApplicationTheme
 
 class MainActivity : ComponentActivity() {
+
+  private val viewModel: NoteViewModel by viewModels {
+    val database = AppDatabase.getDatabase(this)
+    val repository = NoteRepository(database.noteDao())
+    NoteViewModelFactory(application, repository)
+  }
+
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     enableEdgeToEdge()
@@ -30,14 +37,8 @@ class MainActivity : ComponentActivity() {
     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
       window.attributes.layoutInDisplayCutoutMode = android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
     }
-
-    // Initialize local Room database and repository
-    val database = AppDatabase.getDatabase(this)
-    val repository = NoteRepository(database.noteDao())
-
-    val viewModel: NoteViewModel by viewModels {
-      NoteViewModelFactory(application, repository)
-    }
+    
+    handleIntent(intent)
 
     setContent {
       val isDark = when (viewModel.themeMode) {
@@ -53,6 +54,49 @@ class MainActivity : ComponentActivity() {
       ) {
         Surface(modifier = Modifier.fillMaxSize()) {
           NoteinApp(viewModel = viewModel)
+        }
+      }
+    }
+  }
+
+  override fun onNewIntent(intent: android.content.Intent) {
+    super.onNewIntent(intent)
+    handleIntent(intent)
+  }
+
+  private fun handleIntent(intent: android.content.Intent) {
+    if (intent.action == android.content.Intent.ACTION_VIEW || intent.action == android.content.Intent.ACTION_SEND) {
+      if (intent.type == "application/pdf" || intent.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
+        val uri: android.net.Uri? = if (intent.action == android.content.Intent.ACTION_SEND) {
+          intent.getParcelableExtra(android.content.Intent.EXTRA_STREAM)
+        } else {
+          intent.data
+        }
+
+        if (uri != null) {
+          var title = if (intent.type == "application/pdf") "Imported PDF" else "Imported DOCX"
+          if (uri.scheme == "content") {
+            try {
+              contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                  val displayNameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                  if (displayNameIndex != -1) {
+                    title = cursor.getString(displayNameIndex) ?: title
+                  }
+                }
+              }
+            } catch (e: Exception) {
+              e.printStackTrace()
+            }
+          } else if (uri.scheme == "file") {
+            title = uri.lastPathSegment ?: title
+          }
+          
+          if (intent.type == "application/pdf") {
+            viewModel.importPdfToNote(uri, title)
+          } else {
+            viewModel.importDocxToNote(uri, title)
+          }
         }
       }
     }

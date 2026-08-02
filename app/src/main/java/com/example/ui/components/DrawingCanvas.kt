@@ -1003,7 +1003,7 @@ fun DrawingCanvas(
                             downTouchY = y
                             longPressJob?.cancel()
                             longPressJob = coroutineScope.launch {
-                                delay(400) // 400ms long press threshold for images only
+                                delay(400) // 400ms long press threshold
                                 val targetPage = touchedPage
                                 val targetNormX = startX
                                 val targetNormY = startY
@@ -1035,11 +1035,70 @@ fun DrawingCanvas(
                                     try {
                                         view.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
                                     } catch (e: Exception) {}
+                                } else {
+                                    // Check for shape or stroke on long press
+                                    val pageStrokes = strokes.filter { it.page == targetPage || (pdfPageCount <= 1 && it.page <= 1) }
+                                    var targetShape: com.example.data.Stroke? = null
+
+                                    // Pass 1: Prioritize explicit shapes (toolType == "shapes" or fillShape == true)
+                                    for (s in pageStrokes.reversed()) {
+                                        val box = SmartInkEngine.getBoundingBox(s)
+                                        val padding = 35f
+                                        if (targetNormX >= box.left - padding && targetNormX <= box.right + padding &&
+                                            targetNormY >= box.top - padding && targetNormY <= box.bottom + padding) {
+                                            if (s.toolType == "shapes" || s.fillShape) {
+                                                targetShape = s
+                                                break
+                                            }
+                                        }
+                                    }
+
+                                    // Pass 2: Check any stroke whose bounding box or points match touch location
+                                    if (targetShape == null) {
+                                        for (s in pageStrokes.reversed()) {
+                                            val box = SmartInkEngine.getBoundingBox(s)
+                                            val padding = 35f
+                                            if (targetNormX >= box.left - padding && targetNormX <= box.right + padding &&
+                                                targetNormY >= box.top - padding && targetNormY <= box.bottom + padding) {
+                                                val isNearPoint = s.points.any { pt ->
+                                                    kotlin.math.hypot(pt.x - targetNormX, pt.y - targetNormY) <= 45f
+                                                }
+                                                if (isNearPoint || s.toolType == "pen" || s.toolType == "highlighter") {
+                                                    targetShape = s
+                                                    break
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    if (targetShape != null) {
+                                        onShapeLongPressed(targetShape)
+                                        activeLassoInteraction = "move"
+                                        lastLassoTouchPoint = Offset(downTouchX, downTouchY)
+                                        try {
+                                            view.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+                                        } catch (e: Exception) {}
+                                    }
                                 }
                             }
                             true
                         }
                         MotionEvent.ACTION_MOVE -> {
+                            if (activeLassoInteraction != null) {
+                                longPressJob?.cancel()
+                                val lastPoint = lastLassoTouchPoint ?: Offset(x, y)
+                                if (activeLassoInteraction == "move") {
+                                    val dxPx = x - lastPoint.x
+                                    val dyPx = y - lastPoint.y
+                                    val pageW = getPageWidth(strokeStartedPage)
+                                    val pageH = getPageHeight(strokeStartedPage)
+                                    val normDx = (dxPx / scale / pageW) * 600f
+                                    val normDy = (dyPx / scale / pageH) * getNormH(strokeStartedPage)
+                                    onLassoDrag(Offset(normDx, normDy))
+                                    lastLassoTouchPoint = Offset(x, y)
+                                }
+                                return@pointerInteropFilter true
+                            }
                             if (kotlin.math.hypot(x - downTouchX, y - downTouchY) > 15f) {
                                 longPressJob?.cancel()
                             }
