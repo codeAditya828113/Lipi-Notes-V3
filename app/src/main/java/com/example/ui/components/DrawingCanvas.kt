@@ -114,7 +114,7 @@ fun DrawingCanvas(
     lassoScaleY: Float = 1f,
     lassoBoundingBox: Rect? = null,
     lassoSolidLine: Boolean = false,
-    stylusOnlyDrawing: Boolean = false,
+    stylusOnlyDrawing: Boolean = true,
     onStylusDoubleTap: () -> Unit = {},
     isDarkTheme: Boolean = isSystemInDarkTheme(),
     pdfPageCount: Int = 1,
@@ -681,27 +681,29 @@ fun DrawingCanvas(
                         val topPx = fromNormalizedY(cY - halfH + lassoDragOffset.y, lassoTargetPage)
                         val bottomPx = fromNormalizedY(cY + halfH + lassoDragOffset.y, lassoTargetPage)
 
-                        val touchPxX = x
-                        val touchPxY = y
+                        val pivotX = widthPx / 2f
+                        val pivotY = heightPx / 2f
+                        val worldX = (x - pivotX - offset.x) / scale + pivotX
+                        val worldY = (y - pivotY - offset.y) / scale + pivotY
 
                         if (action == MotionEvent.ACTION_DOWN) {
-                            val handleRadius = 45f
-                            val isTL = kotlin.math.hypot(touchPxX - leftPx, touchPxY - topPx) <= handleRadius
-                            val isTR = kotlin.math.hypot(touchPxX - rightPx, touchPxY - topPx) <= handleRadius
-                            val isBL = kotlin.math.hypot(touchPxX - leftPx, touchPxY - bottomPx) <= handleRadius
-                            val isBR = kotlin.math.hypot(touchPxX - rightPx, touchPxY - bottomPx) <= handleRadius
+                            val handleRadius = 50f / scale.coerceAtLeast(0.3f)
+                            val isTL = kotlin.math.hypot(worldX - leftPx, worldY - topPx) <= handleRadius
+                            val isTR = kotlin.math.hypot(worldX - rightPx, worldY - topPx) <= handleRadius
+                            val isBL = kotlin.math.hypot(worldX - leftPx, worldY - bottomPx) <= handleRadius
+                            val isBR = kotlin.math.hypot(worldX - rightPx, worldY - bottomPx) <= handleRadius
 
                             if (isTL || isTR || isBL || isBR) {
                                 activeLassoInteraction = "resize"
                                 activeLassoCorner = if (isTL) "top_left" else if (isTR) "top_right" else if (isBL) "bottom_left" else "bottom_right"
-                                initialLassoTouchPoint = Offset(touchPxX, touchPxY)
-                                lastLassoTouchPoint = Offset(touchPxX, touchPxY)
+                                initialLassoTouchPoint = Offset(x, y)
+                                lastLassoTouchPoint = Offset(x, y)
                                 initialLassoScaleX = lassoScaleX
                                 initialLassoScaleY = lassoScaleY
                                 return@pointerInteropFilter true
-                            } else if (touchPxX in (leftPx - 20f)..(rightPx + 20f) && touchPxY in (topPx - 20f)..(bottomPx + 20f)) {
+                            } else if (worldX in (leftPx - 25f)..(rightPx + 25f) && worldY in (topPx - 25f)..(bottomPx + 25f)) {
                                 activeLassoInteraction = "move"
-                                lastLassoTouchPoint = Offset(touchPxX, touchPxY)
+                                lastLassoTouchPoint = Offset(x, y)
                                 return@pointerInteropFilter true
                             }
                         } else if (action == MotionEvent.ACTION_MOVE && activeLassoInteraction != null) {

@@ -360,7 +360,7 @@ class NoteViewModel(
         }
  
     // Stylus and Hand Gesture States
-    private var _stylusOnlyDrawing by mutableStateOf(prefs.getBoolean("stylusOnlyDrawing", false))
+    private var _stylusOnlyDrawing by mutableStateOf(prefs.getBoolean("stylusOnlyDrawing", true))
     var stylusOnlyDrawing: Boolean
         get() = _stylusOnlyDrawing
         set(value) {
@@ -572,19 +572,21 @@ class NoteViewModel(
         if (idsToDelete.isEmpty()) return
         viewModelScope.launch {
             idsToDelete.forEach { id ->
-                val note = allNotes.value.find { it.id == id }
-                if (note != null) {
-                    repository.deleteNote(note)
-                    openNoteIds = openNoteIds - note.id
-                    if (selectedNote?.id == note.id) {
-                        selectNote(null)
-                    }
+                repository.deleteNoteById(id)
+                openNoteIds = openNoteIds - id
+                if (selectedNote?.id == id) {
+                    selectNote(null)
                 }
             }
             selectedNoteIds = emptySet()
             isSelectionMode = false
             logSyncEvent("Batch deleted ${idsToDelete.size} notes.")
-            if (autoBackupEnabled) {
+            val isSignedIn = GoogleDriveBackupHelper.isSignedIn(application)
+            val email = if (isSignedIn) GoogleDriveBackupHelper.getSavedAccountEmail(application) else ""
+            if (email.isNotBlank()) {
+                saveToGoogleDriveVault(email)
+            }
+            if (autoBackupEnabled && isSignedIn) {
                 syncWithGoogleDrive()
             }
         }
@@ -1460,15 +1462,57 @@ class NoteViewModel(
                 restoredFromVault = restoreFromGoogleDriveVault(accountEmail)
             }
 
-            val count = repository.allNotes.first().size
-            if (count == 0 && restoredFromVault == 0) {
-                // Insert default starter notes
-                val time = System.currentTimeMillis()
-                repository.insertNote(NoteEntity(title = "Scratch paper", templateType = "ruled", lastModifiedTime = time))
-                repository.insertNote(NoteEntity(title = "Scratch paper", templateType = "blank", lastModifiedTime = time - 1000))
-                repository.insertNote(NoteEntity(title = "Deforestation Detection System", templateType = "blank", lastModifiedTime = time - 2000))
-                repository.insertNote(NoteEntity(title = "Scratch paper", templateType = "blank", lastModifiedTime = time - 3000))
-                repository.insertNote(NoteEntity(title = "Quick Start Guide", templateType = "blank", lastModifiedTime = time - 4000))
+            // Clean up old default dummy notes if present
+            val existingNotesList = repository.allNotes.first()
+            val dummyTitles = setOf("Scratch paper", "Deforestation Detection System", "Quick Start Guide")
+            existingNotesList.filter { it.title in dummyTitles }.forEach { dummy ->
+                repository.deleteNoteById(dummy.id)
+            }
+
+            val currentNotes = repository.allNotes.first()
+            val hasQuickStart = currentNotes.any { it.title == "Quick Start" }
+            if (!hasQuickStart && currentNotes.isEmpty() && restoredFromVault == 0) {
+                val quickStartDoc = """
+# Welcome to Lipi Notes! 🚀
+
+Here is your complete guide to all features and capabilities available in the app:
+
+### 1. Canvas & Drawing Engine
+• **Pens & Tools**: Ballpoint Pen, Fountain Pen, Calligraphy Brush, Highlighter, Laser Pointer, Pencil, Crayon, and Precision Eraser.
+• **Customization**: Adjust stroke width, color, opacity, and choose from rich color palettes.
+• **Paper Templates**: Blank, Ruled, Grid, Dot Grid, Music Score, Cornell Notes, Daily Planner, or import custom PDF/DOCX templates.
+• **Zoom & Pan**: Smooth pinch-to-zoom, fixed center zoom, and single-tap scrollbar reset.
+
+### 2. Smart Shapes & Mind Maps
+• **Shape Tools**: Draw Lines, Arrows, Rectangles, Circles, Triangles, Stars, Polygons, and Mind Map nodes.
+• **Move & Resize**: Long-press any shape on the canvas to select it. Drag the shape to reposition or drag the 4 corner handles to resize. Customize stroke color, fill opacity, and 3D depth in real time.
+
+### 3. Media & Attachments
+• **Images & Photos**: Insert images onto notes, apply B&W/Sepia filters, crop, rotate, scale, and reposition.
+• **PDF Annotation**: Import multi-page PDF documents and write directly over pages with full stylus pressure sensitivity.
+
+### 4. Audio Recording & AI Features
+• **Real-time Audio Transcription**: Record lectures or meetings while taking notes and receive live speech-to-text transcriptions.
+• **AI Assistant**: Generate instant summaries, action items, and ask questions about your notes.
+• **Handwriting OCR**: Search across all handwritten and typed notes seamlessly using global search.
+
+### 5. Cloud Sync & Automatic Restoration
+• **Google Drive Sync**: Sign into your Google Account to automatically sync all your notes, PDFs, and settings to Google Drive.
+• **Automatic Restoration**: When you reinstall the app or sign in on a new device, your notes automatically sync and restore from your Google Account Drive backup.
+• **Local & Public Backup**: Manual JSON master backup export and single-click full restore from local storage.
+
+### 6. Note Management & Organization
+• **Folders & Tags**: Organize notes into nested folders and color-coded tags.
+• **Quick Actions**: Pin important notes, star favorites, duplicate, share, or delete notes easily via context menus or multi-selection toolbar.
+""".trimIndent()
+                repository.insertNote(
+                    NoteEntity(
+                        title = "Quick Start",
+                        templateType = "blank",
+                        content = quickStartDoc,
+                        lastModifiedTime = System.currentTimeMillis()
+                    )
+                )
             }
 
             if (isSignedIn) {
@@ -2676,13 +2720,18 @@ class NoteViewModel(
 
     fun deleteNote(note: NoteEntity) {
         viewModelScope.launch {
-            repository.deleteNote(note)
+            repository.deleteNoteById(note.id)
             openNoteIds = openNoteIds - note.id
             if (selectedNote?.id == note.id) {
                 selectNote(null)
             }
             logSyncEvent("Deleted note '${note.title}' from local database.")
-            if (autoBackupEnabled) {
+            val isSignedIn = GoogleDriveBackupHelper.isSignedIn(application)
+            val email = if (isSignedIn) GoogleDriveBackupHelper.getSavedAccountEmail(application) else ""
+            if (email.isNotBlank()) {
+                saveToGoogleDriveVault(email)
+            }
+            if (autoBackupEnabled && isSignedIn) {
                 syncWithGoogleDrive()
             }
         }
@@ -3622,6 +3671,16 @@ class NoteViewModel(
 
             var restoredNotesCount = 0
             val existingNotes = repository.allNotes.first()
+
+            // If local DB only contains starter/default notes, clean them up before restoring
+            val isOnlyDefaultNotes = existingNotes.all { 
+                it.title in setOf("Quick Start", "Quick Start Guide", "Scratch paper", "Deforestation Detection System") 
+            }
+            if (isOnlyDefaultNotes && notesArray.length() > 0) {
+                existingNotes.forEach { repository.deleteNoteById(it.id) }
+            }
+
+            val refreshedNotes = repository.allNotes.first()
             val detectedConflicts = mutableListOf<NoteConflict>()
 
             for (i in 0 until notesArray.length()) {
@@ -3629,7 +3688,7 @@ class NoteViewModel(
                 val rawTitle = noteObj.optString("title", "Untitled")
                 val createdTime = noteObj.optLong("createdTime", System.currentTimeMillis())
 
-                val existingNote = existingNotes.find { 
+                val existingNote = refreshedNotes.find { 
                     (it.title == rawTitle && kotlin.math.abs(it.createdTime - createdTime) < 10000L) ||
                     (noteObj.has("id") && it.id == noteObj.getInt("id"))
                 }
@@ -3664,7 +3723,7 @@ class NoteViewModel(
                     }
                 }
 
-                if (parseAndSaveNoteFromJsonObject(noteObj, existingNotes)) {
+                if (parseAndSaveNoteFromJsonObject(noteObj, refreshedNotes)) {
                     restoredNotesCount++
                 }
             }
@@ -3719,12 +3778,20 @@ class NoteViewModel(
             val masterFile = File(application.filesDir, "google_drive_vault_master.json")
             masterFile.writeText(jsonText, Charsets.UTF_8)
 
-            // External persistent cloud vault (persists even after app uninstall)
+            // External persistent cloud vault (persists even after app uninstall on SD/public storage)
             val extVaultDir = File(application.getExternalFilesDir(android.os.Environment.DIRECTORY_DOCUMENTS), "LipiNotes_CloudVault").apply { if (!exists()) mkdirs() }
             val extVaultFile = File(extVaultDir, "google_drive_vault_${safeEmail.hashCode()}.json")
             extVaultFile.writeText(jsonText, Charsets.UTF_8)
             val extMasterFile = File(extVaultDir, "google_drive_vault_master.json")
             extMasterFile.writeText(jsonText, Charsets.UTF_8)
+
+            // Public Documents & Downloads persistent locations
+            val pubDocsDir = File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOCUMENTS), "LipiNotes_Backup").apply { if (!exists()) mkdirs() }
+            File(pubDocsDir, "google_drive_vault_${safeEmail.hashCode()}.json").writeText(jsonText, Charsets.UTF_8)
+            File(pubDocsDir, "Lipi_Master_Backup.json").writeText(jsonText, Charsets.UTF_8)
+
+            val pubDlDir = File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS), "LipiNotes_Backup").apply { if (!exists()) mkdirs() }
+            File(pubDlDir, "Lipi_Master_Backup.json").writeText(jsonText, Charsets.UTF_8)
         } catch (e: Exception) {
             Log.e("NoteViewModel", "Failed to save account vault", e)
         }
@@ -3733,21 +3800,22 @@ class NoteViewModel(
     suspend fun restoreFromGoogleDriveVault(email: String): Int = withContext(Dispatchers.IO) {
         try {
             val safeEmail = email.lowercase().trim()
+            val pubDocsDir = File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOCUMENTS), "LipiNotes_Backup")
+            val pubDlDir = File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS), "LipiNotes_Backup")
             val extVaultDir = File(application.getExternalFilesDir(android.os.Environment.DIRECTORY_DOCUMENTS), "LipiNotes_CloudVault")
-            val extVaultFile = File(extVaultDir, "google_drive_vault_${safeEmail.hashCode()}.json")
-            val extMasterFile = File(extVaultDir, "google_drive_vault_master.json")
-            val vaultFile = File(application.filesDir, "google_drive_vault_${safeEmail.hashCode()}.json")
-            val masterFile = File(application.filesDir, "google_drive_vault_master.json")
 
-            val targetFile = when {
-                extVaultFile.exists() -> extVaultFile
-                extMasterFile.exists() -> extMasterFile
-                vaultFile.exists() -> vaultFile
-                masterFile.exists() -> masterFile
-                else -> null
-            }
+            val candidates = listOf(
+                File(pubDocsDir, "google_drive_vault_${safeEmail.hashCode()}.json"),
+                File(pubDocsDir, "Lipi_Master_Backup.json"),
+                File(pubDlDir, "Lipi_Master_Backup.json"),
+                File(extVaultDir, "google_drive_vault_${safeEmail.hashCode()}.json"),
+                File(extVaultDir, "google_drive_vault_master.json"),
+                File(application.filesDir, "google_drive_vault_${safeEmail.hashCode()}.json"),
+                File(application.filesDir, "google_drive_vault_master.json")
+            )
 
-            if (targetFile != null && targetFile.exists()) {
+            val targetFile = candidates.firstOrNull { it.exists() && it.length() > 0 }
+            if (targetFile != null) {
                 val jsonText = targetFile.readText(Charsets.UTF_8)
                 return@withContext restoreBackupFromJsonString(jsonText)
             }

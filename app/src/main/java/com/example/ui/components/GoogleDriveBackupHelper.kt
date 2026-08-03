@@ -109,22 +109,33 @@ object GoogleDriveBackupHelper {
     /**
      * Saves connected account information to SharedPreferences for persistent authentication.
      */
-    fun saveConnectedAccount(context: Context, name: String?, email: String?, photoUrl: String? = null) {
+    fun saveConnectedAccount(context: Context, name: String?, email: String?, photoUrl: String? = null, provider: String = "Google") {
         val prefs = context.getSharedPreferences("google_drive_backup_prefs", Context.MODE_PRIVATE)
         val currentName = prefs.getString("account_name", "") ?: ""
         val currentEmail = prefs.getString("account_email", "") ?: ""
         val currentPhoto = prefs.getString("account_photo_url", "") ?: ""
+        val currentProvider = prefs.getString("account_provider", "Google") ?: "Google"
 
         val finalName = if (!name.isNullOrBlank()) name else currentName
         val finalEmail = if (!email.isNullOrBlank()) email else currentEmail
         val finalPhoto = if (!photoUrl.isNullOrBlank()) photoUrl else currentPhoto
+        val finalProvider = if (!provider.isNullOrBlank()) provider else currentProvider
 
         prefs.edit()
             .putString("account_name", finalName)
             .putString("account_email", finalEmail)
             .putString("account_photo_url", finalPhoto)
+            .putString("account_provider", finalProvider)
             .putBoolean("is_signed_in", true)
             .apply()
+    }
+
+    /**
+     * Gets the saved account provider ("Google", "Microsoft", or "LinkedIn").
+     */
+    fun getSavedAccountProvider(context: Context): String {
+        val prefs = context.getSharedPreferences("google_drive_backup_prefs", Context.MODE_PRIVATE)
+        return prefs.getString("account_provider", "Google") ?: "Google"
     }
 
     /**
@@ -178,6 +189,7 @@ object GoogleDriveBackupHelper {
             .remove("account_name")
             .remove("account_email")
             .remove("account_photo_url")
+            .remove("account_provider")
             .putBoolean("is_signed_in", false)
             .apply()
     }

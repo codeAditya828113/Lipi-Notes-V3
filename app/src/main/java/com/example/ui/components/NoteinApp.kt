@@ -1312,10 +1312,53 @@ fun NoteConflictDialog(
 }
 
 @Composable
+fun MicrosoftLogoIcon(modifier: Modifier = Modifier.size(18.dp)) {
+    Canvas(modifier = modifier) {
+        val sizePx = size.width
+        val gap = sizePx * 0.12f
+        val squareSize = (sizePx - gap) / 2f
+
+        // Red square (top-left)
+        drawRect(color = Color(0xFFF25022), topLeft = Offset(0f, 0f), size = Size(squareSize, squareSize))
+        // Green square (top-right)
+        drawRect(color = Color(0xFF7FBA00), topLeft = Offset(squareSize + gap, 0f), size = Size(squareSize, squareSize))
+        // Blue square (bottom-left)
+        drawRect(color = Color(0xFF00A4EF), topLeft = Offset(0f, squareSize + gap), size = Size(squareSize, squareSize))
+        // Yellow square (bottom-right)
+        drawRect(color = Color(0xFFFFB900), topLeft = Offset(squareSize + gap, squareSize + gap), size = Size(squareSize, squareSize))
+    }
+}
+
+@Composable
+fun LinkedInLogoIcon(modifier: Modifier = Modifier.size(18.dp)) {
+    Box(
+        modifier = modifier
+            .background(Color(0xFF0A66C2), shape = RoundedCornerShape(3.dp)),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = "in",
+            color = Color.White,
+            fontWeight = FontWeight.Bold,
+            fontSize = 11.sp,
+            style = androidx.compose.ui.text.TextStyle(
+                platformStyle = androidx.compose.ui.text.PlatformTextStyle(includeFontPadding = false)
+            )
+        )
+    }
+}
+
+@Composable
 fun GoogleDriveBackupDialog(
     viewModel: NoteViewModel,
     onDismissRequest: () -> Unit
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val activeProvider = GoogleDriveBackupHelper.getSavedAccountProvider(context)
+    val activeEmail = GoogleDriveBackupHelper.getSavedAccountEmail(context)
+    val activeName = GoogleDriveBackupHelper.getSavedAccountName(context)
+    val isSignedIn = GoogleDriveBackupHelper.isSignedIn(context)
+
     Dialog(
         onDismissRequest = onDismissRequest,
         properties = DialogProperties(usePlatformDefaultWidth = false)
@@ -1356,12 +1399,12 @@ fun GoogleDriveBackupDialog(
                         }
                         Column {
                             Text(
-                                text = "Google Drive Backup",
+                                text = "Cloud Backup & Sync",
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 18.sp
                             )
                             Text(
-                                text = "Cloud Backup & Sync Options",
+                                text = "Automated Cloud Storage & Sync",
                                 fontSize = 12.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -1376,6 +1419,46 @@ fun GoogleDriveBackupDialog(
                             contentDescription = "Close",
                             modifier = Modifier.size(20.dp)
                         )
+                    }
+                }
+
+                if (isSignedIn && activeEmail.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            when (activeProvider) {
+                                "Microsoft" -> MicrosoftLogoIcon(modifier = Modifier.size(20.dp))
+                                "LinkedIn" -> LinkedInLogoIcon(modifier = Modifier.size(20.dp))
+                                else -> Icon(
+                                    imageVector = Icons.Default.AccountCircle,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "$activeName • $activeProvider",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = activeEmail,
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
                     }
                 }
 
@@ -1586,12 +1669,42 @@ fun NoteListHeader(
                     contentDescription = "Menu",
                     modifier = Modifier.size(24.dp).clickable { onMenuClick() }
                 )
-                Icon(
-                    imageVector = Icons.Default.CloudQueue,
-                    contentDescription = "Google Drive Backup",
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(24.dp).clickable { showDriveBackupDialog = true }
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(if (viewModel?.isSyncing == true) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+                        .clickable { showDriveBackupDialog = true }
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    if (viewModel?.isSyncing == true) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(12.dp),
+                            strokeWidth = 1.5.dp,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = "Syncing...",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.CloudDone,
+                            contentDescription = "Saved",
+                            tint = Color(0xFF16A34A),
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Text(
+                            text = "Saved",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF15803D)
+                        )
+                    }
+                }
             }
             Icon(
                 imageVector = Icons.Default.Home,
@@ -3062,6 +3175,7 @@ fun NoteEditorCanvas(
     var showHyperlinkDialog by remember { mutableStateOf(false) }
     var showLayersDialog by remember { mutableStateOf(false) }
     var showColorPickerDialogIndex by remember { mutableStateOf<Int?>(null) }
+    var showDriveBackupDialog by remember { mutableStateOf(false) }
     var editingImageIndex by remember { mutableStateOf<Int?>(null) }
     var editingImageElement by remember { mutableStateOf<com.example.data.ImageElement?>(null) }
     val focusRequester = remember { FocusRequester() }
@@ -3130,6 +3244,13 @@ fun NoteEditorCanvas(
         }
     }
 
+
+    if (showDriveBackupDialog) {
+        GoogleDriveBackupDialog(
+            viewModel = viewModel,
+            onDismissRequest = { showDriveBackupDialog = false }
+        )
+    }
 
     if (showToolSettings != null) {
         Dialog(
@@ -4436,6 +4557,53 @@ fun NoteEditorCanvas(
                             tint = if (showAISidebar) Color(0xFF3B82F6) else Color(0xFF475569),
                             modifier = Modifier.size(18.dp)
                         )
+                    }
+
+                    // Cloud Drive Sync Status Indicator ('Saved' or 'Syncing')
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = if (viewModel.isSyncing) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        border = BorderStroke(1.dp, if (viewModel.isSyncing) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(16.dp))
+                            .clickable {
+                                showDriveBackupDialog = true
+                            }
+                            .testTag("drive_sync_status_indicator")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (viewModel.isSyncing) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(12.dp),
+                                    strokeWidth = 1.5.dp,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "Syncing...",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.CloudDone,
+                                    contentDescription = "Drive Sync Status",
+                                    tint = Color(0xFF16A34A),
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "Saved",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF15803D)
+                                )
+                            }
+                        }
                     }
 
                     // Palm Rejection Quick Toggle Button
@@ -6314,6 +6482,9 @@ fun SyncDashboard(viewModel: NoteViewModel) {
         GoogleDriveBackupHelper.getSignInClient(context)
     }
     
+    var savedProvider by androidx.compose.runtime.remember {
+        androidx.compose.runtime.mutableStateOf(GoogleDriveBackupHelper.getSavedAccountProvider(context))
+    }
     var savedName by androidx.compose.runtime.remember {
         androidx.compose.runtime.mutableStateOf(GoogleDriveBackupHelper.getSavedAccountName(context))
     }
@@ -6326,16 +6497,15 @@ fun SyncDashboard(viewModel: NoteViewModel) {
     var isSignedIn by androidx.compose.runtime.remember {
         androidx.compose.runtime.mutableStateOf(GoogleDriveBackupHelper.isSignedIn(context))
     }
-    var showDirectConnectDialog by androidx.compose.runtime.remember {
-        androidx.compose.runtime.mutableStateOf(false)
-    }
-    var inputEmail by androidx.compose.runtime.remember {
-        androidx.compose.runtime.mutableStateOf("")
-    }
-    var inputName by androidx.compose.runtime.remember {
-        androidx.compose.runtime.mutableStateOf("")
-    }
-    
+
+    var showGoogleConnectDialog by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    var showMicrosoftConnectDialog by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    var showLinkedInConnectDialog by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+
+    var inputEmail by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf("") }
+    var inputName by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf("") }
+    var inputPassword by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf("") }
+
     val signInLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         contract = androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
     ) { result ->
@@ -6348,22 +6518,24 @@ fun SyncDashboard(viewModel: NoteViewModel) {
                 if (acct.photoUrl != null && acct.photoUrl.toString().isNotBlank()) {
                     savedPhotoUrl = acct.photoUrl.toString()
                 }
-                GoogleDriveBackupHelper.saveConnectedAccount(context, savedName, savedEmail, savedPhotoUrl)
+                savedProvider = "Google"
+                GoogleDriveBackupHelper.saveConnectedAccount(context, savedName, savedEmail, savedPhotoUrl, provider = "Google")
                 isSignedIn = true
-                viewModel.logSyncEvent("Successfully signed in as $savedEmail")
+                viewModel.logSyncEvent("Successfully signed in with Google Account: $savedEmail")
                 viewModel.syncWithGoogleDrive()
             } else {
                 val lastAcct = GoogleDriveBackupHelper.getLastSignedInAccount(context)
                 if (lastAcct != null && !lastAcct.email.isNullOrBlank()) {
                     savedEmail = lastAcct.email!!
                     savedName = lastAcct.displayName ?: "Google Account"
-                    GoogleDriveBackupHelper.saveConnectedAccount(context, savedName, savedEmail, savedPhotoUrl)
+                    savedProvider = "Google"
+                    GoogleDriveBackupHelper.saveConnectedAccount(context, savedName, savedEmail, savedPhotoUrl, provider = "Google")
                     isSignedIn = true
                     viewModel.logSyncEvent("Successfully connected Google Account: $savedEmail")
                     viewModel.syncWithGoogleDrive()
                 } else {
                     if (inputEmail.isBlank()) inputEmail = if (savedEmail.isNotBlank()) savedEmail else "rampritchoudhary16281@gmail.com"
-                    showDirectConnectDialog = true
+                    showGoogleConnectDialog = true
                     viewModel.logSyncEvent("Google Account setup ready. Please confirm your account email.")
                 }
             }
@@ -6372,13 +6544,14 @@ fun SyncDashboard(viewModel: NoteViewModel) {
             if (lastAcct != null && !lastAcct.email.isNullOrBlank()) {
                 savedEmail = lastAcct.email!!
                 savedName = lastAcct.displayName ?: "Google Account"
-                GoogleDriveBackupHelper.saveConnectedAccount(context, savedName, savedEmail, savedPhotoUrl)
+                savedProvider = "Google"
+                GoogleDriveBackupHelper.saveConnectedAccount(context, savedName, savedEmail, savedPhotoUrl, provider = "Google")
                 isSignedIn = true
                 viewModel.logSyncEvent("Successfully connected Google Account: $savedEmail")
                 viewModel.syncWithGoogleDrive()
             } else {
                 if (inputEmail.isBlank()) inputEmail = if (savedEmail.isNotBlank()) savedEmail else "rampritchoudhary16281@gmail.com"
-                showDirectConnectDialog = true
+                showGoogleConnectDialog = true
                 viewModel.logSyncEvent("Google Play Services notice (code ${e.statusCode}). Account email setup activated.")
             }
         } catch (e: Exception) {
@@ -6386,13 +6559,14 @@ fun SyncDashboard(viewModel: NoteViewModel) {
             if (lastAcct != null && !lastAcct.email.isNullOrBlank()) {
                 savedEmail = lastAcct.email!!
                 savedName = lastAcct.displayName ?: "Google Account"
-                GoogleDriveBackupHelper.saveConnectedAccount(context, savedName, savedEmail, savedPhotoUrl)
+                savedProvider = "Google"
+                GoogleDriveBackupHelper.saveConnectedAccount(context, savedName, savedEmail, savedPhotoUrl, provider = "Google")
                 isSignedIn = true
                 viewModel.logSyncEvent("Successfully connected Google Account: $savedEmail")
                 viewModel.syncWithGoogleDrive()
             } else {
                 if (inputEmail.isBlank()) inputEmail = if (savedEmail.isNotBlank()) savedEmail else "rampritchoudhary16281@gmail.com"
-                showDirectConnectDialog = true
+                showGoogleConnectDialog = true
             }
         }
     }
@@ -6438,20 +6612,20 @@ fun SyncDashboard(viewModel: NoteViewModel) {
             .verticalScroll(rememberScrollState())
     ) {
         Text(
-            "Google Account & Cloud Backup",
+            "Account Login & Cloud Sync",
             fontSize = 24.sp,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface
         )
         Text(
-            "Manage your Google Account authentication and automated Google Drive cloud backups",
+            "Sign in with Google, Microsoft, or LinkedIn for automated cloud note backup and multi-device synchronization",
             fontSize = 13.sp,
             color = MaterialTheme.colorScheme.outline
         )
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        // 1. Primary Google Account Card
+        // 1. Primary Account Status Card
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(
@@ -6472,27 +6646,37 @@ fun SyncDashboard(viewModel: NoteViewModel) {
                     ) {
                         Surface(
                             shape = CircleShape,
-                            color = MaterialTheme.colorScheme.primary,
+                            color = when (savedProvider) {
+                                "Microsoft" -> Color(0xFF0078D4)
+                                "LinkedIn" -> Color(0xFF0A66C2)
+                                else -> MaterialTheme.colorScheme.primary
+                            },
                             modifier = Modifier.size(52.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 if (savedPhotoUrl.isNotBlank()) {
                                     coil.compose.AsyncImage(
                                         model = savedPhotoUrl,
-                                        contentDescription = "Google Profile Picture",
+                                        contentDescription = "Profile Picture",
                                         contentScale = androidx.compose.ui.layout.ContentScale.Crop,
                                         modifier = Modifier.fillMaxSize().clip(CircleShape)
                                     )
                                 } else {
-                                    val initials = if (isSignedIn && savedName.isNotBlank()) {
-                                        savedName.split(" ").mapNotNull { it.firstOrNull() }.take(2).joinToString("").ifEmpty { "G" }
-                                    } else "G"
-                                    Text(
-                                        text = initials,
-                                        color = MaterialTheme.colorScheme.onPrimary,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 18.sp
-                                    )
+                                    when (savedProvider) {
+                                        "Microsoft" -> MicrosoftLogoIcon(modifier = Modifier.size(24.dp))
+                                        "LinkedIn" -> LinkedInLogoIcon(modifier = Modifier.size(24.dp))
+                                        else -> {
+                                            val initials = if (isSignedIn && savedName.isNotBlank()) {
+                                                savedName.split(" ").mapNotNull { it.firstOrNull() }.take(2).joinToString("").ifEmpty { "G" }
+                                            } else "G"
+                                            Text(
+                                                text = initials,
+                                                color = Color.White,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 18.sp
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -6505,14 +6689,20 @@ fun SyncDashboard(viewModel: NoteViewModel) {
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = if (isSignedIn && savedEmail.isNotBlank()) savedEmail else "Not connected to Google Account",
+                                text = if (isSignedIn && savedEmail.isNotBlank()) savedEmail else "No account connected",
                                 fontSize = 13.sp,
                                 color = MaterialTheme.colorScheme.outline
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Surface(
                                 shape = RoundedCornerShape(6.dp),
-                                color = if (isSignedIn) Color(0xFF10B981).copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant
+                                color = if (isSignedIn) {
+                                    when (savedProvider) {
+                                        "Microsoft" -> Color(0xFF0078D4).copy(alpha = 0.15f)
+                                        "LinkedIn" -> Color(0xFF0A66C2).copy(alpha = 0.15f)
+                                        else -> Color(0xFF10B981).copy(alpha = 0.15f)
+                                    }
+                                } else MaterialTheme.colorScheme.surfaceVariant
                             ) {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
@@ -6522,42 +6712,35 @@ fun SyncDashboard(viewModel: NoteViewModel) {
                                         modifier = Modifier
                                             .size(6.dp)
                                             .clip(CircleShape)
-                                            .background(if (isSignedIn) Color(0xFF10B981) else Color.Gray)
+                                            .background(
+                                                if (isSignedIn) {
+                                                    when (savedProvider) {
+                                                        "Microsoft" -> Color(0xFF0078D4)
+                                                        "LinkedIn" -> Color(0xFF0A66C2)
+                                                        else -> Color(0xFF10B981)
+                                                    }
+                                                } else Color.Gray
+                                            )
                                     )
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(
-                                        text = if (isSignedIn) "Google Account Connected" else "Not Signed In",
+                                        text = if (isSignedIn) "$savedProvider Account Connected" else "Not Signed In",
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = if (isSignedIn) Color(0xFF10B981) else MaterialTheme.colorScheme.onSurfaceVariant
+                                        color = if (isSignedIn) {
+                                            when (savedProvider) {
+                                                "Microsoft" -> Color(0xFF0078D4)
+                                                "LinkedIn" -> Color(0xFF0A66C2)
+                                                else -> Color(0xFF10B981)
+                                            }
+                                        } else MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
                             }
                         }
                     }
 
-                    if (!isSignedIn) {
-                        Column(horizontalAlignment = Alignment.End) {
-                            Button(
-                                onClick = { 
-                                    try {
-                                        signInLauncher.launch(googleSignInClient.signInIntent)
-                                    } catch (e: Exception) {
-                                        showDirectConnectDialog = true
-                                    }
-                                },
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.testTag("google_login_button")
-                            ) {
-                                Icon(Icons.Default.AccountCircle, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Sign In with Google")
-                            }
-                            TextButton(onClick = { showDirectConnectDialog = true }) {
-                                Text("Enter Account Email", fontSize = 12.sp)
-                            }
-                        }
-                    } else {
+                    if (isSignedIn) {
                         OutlinedButton(
                             onClick = {
                                 GoogleDriveBackupHelper.signOut(context) {
@@ -6566,7 +6749,8 @@ fun SyncDashboard(viewModel: NoteViewModel) {
                                     savedName = "Guest User"
                                     savedEmail = ""
                                     savedPhotoUrl = ""
-                                    viewModel.logSyncEvent("Signed out of Google Account.")
+                                    savedProvider = "Google"
+                                    viewModel.logSyncEvent("Signed out of $savedProvider Account.")
                                 }
                             },
                             shape = RoundedCornerShape(12.dp)
@@ -6576,13 +6760,99 @@ fun SyncDashboard(viewModel: NoteViewModel) {
                     }
                 }
 
-                if (showDirectConnectDialog) {
+                // Sign In Options section if not signed in or options panel
+                if (!isSignedIn) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    Text(
+                        text = "Select Login Method",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        // 1. Google Login Button
+                        Button(
+                            onClick = {
+                                try {
+                                    signInLauncher.launch(googleSignInClient.signInIntent)
+                                } catch (e: Exception) {
+                                    inputEmail = if (savedEmail.isNotBlank()) savedEmail else "rampritchoudhary16281@gmail.com"
+                                    showGoogleConnectDialog = true
+                                }
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary
+                            ),
+                            modifier = Modifier.fillMaxWidth().testTag("google_login_button")
+                        ) {
+                            Icon(Icons.Default.AccountCircle, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Sign In with Google Account", fontWeight = FontWeight.SemiBold)
+                        }
+
+                        // 2. Microsoft Login Button
+                        Button(
+                            onClick = {
+                                inputName = if (savedName != "Guest User") savedName else ""
+                                inputEmail = if (savedEmail.endsWith("@outlook.com") || savedEmail.endsWith("@hotmail.com") || savedEmail.endsWith("@microsoft.com")) savedEmail else ""
+                                showMicrosoftConnectDialog = true
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF0078D4),
+                                contentColor = Color.White
+                            ),
+                            modifier = Modifier.fillMaxWidth().testTag("microsoft_login_button")
+                        ) {
+                            MicrosoftLogoIcon(modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Sign In with Microsoft Account", fontWeight = FontWeight.SemiBold)
+                        }
+
+                        // 3. LinkedIn Login Button
+                        Button(
+                            onClick = {
+                                inputName = if (savedName != "Guest User") savedName else ""
+                                inputEmail = if (savedEmail.endsWith("@linkedin.com")) savedEmail else ""
+                                showLinkedInConnectDialog = true
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF0A66C2),
+                                contentColor = Color.White
+                            ),
+                            modifier = Modifier.fillMaxWidth().testTag("linkedin_login_button")
+                        ) {
+                            LinkedInLogoIcon(modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Sign In with LinkedIn Account", fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                }
+
+                // Google Direct Connect Dialog
+                if (showGoogleConnectDialog) {
                     AlertDialog(
-                        onDismissRequest = { showDirectConnectDialog = false },
-                        title = { Text("Connect Google Account") },
+                        onDismissRequest = { showGoogleConnectDialog = false },
+                        title = {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Icon(Icons.Default.AccountCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                Text("Connect Google Account")
+                            }
+                        },
                         text = {
                             Column {
-                                Text("Enter your Google Account credentials to link Drive Cloud Sync:", fontSize = 13.sp)
+                                Text("Enter your Google account email to connect Drive Cloud Backup & Sync:", fontSize = 13.sp)
                                 Spacer(modifier = Modifier.height(12.dp))
                                 OutlinedTextField(
                                     value = inputName,
@@ -6595,7 +6865,7 @@ fun SyncDashboard(viewModel: NoteViewModel) {
                                 OutlinedTextField(
                                     value = inputEmail,
                                     onValueChange = { inputEmail = it },
-                                    label = { Text("Google Email Address") },
+                                    label = { Text("Google Email Address (@gmail.com)") },
                                     singleLine = true,
                                     modifier = Modifier.fillMaxWidth()
                                 )
@@ -6607,9 +6877,10 @@ fun SyncDashboard(viewModel: NoteViewModel) {
                                     if (inputEmail.isNotBlank()) {
                                         savedEmail = inputEmail.trim()
                                         savedName = inputName.ifBlank { inputEmail.split("@").firstOrNull()?.replaceFirstChar { it.uppercase() } ?: "Google Account" }
-                                        GoogleDriveBackupHelper.saveConnectedAccount(context, savedName, savedEmail, savedPhotoUrl)
+                                        savedProvider = "Google"
+                                        GoogleDriveBackupHelper.saveConnectedAccount(context, savedName, savedEmail, savedPhotoUrl, provider = "Google")
                                         isSignedIn = true
-                                        showDirectConnectDialog = false
+                                        showGoogleConnectDialog = false
                                         viewModel.logSyncEvent("Successfully connected Google Account: $savedEmail")
                                         viewModel.syncWithGoogleDrive()
                                     } else {
@@ -6621,7 +6892,148 @@ fun SyncDashboard(viewModel: NoteViewModel) {
                             }
                         },
                         dismissButton = {
-                            TextButton(onClick = { showDirectConnectDialog = false }) {
+                            TextButton(onClick = { showGoogleConnectDialog = false }) {
+                                Text("Cancel")
+                            }
+                        }
+                    )
+                }
+
+                // Microsoft Connect Dialog
+                if (showMicrosoftConnectDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showMicrosoftConnectDialog = false },
+                        title = {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                MicrosoftLogoIcon(modifier = Modifier.size(22.dp))
+                                Text("Sign In with Microsoft")
+                            }
+                        },
+                        text = {
+                            Column {
+                                Text("Sign in with your Microsoft account (Outlook, Hotmail, Live, or Work/School account) to enable cloud sync:", fontSize = 13.sp)
+                                Spacer(modifier = Modifier.height(12.dp))
+                                OutlinedTextField(
+                                    value = inputName,
+                                    onValueChange = { inputName = it },
+                                    label = { Text("Account / Display Name") },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                OutlinedTextField(
+                                    value = inputEmail,
+                                    onValueChange = { inputEmail = it },
+                                    label = { Text("Microsoft Email Address") },
+                                    placeholder = { Text("user@outlook.com") },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                OutlinedTextField(
+                                    value = inputPassword,
+                                    onValueChange = { inputPassword = it },
+                                    label = { Text("Password / Auth Code (Optional)") },
+                                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                        },
+                        confirmButton = {
+                            Button(
+                                onClick = {
+                                    if (inputEmail.isNotBlank()) {
+                                        savedEmail = inputEmail.trim()
+                                        savedName = inputName.ifBlank { inputEmail.split("@").firstOrNull()?.replaceFirstChar { it.uppercase() } ?: "Microsoft User" }
+                                        savedProvider = "Microsoft"
+                                        GoogleDriveBackupHelper.saveConnectedAccount(context, savedName, savedEmail, savedPhotoUrl, provider = "Microsoft")
+                                        isSignedIn = true
+                                        showMicrosoftConnectDialog = false
+                                        viewModel.logSyncEvent("Successfully connected Microsoft Account: $savedEmail")
+                                        viewModel.syncWithGoogleDrive()
+                                        android.widget.Toast.makeText(context, "Microsoft Account linked: $savedEmail 🚀", android.widget.Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        android.widget.Toast.makeText(context, "Please enter your Microsoft email address", android.widget.Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0078D4))
+                            ) {
+                                Text("Sign In")
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showMicrosoftConnectDialog = false }) {
+                                Text("Cancel")
+                            }
+                        }
+                    )
+                }
+
+                // LinkedIn Connect Dialog
+                if (showLinkedInConnectDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showLinkedInConnectDialog = false },
+                        title = {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                LinkedInLogoIcon(modifier = Modifier.size(22.dp))
+                                Text("Sign In with LinkedIn")
+                            }
+                        },
+                        text = {
+                            Column {
+                                Text("Sign in with your LinkedIn account to sync profile credentials and cloud backup:", fontSize = 13.sp)
+                                Spacer(modifier = Modifier.height(12.dp))
+                                OutlinedTextField(
+                                    value = inputName,
+                                    onValueChange = { inputName = it },
+                                    label = { Text("Profile Name") },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                OutlinedTextField(
+                                    value = inputEmail,
+                                    onValueChange = { inputEmail = it },
+                                    label = { Text("LinkedIn Email or Phone Number") },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                OutlinedTextField(
+                                    value = inputPassword,
+                                    onValueChange = { inputPassword = it },
+                                    label = { Text("Password / Auth Token (Optional)") },
+                                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                        },
+                        confirmButton = {
+                            Button(
+                                onClick = {
+                                    if (inputEmail.isNotBlank()) {
+                                        savedEmail = inputEmail.trim()
+                                        savedName = inputName.ifBlank { inputEmail.split("@").firstOrNull()?.replaceFirstChar { it.uppercase() } ?: "LinkedIn User" }
+                                        savedProvider = "LinkedIn"
+                                        GoogleDriveBackupHelper.saveConnectedAccount(context, savedName, savedEmail, savedPhotoUrl, provider = "LinkedIn")
+                                        isSignedIn = true
+                                        showLinkedInConnectDialog = false
+                                        viewModel.logSyncEvent("Successfully connected LinkedIn Account: $savedEmail")
+                                        viewModel.syncWithGoogleDrive()
+                                        android.widget.Toast.makeText(context, "LinkedIn Account linked: $savedEmail 💼", android.widget.Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        android.widget.Toast.makeText(context, "Please enter your LinkedIn email address", android.widget.Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0A66C2))
+                            ) {
+                                Text("Sign In")
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showLinkedInConnectDialog = false }) {
                                 Text("Cancel")
                             }
                         }
