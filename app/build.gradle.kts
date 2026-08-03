@@ -149,4 +149,5 @@ dependencies {
     }
     implementation("com.google.mlkit:text-recognition:16.0.1")
     implementation("androidx.input:input-motionprediction:1.0.0-beta03")
+    implementation("androidx.graphics:graphics-core:1.0.0")
 }

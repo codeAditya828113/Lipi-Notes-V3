@@ -331,6 +331,15 @@ fun DrawingCanvas(
         }
 
         val view = LocalView.current
+        val stylusInputProcessor = remember(context, view) {
+            StylusInputProcessor(context, view)
+        }
+        DisposableEffect(stylusInputProcessor) {
+            onDispose {
+                stylusInputProcessor.release()
+            }
+        }
+
         val motionEventPredictor = remember(view) {
             try {
                 androidx.input.motionprediction.MotionEventPredictor.newInstance(view)
@@ -485,7 +494,9 @@ fun DrawingCanvas(
                     if (isStylus) {
                         activePointerIndex = stylusPointerIndex!!
                         try {
+                            stylusInputProcessor.recordMotionEvent(motionEvent)
                             motionEventPredictor?.record(motionEvent)
+                            stylusInputProcessor.triggerStylo2Haptics(motionEvent, activePointerIndex)
                         } catch (_: Exception) {}
                     } else {
                         activePointerIndex = 0
@@ -976,9 +987,11 @@ fun DrawingCanvas(
                     val finalX = toNormalizedX(snappedX, touchedPage)
                     val finalY = toNormalizedY(snappedY, touchedPage)
 
-                    // Detect stylus pressure & tilt if available
+                    // Detect stylus pressure & tilt using MotionEvent.AXIS_PRESSURE and MotionEvent.AXIS_TILT
                     val pressure = if (isStylus) {
-                        try { motionEvent.getPressure(activePointerIndex) } catch (e: Exception) { motionEvent.pressure }
+                        try { motionEvent.getAxisValue(MotionEvent.AXIS_PRESSURE, activePointerIndex) } catch (e: Exception) {
+                            try { motionEvent.getPressure(activePointerIndex) } catch (e: Exception) { motionEvent.pressure }
+                        }
                     } else {
                         1.0f
                     }
@@ -1198,6 +1211,9 @@ fun DrawingCanvas(
                         }
                         MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                             longPressJob?.cancel()
+                            try {
+                                stylusInputProcessor.renderCommit()
+                            } catch (_: Exception) {}
                             if (isWritingStartedOnPage) {
                                 onStrokeEnded()
                                 isWritingStartedOnPage = false
