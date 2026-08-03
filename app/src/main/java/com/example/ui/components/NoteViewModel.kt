@@ -2837,17 +2837,17 @@ Here is your complete guide to all features and capabilities available in the ap
                     val mutablePoints = stroke.points.toMutableList()
                     points.forEach { point ->
                         val lastPoint = mutablePoints.lastOrNull()
-                        val smoothedPoint = if (lastPoint != null) {
+                        if (lastPoint != null) {
                             val distance = kotlin.math.hypot(point.x - lastPoint.x, point.y - lastPoint.y)
-                            val alpha = (0.45f - (distance / 150f) * 0.27f).coerceIn(0.18f, 0.45f)
-                            val smoothX = lastPoint.x + alpha * (point.x - lastPoint.x)
-                            val smoothY = lastPoint.y + alpha * (point.y - lastPoint.y)
-                            val smoothP = lastPoint.pressure + 0.35f * (point.pressure - lastPoint.pressure)
-                            Point(smoothX, smoothY, smoothP)
+                            // Skip micro-jitter noise (< 0.10f normalized units) to eliminate stationary hardware spikes
+                            if (distance >= 0.10f) {
+                                val smoothP = lastPoint.pressure * 0.2f + point.pressure * 0.8f
+                                val smoothT = lastPoint.tilt * 0.2f + point.tilt * 0.8f
+                                mutablePoints.add(Point(point.x, point.y, smoothP, smoothT))
+                            }
                         } else {
-                            point
+                            mutablePoints.add(point)
                         }
-                        mutablePoints.add(smoothedPoint)
                     }
                     activeStroke = stroke.copy(points = mutablePoints)
                 }

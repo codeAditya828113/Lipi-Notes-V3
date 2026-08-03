@@ -1498,32 +1498,10 @@ fun DrawingCanvas(
                                 // Cached path lookup for completed strokes to avoid re-constructing Path every frame
                                 val path = if (!isLassoed) {
                                     strokePathCache.getOrPut(stroke) {
-                                        val p = androidx.compose.ui.graphics.Path()
-                                        val firstPt = points.first()
-                                        val lx = fromNormalizedX(firstPt.x, strokePage)
-                                        val ly = fromNormalizedY(firstPt.y, strokePage)
-                                        p.moveTo(lx, ly)
-                                        for (i in 1 until points.size) {
-                                            val pt = points[i]
-                                            val pX = fromNormalizedX(pt.x, strokePage)
-                                            val pY = fromNormalizedY(pt.y, strokePage)
-                                            p.lineTo(pX, pY)
-                                        }
-                                        p
+                                        buildSmoothPath(points, strokePage, fromNormalizedX, fromNormalizedY)
                                     }
                                 } else {
-                                    val p = androidx.compose.ui.graphics.Path()
-                                    val firstPt = points.first()
-                                    val lx = fromNormalizedX(firstPt.x, strokePage)
-                                    val ly = fromNormalizedY(firstPt.y, strokePage)
-                                    p.moveTo(lx, ly)
-                                    for (i in 1 until points.size) {
-                                        val pt = points[i]
-                                        val pX = fromNormalizedX(pt.x, strokePage)
-                                        val pY = fromNormalizedY(pt.y, strokePage)
-                                        p.lineTo(pX, pY)
-                                    }
-                                    p
+                                    buildSmoothPath(points, strokePage, fromNormalizedX, fromNormalizedY)
                                 }
 
                                 if (stroke.fillShape && stroke.fillOpacity > 0f) {
@@ -1749,18 +1727,7 @@ fun DrawingCanvas(
                                 val color = androidx.compose.ui.graphics.Color(strokeColorInt).copy(alpha = baseAlpha * alphaMult)
                                 val width = stroke.width
                                 
-                                val path = androidx.compose.ui.graphics.Path()
-                                val firstPt = points.first()
-                                val lx = fromNormalizedX(firstPt.x, strokePage)
-                                val ly = fromNormalizedY(firstPt.y, strokePage)
-                                path.moveTo(lx, ly)
-
-                                for (i in 1 until points.size) {
-                                    val pt = points[i]
-                                    val pX = fromNormalizedX(pt.x, strokePage)
-                                    val pY = fromNormalizedY(pt.y, strokePage)
-                                    path.lineTo(pX, pY)
-                                }
+                                val path = buildSmoothPath(points, strokePage, fromNormalizedX, fromNormalizedY)
 
                                 if (stroke.fillShape && stroke.fillOpacity > 0f) {
                                     drawPath(
@@ -2417,4 +2384,59 @@ fun getImageColorFilter(filter: String): androidx.compose.ui.graphics.ColorFilte
         "high_contrast" -> androidx.compose.ui.graphics.ColorFilter.colorMatrix(androidx.compose.ui.graphics.ColorMatrix().apply { setToSaturation(2.2f) })
         else -> null
     }
+}
+
+fun buildSmoothPath(
+    points: List<com.example.data.Point>,
+    strokePage: Int,
+    fromNormalizedX: (Float, Int) -> Float,
+    fromNormalizedY: (Float, Int) -> Float
+): androidx.compose.ui.graphics.Path {
+    val path = androidx.compose.ui.graphics.Path()
+    if (points.isEmpty()) return path
+
+    val firstPt = points.first()
+    val startX = fromNormalizedX(firstPt.x, strokePage)
+    val startY = fromNormalizedY(firstPt.y, strokePage)
+    path.moveTo(startX, startY)
+
+    if (points.size == 1) {
+        path.lineTo(startX + 0.1f, startY + 0.1f)
+        return path
+    }
+
+    if (points.size == 2) {
+        val p2 = points[1]
+        path.lineTo(fromNormalizedX(p2.x, strokePage), fromNormalizedY(p2.y, strokePage))
+        return path
+    }
+
+    // Mid-point quadratic Bezier curve interpolation for zero angular spikes
+    var p0X = startX
+    var p0Y = startY
+
+    val p1 = points[1]
+    var p1X = fromNormalizedX(p1.x, strokePage)
+    var p1Y = fromNormalizedY(p1.y, strokePage)
+
+    val midX = (p0X + p1X) / 2f
+    val midY = (p0Y + p1Y) / 2f
+    path.lineTo(midX, midY)
+
+    for (i in 2 until points.size) {
+        val pt = points[i]
+        val p2X = fromNormalizedX(pt.x, strokePage)
+        val p2Y = fromNormalizedY(pt.y, strokePage)
+
+        val nextMidX = (p1X + p2X) / 2f
+        val nextMidY = (p1Y + p2Y) / 2f
+
+        path.quadraticTo(p1X, p1Y, nextMidX, nextMidY)
+
+        p1X = p2X
+        p1Y = p2Y
+    }
+    path.lineTo(p1X, p1Y)
+
+    return path
 }
