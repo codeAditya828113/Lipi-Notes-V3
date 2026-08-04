@@ -2839,11 +2839,14 @@ Here is your complete guide to all features and capabilities available in the ap
                         val lastPoint = mutablePoints.lastOrNull()
                         if (lastPoint != null) {
                             val distance = kotlin.math.hypot(point.x - lastPoint.x, point.y - lastPoint.y)
-                            // Skip micro-jitter noise (< 0.10f normalized units) to eliminate stationary hardware spikes
-                            if (distance >= 0.10f) {
-                                val smoothP = lastPoint.pressure * 0.2f + point.pressure * 0.8f
-                                val smoothT = lastPoint.tilt * 0.2f + point.tilt * 0.8f
-                                mutablePoints.add(Point(point.x, point.y, smoothP, smoothT))
+                            // Filter micro-jitter (< 0.02f normalized units) and apply low-pass EMA filter for silky smooth handwriting
+                            if (distance >= 0.02f) {
+                                val alpha = 0.6f
+                                val smoothX = lastPoint.x + alpha * (point.x - lastPoint.x)
+                                val smoothY = lastPoint.y + alpha * (point.y - lastPoint.y)
+                                val smoothP = lastPoint.pressure * 0.3f + point.pressure * 0.7f
+                                val smoothT = lastPoint.tilt * 0.3f + point.tilt * 0.7f
+                                mutablePoints.add(Point(smoothX, smoothY, smoothP, smoothT))
                             }
                         } else {
                             mutablePoints.add(point)

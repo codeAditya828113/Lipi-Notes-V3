@@ -1171,38 +1171,6 @@ fun DrawingCanvas(
                                 val finalYVal = toNormalizedY(snappedY, strokeStartedPage).coerceIn(0f, normH)
                                 pointsList.add(Point(finalXVal, finalYVal, pressure, tilt))
 
-                                // Low-latency predictive path processing using MotionEventPredictor
-                                if (isStylus && motionEventPredictor != null) {
-                                    try {
-                                        val predictedEvent = motionEventPredictor.predict()
-                                        if (predictedEvent != null) {
-                                            val predHist = predictedEvent.historySize
-                                            val pivotX = widthPx / 2f
-                                            val pivotY = heightPx / 2f
-                                            for (i in 0 until predHist) {
-                                                val px = try { predictedEvent.getHistoricalX(activePointerIndex, i) } catch (e: Exception) { predictedEvent.getHistoricalX(i) }
-                                                val py = try { predictedEvent.getHistoricalY(activePointerIndex, i) } catch (e: Exception) { predictedEvent.getHistoricalY(i) }
-                                                val pp = try { predictedEvent.getHistoricalPressure(activePointerIndex, i) } catch (e: Exception) { pressure }
-                                                val pt = try { predictedEvent.getHistoricalAxisValue(MotionEvent.AXIS_TILT, activePointerIndex, i) } catch (e: Exception) { tilt }
-                                                val mPx = (px - pivotX - offset.x) / scale + pivotX
-                                                val mPy = (py - pivotY - offset.y) / scale + pivotY
-                                                val fPx = toNormalizedX(mPx, strokeStartedPage).coerceIn(0f, 600f)
-                                                val fPy = toNormalizedY(mPy, strokeStartedPage).coerceIn(0f, normH)
-                                                pointsList.add(Point(fPx, fPy, pp, pt))
-                                            }
-                                            val predX = try { predictedEvent.getX(activePointerIndex) } catch (e: Exception) { predictedEvent.x }
-                                            val predY = try { predictedEvent.getY(activePointerIndex) } catch (e: Exception) { predictedEvent.y }
-                                            val predP = try { predictedEvent.getPressure(activePointerIndex) } catch (e: Exception) { pressure }
-                                            val predT = try { predictedEvent.getAxisValue(MotionEvent.AXIS_TILT, activePointerIndex) } catch (e: Exception) { tilt }
-                                            val mPx = (predX - pivotX - offset.x) / scale + pivotX
-                                            val mPy = (predY - pivotY - offset.y) / scale + pivotY
-                                            val fPx = toNormalizedX(mPx, strokeStartedPage).coerceIn(0f, 600f)
-                                            val fPy = toNormalizedY(mPy, strokeStartedPage).coerceIn(0f, normH)
-                                            pointsList.add(Point(fPx, fPy, predP, predT))
-                                        }
-                                    } catch (_: Exception) {}
-                                }
-
                                 if (pointsList.isNotEmpty()) {
                                     onStrokeDragged(pointsList)
                                 }
@@ -2411,48 +2379,53 @@ fun buildSmoothPath(
     val path = androidx.compose.ui.graphics.Path()
     if (points.isEmpty()) return path
 
+    val n = points.size
     val firstPt = points.first()
     val startX = fromNormalizedX(firstPt.x, strokePage)
     val startY = fromNormalizedY(firstPt.y, strokePage)
     path.moveTo(startX, startY)
 
-    if (points.size == 1) {
+    if (n == 1) {
         path.lineTo(startX + 0.1f, startY + 0.1f)
         return path
     }
 
-    if (points.size == 2) {
+    if (n == 2) {
         val p2 = points[1]
         path.lineTo(fromNormalizedX(p2.x, strokePage), fromNormalizedY(p2.y, strokePage))
         return path
     }
 
-    // Mid-point quadratic Bezier curve interpolation for zero angular spikes
-    var p0X = startX
-    var p0Y = startY
-
-    val p1 = points[1]
-    var p1X = fromNormalizedX(p1.x, strokePage)
-    var p1Y = fromNormalizedY(p1.y, strokePage)
-
-    val midX = (p0X + p1X) / 2f
-    val midY = (p0Y + p1Y) / 2f
-    path.lineTo(midX, midY)
-
-    for (i in 2 until points.size) {
-        val pt = points[i]
-        val p2X = fromNormalizedX(pt.x, strokePage)
-        val p2Y = fromNormalizedY(pt.y, strokePage)
-
-        val nextMidX = (p1X + p2X) / 2f
-        val nextMidY = (p1Y + p2Y) / 2f
-
-        path.quadraticTo(p1X, p1Y, nextMidX, nextMidY)
-
-        p1X = p2X
-        p1Y = p2Y
+    // Convert all points to screen coordinates
+    val px = FloatArray(n)
+    val py = FloatArray(n)
+    for (i in 0 until n) {
+        px[i] = fromNormalizedX(points[i].x, strokePage)
+        py[i] = fromNormalizedY(points[i].y, strokePage)
     }
-    path.lineTo(p1X, p1Y)
+
+    // Catmull-Rom Spline interpolation converted to Cubic Bezier segments for C1 continuous ultra-smooth handwriting curves
+    for (i in 0 until n - 1) {
+        val p0x = if (i > 0) px[i - 1] else px[i]
+        val p0y = if (i > 0) py[i - 1] else py[i]
+
+        val p1x = px[i]
+        val p1y = py[i]
+
+        val p2x = px[i + 1]
+        val p2y = py[i + 1]
+
+        val p3x = if (i + 2 < n) px[i + 2] else p2x
+        val p3y = if (i + 2 < n) py[i + 2] else p2y
+
+        val cp1x = p1x + (p2x - p0x) / 6f
+        val cp1y = p1y + (p2y - p0y) / 6f
+
+        val cp2x = p2x - (p3x - p1x) / 6f
+        val cp2y = p2y - (p3y - p1y) / 6f
+
+        path.cubicTo(cp1x, cp1y, cp2x, cp2y, p2x, p2y)
+    }
 
     return path
 }

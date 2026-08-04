@@ -3869,36 +3869,188 @@ fun NoteEditorCanvas(
     }
 
     if (showHyperlinkDialog) {
+        val allNotesList by viewModel.allNotes.collectAsState()
+        var linkTypeTab by remember { mutableStateOf(0) }
         var linkTitle by remember { mutableStateOf("") }
         var linkUrl by remember { mutableStateOf("https://") }
+        var selectedTargetNoteId by remember { mutableStateOf(allNotesList.firstOrNull { it.id != selectedNote?.id }?.id ?: 0) }
+        var selectedPageNum by remember { mutableStateOf(1) }
+
         AlertDialog(
             onDismissRequest = { showHyperlinkDialog = false },
-            title = { Text("Insert Hyperlink") },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Link, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Insert Hyperlink", fontWeight = FontWeight.Bold)
+                }
+            },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    OutlinedTextField(
-                        value = linkTitle,
-                        onValueChange = { linkTitle = it },
-                        label = { Text("Link Text / Label") },
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
                         modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = linkUrl,
-                        onValueChange = { linkUrl = it },
-                        label = { Text("URL Address") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                    ) {
+                        FilterChip(
+                            selected = linkTypeTab == 0,
+                            onClick = {
+                                linkTypeTab = 0
+                                if (linkTitle.startsWith("🔗") || linkTitle.startsWith("📄")) linkTitle = ""
+                            },
+                            label = { Text("Web URL", fontSize = 11.sp) },
+                            leadingIcon = { Icon(Icons.Default.Language, contentDescription = null, modifier = Modifier.size(14.dp)) }
+                        )
+                        FilterChip(
+                            selected = linkTypeTab == 1,
+                            onClick = {
+                                linkTypeTab = 1
+                                val targetNote = allNotesList.find { it.id == selectedTargetNoteId } ?: allNotesList.firstOrNull { it.id != selectedNote?.id }
+                                if (targetNote != null) {
+                                    selectedTargetNoteId = targetNote.id
+                                    linkTitle = "🔗 ${targetNote.title}"
+                                    linkUrl = "note://${targetNote.id}"
+                                }
+                            },
+                            label = { Text("Note Link", fontSize = 11.sp) },
+                            leadingIcon = { Icon(Icons.Default.Notes, contentDescription = null, modifier = Modifier.size(14.dp)) }
+                        )
+                        FilterChip(
+                            selected = linkTypeTab == 2,
+                            onClick = {
+                                linkTypeTab = 2
+                                linkTitle = "📄 Jump to Page $selectedPageNum"
+                                linkUrl = "page://$selectedPageNum"
+                            },
+                            label = { Text("Page Link", fontSize = 11.sp) },
+                            leadingIcon = { Icon(Icons.Default.Description, contentDescription = null, modifier = Modifier.size(14.dp)) }
+                        )
+                    }
+
+                    if (linkTypeTab == 0) {
+                        OutlinedTextField(
+                            value = linkTitle,
+                            onValueChange = { linkTitle = it },
+                            label = { Text("Link Text / Label") },
+                            placeholder = { Text("e.g., Reference Webpage") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = linkUrl,
+                            onValueChange = { linkUrl = it },
+                            label = { Text("URL Address") },
+                            placeholder = { Text("https://example.com") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    } else if (linkTypeTab == 1) {
+                        Text("Link to another Note in your library:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                        val otherNotes = allNotesList.filter { it.id != selectedNote?.id }
+                        if (otherNotes.isEmpty()) {
+                            Text("No other notes available to link. Create another note first!", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                        } else {
+                            var expandedNoteDropdown by remember { mutableStateOf(false) }
+                            val currentSelectedNote = allNotesList.find { it.id == selectedTargetNoteId } ?: otherNotes.first()
+
+                            Box(modifier = Modifier.fillMaxWidth()) {
+                                OutlinedButton(
+                                    onClick = { expandedNoteDropdown = true },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text("🔗 ${currentSelectedNote.title}", maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                                        Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                                    }
+                                }
+                                DropdownMenu(
+                                    expanded = expandedNoteDropdown,
+                                    onDismissRequest = { expandedNoteDropdown = false }
+                                ) {
+                                    otherNotes.forEach { noteItem ->
+                                        DropdownMenuItem(
+                                            text = { Text("🔗 ${noteItem.title}") },
+                                            onClick = {
+                                                selectedTargetNoteId = noteItem.id
+                                                linkTitle = "🔗 ${noteItem.title}"
+                                                linkUrl = "note://${noteItem.id}"
+                                                expandedNoteDropdown = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        OutlinedTextField(
+                            value = linkTitle,
+                            onValueChange = { linkTitle = it },
+                            label = { Text("Display Link Label") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    } else {
+                        Text("Link to a specific Page in this Note:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Page $selectedPageNum of ${viewModel.pdfPageCount}", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                            Spacer(modifier = Modifier.weight(1f))
+                            IconButton(
+                                onClick = {
+                                    if (selectedPageNum > 1) {
+                                        selectedPageNum--
+                                        linkTitle = "📄 Jump to Page $selectedPageNum"
+                                        linkUrl = "page://$selectedPageNum"
+                                    }
+                                },
+                                enabled = selectedPageNum > 1
+                            ) {
+                                Icon(Icons.Default.Remove, contentDescription = "Prev Page")
+                            }
+                            IconButton(
+                                onClick = {
+                                    if (selectedPageNum < viewModel.pdfPageCount) {
+                                        selectedPageNum++
+                                        linkTitle = "📄 Jump to Page $selectedPageNum"
+                                        linkUrl = "page://$selectedPageNum"
+                                    }
+                                },
+                                enabled = selectedPageNum < viewModel.pdfPageCount
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = "Next Page")
+                            }
+                        }
+                        OutlinedTextField(
+                            value = linkTitle,
+                            onValueChange = { linkTitle = it },
+                            label = { Text("Display Link Label") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
                 }
             },
             confirmButton = {
                 Button(
                     onClick = {
-                        val formattedLink = "\n[${linkTitle.ifBlank { "Link" }}]($linkUrl)\n"
+                        val finalUrl = if (linkTypeTab == 1) {
+                            "note://$selectedTargetNoteId"
+                        } else if (linkTypeTab == 2) {
+                            "page://$selectedPageNum"
+                        } else {
+                            if (linkUrl.startsWith("http://") || linkUrl.startsWith("https://") || linkUrl.startsWith("note://") || linkUrl.startsWith("page://")) linkUrl else "https://$linkUrl"
+                        }
+                        val formattedLink = "\n[${linkTitle.ifBlank { "Link" }}]($finalUrl)\n"
                         viewModel.appendTextToNoteContent(formattedLink)
                         showHyperlinkDialog = false
                     }
                 ) {
-                    Text("Insert")
+                    Text("Insert Hyperlink")
                 }
             },
             dismissButton = {
@@ -3907,7 +4059,7 @@ fun NoteEditorCanvas(
         )
     }
 
-    if (showLayersDialog) {
+if (showLayersDialog) {
         AlertDialog(
             onDismissRequest = { showLayersDialog = false },
             title = {
@@ -5805,7 +5957,7 @@ fun NoteEditorCanvas(
 
                                     if (!selectedNote.content.isNullOrBlank()) {
                                         Text("Handwriting OCR & Styled Scribbles:", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
-                                        StyledTextRenderer(selectedNote.content, modifier = Modifier.padding(top = 4.dp))
+                                        StyledTextRenderer(selectedNote.content, modifier = Modifier.padding(top = 4.dp), viewModel = viewModel)
                                         Spacer(modifier = Modifier.height(10.dp))
                                     }
 
@@ -7436,7 +7588,7 @@ fun AISummaryCenter(notes: List<NoteEntity>, viewModel: NoteViewModel) {
 
                             if (!note.content.isNullOrBlank()) {
                                 Text("TRANSCRIBED HANDWRITTEN WORDS & SCRIBBLINGS:", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
-                                StyledTextRenderer(note.content, modifier = Modifier.padding(bottom = 8.dp))
+                                StyledTextRenderer(note.content, modifier = Modifier.padding(bottom = 8.dp), viewModel = viewModel)
                             }
 
                             if (!note.audioTranscription.isNullOrBlank()) {
@@ -7945,132 +8097,166 @@ fun FloatingPenSection(
 
 
 @Composable
-fun StyledTextRenderer(content: String, modifier: Modifier = Modifier) {
+fun StyledTextRenderer(content: String, modifier: Modifier = Modifier, viewModel: NoteViewModel? = null) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val allNotesList = viewModel?.allNotes?.collectAsState()?.value ?: emptyList()
+
     androidx.compose.foundation.text.selection.SelectionContainer {
         val lines = content.split("\n")
-    Column(modifier = modifier) {
-        lines.forEach { line ->
-            if (line.trim().isEmpty()) {
-                Spacer(modifier = Modifier.height(6.dp))
-            } else {
-                var displayLine = line
-                var textStyle = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp)
-                var textColor = MaterialTheme.colorScheme.onSurface
-                var fontFamily = FontFamily.Default
-                var fontWeight = FontWeight.Normal
-                var fontStyle = FontStyle.Normal
-                var letterSpacing = TextUnit.Unspecified
-                var lineHeight = TextUnit.Unspecified
-                
-                when {
-                    line.startsWith("[Royal Cursive] ") -> {
-                        displayLine = line.removePrefix("[Royal Cursive] ")
-                        fontFamily = FontFamily.Cursive
-                        fontStyle = FontStyle.Italic
-                        fontWeight = FontWeight.Medium
-                        textColor = Color(0xFF4F46E5) // Elegant deep violet
-                        textStyle = textStyle.copy(fontSize = 17.sp)
+        Column(modifier = modifier) {
+            lines.forEach { line ->
+                if (line.trim().isEmpty()) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                } else {
+                    var displayLine = line
+                    var textStyle = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp)
+                    var textColor = MaterialTheme.colorScheme.onSurface
+                    var fontFamily = FontFamily.Default
+                    var fontWeight = FontWeight.Normal
+                    var fontStyle = FontStyle.Normal
+                    var letterSpacing = TextUnit.Unspecified
+                    var lineHeight = TextUnit.Unspecified
+
+                    when {
+                        line.startsWith("[Royal Cursive] ") -> {
+                            displayLine = line.removePrefix("[Royal Cursive] ")
+                            fontFamily = FontFamily.Cursive
+                            fontStyle = FontStyle.Italic
+                            fontWeight = FontWeight.Medium
+                            textColor = Color(0xFF4F46E5)
+                            textStyle = textStyle.copy(fontSize = 17.sp)
+                        }
+                        line.startsWith("[Vintage Typewriter] ") -> {
+                            displayLine = line.removePrefix("[Vintage Typewriter] ")
+                            fontFamily = FontFamily.Monospace
+                            textColor = Color(0xFF374151)
+                            letterSpacing = 1.2.sp
+                            textStyle = textStyle.copy(fontSize = 14.sp)
+                        }
+                        line.startsWith("[Calligraphy Script] ") -> {
+                            displayLine = line.removePrefix("[Calligraphy Script] ")
+                            fontFamily = FontFamily.Cursive
+                            fontWeight = FontWeight.Bold
+                            textColor = Color(0xFF0F766E)
+                            textStyle = textStyle.copy(fontSize = 19.sp)
+                        }
+                        line.startsWith("[Minimalist Modern] ") -> {
+                            displayLine = line.removePrefix("[Minimalist Modern] ")
+                            fontFamily = FontFamily.SansSerif
+                            fontWeight = FontWeight.Light
+                            textColor = Color(0xFF475569)
+                            letterSpacing = 2.sp
+                            textStyle = textStyle.copy(fontSize = 13.sp)
+                        }
+                        line.startsWith("[Classic Editorial] ") -> {
+                            displayLine = line.removePrefix("[Classic Editorial] ")
+                            fontFamily = FontFamily.Serif
+                            fontWeight = FontWeight.Medium
+                            textColor = Color(0xFF451A03)
+                            lineHeight = 22.sp
+                            textStyle = textStyle.copy(fontSize = 15.sp)
+                        }
+                        line.startsWith("[Chalkboard Sketch] ") -> {
+                            displayLine = line.removePrefix("[Chalkboard Sketch] ")
+                            fontFamily = FontFamily.SansSerif
+                            fontStyle = FontStyle.Italic
+                            textColor = Color(0xFF64748B)
+                            textStyle = textStyle.copy(fontSize = 15.sp)
+                        }
+                        line.startsWith("[Cyber Tech] ") -> {
+                            displayLine = line.removePrefix("[Cyber Tech] ")
+                            fontFamily = FontFamily.Monospace
+                            fontWeight = FontWeight.Bold
+                            textColor = Color(0xFF0D9488)
+                            letterSpacing = 0.8.sp
+                            textStyle = textStyle.copy(fontSize = 13.sp)
+                        }
+                        line.startsWith("[Royal Serif] ") -> {
+                            displayLine = line.removePrefix("[Royal Serif] ")
+                            fontFamily = FontFamily.Serif
+                            fontWeight = FontWeight.SemiBold
+                            textColor = Color(0xFF991B1B)
+                            textStyle = textStyle.copy(fontSize = 16.sp)
+                        }
                     }
-                    line.startsWith("[Vintage Typewriter] ") -> {
-                        displayLine = line.removePrefix("[Vintage Typewriter] ")
-                        fontFamily = FontFamily.Monospace
-                        textColor = Color(0xFF374151) // Dark charcoal
-                        letterSpacing = 1.2.sp
-                        textStyle = textStyle.copy(fontSize = 14.sp)
-                    }
-                    line.startsWith("[Calligraphy Script] ") -> {
-                        displayLine = line.removePrefix("[Calligraphy Script] ")
-                        fontFamily = FontFamily.Cursive
-                        fontWeight = FontWeight.Bold
-                        textColor = Color(0xFF0F766E) // Royal teal
-                        textStyle = textStyle.copy(fontSize = 19.sp)
-                    }
-                    line.startsWith("[Minimalist Modern] ") -> {
-                        displayLine = line.removePrefix("[Minimalist Modern] ")
-                        fontFamily = FontFamily.SansSerif
-                        fontWeight = FontWeight.Light
-                        textColor = Color(0xFF475569) // Cool slate
-                        letterSpacing = 2.sp
-                        textStyle = textStyle.copy(fontSize = 13.sp)
-                    }
-                    line.startsWith("[Classic Editorial] ") -> {
-                        displayLine = line.removePrefix("[Classic Editorial] ")
-                        fontFamily = FontFamily.Serif
-                        fontWeight = FontWeight.Medium
-                        textColor = Color(0xFF451A03) // Dark espresso warm brown
-                        lineHeight = 22.sp
-                        textStyle = textStyle.copy(fontSize = 15.sp)
-                    }
-                    line.startsWith("[Chalkboard Sketch] ") -> {
-                        displayLine = line.removePrefix("[Chalkboard Sketch] ")
-                        fontFamily = FontFamily.SansSerif
-                        fontStyle = FontStyle.Italic
-                        textColor = Color(0xFF64748B) // Chalk gray
-                        textStyle = textStyle.copy(fontSize = 15.sp)
-                    }
-                    line.startsWith("[Cyber Tech] ") -> {
-                        displayLine = line.removePrefix("[Cyber Tech] ")
-                        fontFamily = FontFamily.Monospace
-                        fontWeight = FontWeight.Bold
-                        textColor = Color(0xFF0D9488) // Matrix terminal green
-                        letterSpacing = 0.8.sp
-                        textStyle = textStyle.copy(fontSize = 13.sp)
-                    }
-                    line.startsWith("[Royal Serif] ") -> {
-                        displayLine = line.removePrefix("[Royal Serif] ")
-                        fontFamily = FontFamily.Serif
-                        fontWeight = FontWeight.SemiBold
-                        textColor = Color(0xFF991B1B) // Burgundy red
-                        textStyle = textStyle.copy(fontSize = 16.sp)
-                    }
-                }
-                
-                val linkRegex = Regex("\\[(.*?)\\]\\((.*?)\\)")
-                val annotatedString = androidx.compose.ui.text.buildAnnotatedString {
-                    var lastIndex = 0
-                    val matches = linkRegex.findAll(displayLine)
-                    for (match in matches) {
-                        append(displayLine.substring(lastIndex, match.range.first))
-                        val linkText = match.groupValues[1]
-                        val linkUrl = match.groupValues[2]
-                        
-                        pushStringAnnotation(tag = "URL", annotation = linkUrl)
-                        pushStyle(androidx.compose.ui.text.SpanStyle(color = Color(0xFF3B82F6), textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline))
-                        append(linkText)
-                        pop() // pop style
-                        pop() // pop annotation
-                        lastIndex = match.range.last + 1
-                    }
-                    append(displayLine.substring(lastIndex))
-                }
-                
-                val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
-                androidx.compose.foundation.text.ClickableText(
-                    text = annotatedString,
-                    style = textStyle.copy(
-                        fontFamily = fontFamily,
-                        fontWeight = fontWeight,
-                        fontStyle = fontStyle,
-                        color = textColor,
-                        letterSpacing = letterSpacing,
-                        lineHeight = lineHeight
-                    ),
-                    onClick = { offset ->
-                        annotatedString.getStringAnnotations(tag = "URL", start = offset, end = offset)
-                            .firstOrNull()?.let { annotation ->
-                                try {
-                                    uriHandler.openUri(annotation.item)
-                                } catch (e: Exception) {
-                                    e.printStackTrace()
-                                }
+
+                    val linkRegex = Regex("\\[(.*?)\\]\\((.*?)\\)")
+                    val annotatedString = androidx.compose.ui.text.buildAnnotatedString {
+                        var lastIndex = 0
+                        val matches = linkRegex.findAll(displayLine)
+                        for (match in matches) {
+                            append(displayLine.substring(lastIndex, match.range.first))
+                            val linkText = match.groupValues[1]
+                            val linkUrl = match.groupValues[2]
+
+                            val linkColor = when {
+                                linkUrl.startsWith("note://") -> Color(0xFF6366F1)
+                                linkUrl.startsWith("page://") -> Color(0xFF059669)
+                                else -> Color(0xFF2563EB)
                             }
-                    },
-                    modifier = Modifier.padding(vertical = 2.dp)
-                )
+
+                            pushStringAnnotation(tag = "URL", annotation = linkUrl)
+                            pushStyle(
+                                androidx.compose.ui.text.SpanStyle(
+                                    color = linkColor,
+                                    fontWeight = FontWeight.Bold,
+                                    textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline
+                                )
+                            )
+                            append(linkText)
+                            pop()
+                            pop()
+                            lastIndex = match.range.last + 1
+                        }
+                        append(displayLine.substring(lastIndex))
+                    }
+
+                    val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+                    androidx.compose.foundation.text.ClickableText(
+                        text = annotatedString,
+                        style = textStyle.copy(
+                            fontFamily = fontFamily,
+                            fontWeight = fontWeight,
+                            fontStyle = fontStyle,
+                            color = textColor,
+                            letterSpacing = letterSpacing,
+                            lineHeight = lineHeight
+                        ),
+                        onClick = { offset ->
+                            annotatedString.getStringAnnotations(tag = "URL", start = offset, end = offset)
+                                .firstOrNull()?.let { annotation ->
+                                    val urlItem = annotation.item
+                                    if (urlItem.startsWith("note://")) {
+                                        val targetId = urlItem.removePrefix("note://").toIntOrNull()
+                                        val targetNote = allNotesList.find { it.id == targetId }
+                                        if (targetNote != null) {
+                                            viewModel?.selectNote(targetNote)
+                                            android.widget.Toast.makeText(context, "Navigated to Note: ${targetNote.title} 🔗", android.widget.Toast.LENGTH_SHORT).show()
+                                        } else {
+                                            android.widget.Toast.makeText(context, "Linked Note not found", android.widget.Toast.LENGTH_SHORT).show()
+                                        }
+                                    } else if (urlItem.startsWith("page://")) {
+                                        val targetPage = urlItem.removePrefix("page://").toIntOrNull() ?: 1
+                                        if (viewModel != null) {
+                                            viewModel.setPDFPage(targetPage)
+                                            android.widget.Toast.makeText(context, "Jumped to Page $targetPage 📄", android.widget.Toast.LENGTH_SHORT).show()
+                                        }
+                                    } else {
+                                        try {
+                                            val webUrl = if (urlItem.startsWith("http://") || urlItem.startsWith("https://")) urlItem else "https://$urlItem"
+                                            uriHandler.openUri(webUrl)
+                                        } catch (e: Exception) {
+                                            android.widget.Toast.makeText(context, "Could not open link: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                }
+                        },
+                        modifier = Modifier.padding(vertical = 2.dp)
+                    )
+                }
             }
         }
     }
-}
 }
 
 @Composable
@@ -8422,7 +8608,7 @@ fun ScribbleToTextDialog(
                             Text("No text to preview", style = MaterialTheme.typography.bodySmall, fontStyle = FontStyle.Italic)
                         } else {
                             val activePrefix = writingStyleOptions[selectedStyleIndex].second
-                            StyledTextRenderer(content = activePrefix + convertedText)
+                            StyledTextRenderer(content = activePrefix + convertedText, viewModel = viewModel)
                         }
                     }
                 }
