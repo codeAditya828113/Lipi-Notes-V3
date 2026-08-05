@@ -39,6 +39,7 @@ class MainActivity : ComponentActivity() {
     }
     
     handleIntent(intent)
+    com.example.sync.AutoSyncWorker.schedulePeriodicAutoSync(this, 1)
 
     setContent {
       val isDark = when (viewModel.themeMode) {

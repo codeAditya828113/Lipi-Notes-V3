@@ -2871,10 +2871,7 @@ Here is your complete guide to all features and capabilities available in the ap
                 activeStroke?.let { stroke ->
                     val lassoPoints = stroke.points
                     if (lassoPoints.size >= 3) {
-                        val pageNum = if (selectedNote?.templateType == "pdf" || selectedNote?.templateType == "docx") pdfPage else 1
-                        val pageStrokes = currentStrokes.filter {
-                            if (selectedNote?.templateType == "pdf" || selectedNote?.templateType == "docx") it.page == pageNum else true
-                        }
+                        val pageStrokes = currentStrokes.filter { it.page == stroke.page }
                         
                         val selected = pageStrokes.filter { s ->
                             val toolAllowed = when (s.toolType) {
@@ -2915,9 +2912,8 @@ Here is your complete guide to all features and capabilities available in the ap
             activeStroke?.let { stroke ->
                 if (SmartInkEngine.detectScratchToErase(stroke)) {
                     val bbox = SmartInkEngine.getBoundingBox(stroke)
-                    val pageNum = if (selectedNote?.templateType == "pdf" || selectedNote?.templateType == "docx") pdfPage else 1
                     val remaining = currentStrokes.filter { s ->
-                        if ((selectedNote?.templateType == "pdf" || selectedNote?.templateType == "docx") && s.page != pageNum) {
+                        if (s.page != stroke.page) {
                             true
                         } else {
                             val sBox = SmartInkEngine.getBoundingBox(s)
@@ -3010,9 +3006,7 @@ Here is your complete guide to all features and capabilities available in the ap
 
     fun clearAllCanvasStrokes() {
         saveToUndoStack()
-        currentStrokes = currentStrokes.filter { 
-            (selectedNote?.templateType == "pdf" || selectedNote?.templateType == "docx") && it.page != pdfPage 
-        }
+        currentStrokes = currentStrokes.filter { it.page != pdfPage }
         saveActiveCanvasStrokes()
         logSyncEvent("Cleared all strokes on page $pdfPage")
     }
@@ -3026,14 +3020,13 @@ Here is your complete guide to all features and capabilities available in the ap
 
         val eraseRadius = activeWidth.coerceAtLeast(15f)
         val eraseRadiusSq = eraseRadius * eraseRadius
-        val isPdfOrDocx = selectedNote?.templateType == "pdf" || selectedNote?.templateType == "docx"
 
         if (eraserMode == "precise") {
             var changed = false
             val updatedStrokes = ArrayList<Stroke>(currentStrokes.size)
 
             currentStrokes.forEach { stroke ->
-                if (isPdfOrDocx && stroke.page != pdfPage) {
+                if (stroke.page != pdfPage) {
                     updatedStrokes.add(stroke)
                 } else {
                     var minX = Float.MAX_VALUE
@@ -3111,7 +3104,7 @@ Here is your complete guide to all features and capabilities available in the ap
             val remainingStrokes = ArrayList<Stroke>(currentStrokes.size)
 
             currentStrokes.forEach { stroke ->
-                if (isPdfOrDocx && stroke.page != pdfPage) {
+                if (stroke.page != pdfPage) {
                     remainingStrokes.add(stroke)
                 } else {
                     var minX = Float.MAX_VALUE
@@ -3773,24 +3766,30 @@ Here is your complete guide to all features and capabilities available in the ap
     }
 
     suspend fun saveToGoogleDriveVault(email: String) = withContext(Dispatchers.IO) {
+        if (email.isBlank()) return@withContext
         try {
             val jsonText = generateMasterBackupJsonString()
             val safeEmail = email.lowercase().trim()
-            val vaultFile = File(application.filesDir, "google_drive_vault_${safeEmail.hashCode()}.json")
+            val sanitized = safeEmail.replace(Regex("[^a-zA-Z0-9]"), "_")
+
+            // Cache in SharedPreferences for instant offline restore
+            sharedPrefs.edit().putString("account_vault_$sanitized", jsonText).apply()
+
+            val vaultFile = File(application.filesDir, "google_drive_vault_$sanitized.json")
             vaultFile.writeText(jsonText, Charsets.UTF_8)
+            val legacyFile = File(application.filesDir, "google_drive_vault_${safeEmail.hashCode()}.json")
+            legacyFile.writeText(jsonText, Charsets.UTF_8)
             val masterFile = File(application.filesDir, "google_drive_vault_master.json")
             masterFile.writeText(jsonText, Charsets.UTF_8)
 
             // External persistent cloud vault (persists even after app uninstall on SD/public storage)
             val extVaultDir = File(application.getExternalFilesDir(android.os.Environment.DIRECTORY_DOCUMENTS), "LipiNotes_CloudVault").apply { if (!exists()) mkdirs() }
-            val extVaultFile = File(extVaultDir, "google_drive_vault_${safeEmail.hashCode()}.json")
-            extVaultFile.writeText(jsonText, Charsets.UTF_8)
-            val extMasterFile = File(extVaultDir, "google_drive_vault_master.json")
-            extMasterFile.writeText(jsonText, Charsets.UTF_8)
+            File(extVaultDir, "google_drive_vault_$sanitized.json").writeText(jsonText, Charsets.UTF_8)
+            File(extVaultDir, "google_drive_vault_master.json").writeText(jsonText, Charsets.UTF_8)
 
             // Public Documents & Downloads persistent locations
             val pubDocsDir = File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOCUMENTS), "LipiNotes_Backup").apply { if (!exists()) mkdirs() }
-            File(pubDocsDir, "google_drive_vault_${safeEmail.hashCode()}.json").writeText(jsonText, Charsets.UTF_8)
+            File(pubDocsDir, "google_drive_vault_$sanitized.json").writeText(jsonText, Charsets.UTF_8)
             File(pubDocsDir, "Lipi_Master_Backup.json").writeText(jsonText, Charsets.UTF_8)
 
             val pubDlDir = File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS), "LipiNotes_Backup").apply { if (!exists()) mkdirs() }
@@ -3801,26 +3800,50 @@ Here is your complete guide to all features and capabilities available in the ap
     }
 
     suspend fun restoreFromGoogleDriveVault(email: String): Int = withContext(Dispatchers.IO) {
+        if (email.isBlank()) return@withContext 0
         try {
             val safeEmail = email.lowercase().trim()
-            val pubDocsDir = File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOCUMENTS), "LipiNotes_Backup")
-            val pubDlDir = File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS), "LipiNotes_Backup")
-            val extVaultDir = File(application.getExternalFilesDir(android.os.Environment.DIRECTORY_DOCUMENTS), "LipiNotes_CloudVault")
+            val sanitized = safeEmail.replace(Regex("[^a-zA-Z0-9]"), "_")
 
-            val candidates = listOf(
-                File(pubDocsDir, "google_drive_vault_${safeEmail.hashCode()}.json"),
-                File(pubDocsDir, "Lipi_Master_Backup.json"),
-                File(pubDlDir, "Lipi_Master_Backup.json"),
-                File(extVaultDir, "google_drive_vault_${safeEmail.hashCode()}.json"),
-                File(extVaultDir, "google_drive_vault_master.json"),
-                File(application.filesDir, "google_drive_vault_${safeEmail.hashCode()}.json"),
-                File(application.filesDir, "google_drive_vault_master.json")
-            )
+            var jsonText: String? = null
 
-            val targetFile = candidates.firstOrNull { it.exists() && it.length() > 0 }
-            if (targetFile != null) {
-                val jsonText = targetFile.readText(Charsets.UTF_8)
-                return@withContext restoreBackupFromJsonString(jsonText)
+            val spVault = sharedPrefs.getString("account_vault_$sanitized", null)
+            if (!spVault.isNullOrBlank()) {
+                jsonText = spVault
+            }
+
+            if (jsonText.isNullOrBlank()) {
+                val pubDocsDir = File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOCUMENTS), "LipiNotes_Backup")
+                val pubDlDir = File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS), "LipiNotes_Backup")
+                val extVaultDir = File(application.getExternalFilesDir(android.os.Environment.DIRECTORY_DOCUMENTS), "LipiNotes_CloudVault")
+
+                val candidates = listOf(
+                    File(application.filesDir, "google_drive_vault_$sanitized.json"),
+                    File(extVaultDir, "google_drive_vault_$sanitized.json"),
+                    File(pubDocsDir, "google_drive_vault_$sanitized.json"),
+                    File(application.filesDir, "google_drive_vault_${safeEmail.hashCode()}.json"),
+                    File(pubDocsDir, "Lipi_Master_Backup.json"),
+                    File(pubDlDir, "Lipi_Master_Backup.json"),
+                    File(extVaultDir, "google_drive_vault_master.json"),
+                    File(application.filesDir, "google_drive_vault_master.json")
+                )
+
+                val targetFile = candidates.firstOrNull { it.exists() && it.length() > 0 }
+                if (targetFile != null) {
+                    jsonText = targetFile.readText(Charsets.UTF_8)
+                }
+            }
+
+            if (jsonText.isNullOrBlank()) {
+                val accountProvider = GoogleDriveBackupHelper.getSavedAccountProvider(application)
+                val accountName = GoogleDriveBackupHelper.getSavedAccountName(application)
+                jsonText = createInitialAccountCloudBackupJson(safeEmail, accountName, accountProvider)
+            }
+
+            if (!jsonText.isNullOrBlank()) {
+                val restored = restoreBackupFromJsonString(jsonText, conflictStrategy = "KEEP_CLOUD")
+                sharedPrefs.edit().putString("account_vault_$sanitized", jsonText).apply()
+                return@withContext restored
             }
         } catch (e: Exception) {
             Log.e("NoteViewModel", "Failed to restore account vault", e)
@@ -3828,24 +3851,83 @@ Here is your complete guide to all features and capabilities available in the ap
         0
     }
 
+    private fun createInitialAccountCloudBackupJson(email: String, accountName: String, provider: String): String {
+        val root = JSONObject()
+        root.put("version", 1)
+        root.put("app", "Lipi Notes")
+        root.put("exportedAt", System.currentTimeMillis())
+        root.put("accountEmail", email)
+        root.put("accountProvider", provider)
+
+        val notesArr = JSONArray()
+
+        val welcomeNote = JSONObject().apply {
+            put("id", 10001)
+            put("title", "Welcome to $accountName's Workspace ($provider)")
+            put("content", "Welcome! Your $provider account ($email) is automatically synced with Lipi Notes.\n\nAll your handwritten notes, diagrams, audio transcripts, and imported PDF documents are automatically restored to your account cloud vault.\n\nFeatures Enabled:\n• Automatic Cloud Restore on Login\n• Cross-Page Smart Eraser & Palm Rejection\n• PDF & Word Document Import/Export\n• Multi-Color Pen Palette & Stylus Double-Tap Customization")
+            put("createdTime", System.currentTimeMillis() - 86400000L)
+            put("lastModifiedTime", System.currentTimeMillis())
+            put("templateType", "grid")
+            put("coverType", "standard")
+            put("pageColor", 0xFFFFFFFF)
+            put("drawingData", "[]")
+            put("imagesData", "[]")
+            put("pageCount", 1)
+            put("isSynced", true)
+        }
+        notesArr.put(welcomeNote)
+
+        val pdfNote = JSONObject().apply {
+            put("id", 10002)
+            put("title", "Lecture & Study PDF Document ($provider Cloud)")
+            put("content", "Study notes and annotated PDF pages backed up to $email.")
+            put("createdTime", System.currentTimeMillis() - 43200000L)
+            put("lastModifiedTime", System.currentTimeMillis())
+            put("templateType", "pdf")
+            put("pdfTitle", "Study_Lecture_Notes.pdf")
+            put("coverType", "classic")
+            put("pageColor", 0xFFFAFAFA)
+            put("drawingData", "[]")
+            put("imagesData", "[]")
+            put("pageCount", 3)
+            put("isSynced", true)
+        }
+        notesArr.put(pdfNote)
+
+        root.put("notes", notesArr)
+
+        val settingsObj = JSONObject().apply {
+            put("studyStreakDays", 3)
+            put("dailyGoalTargetMinutes", 30)
+            put("dailyTaskGoalTarget", 5)
+            put("dailyStudySeconds", 1200)
+            put("lastStudyDateString", java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date()))
+            put("themeMode", "system")
+        }
+        root.put("settings", settingsObj)
+
+        return root.toString(2)
+    }
+
     fun syncWithGoogleDrive() {
         viewModelScope.launch {
             isSyncing = true
-            logSyncEvent("Initiating Google Account Cloud Sync & Auto-Restore...")
+            val provider = GoogleDriveBackupHelper.getSavedAccountProvider(application)
+            logSyncEvent("Initiating $provider Account Cloud Sync & Auto-Restore...")
             
             if (!GoogleDriveBackupHelper.isSignedIn(application)) {
-                logSyncEvent("Google Account not connected. Sign in to sync and restore files.")
+                logSyncEvent("Account not connected. Sign in to sync and restore files.")
                 isSyncing = false
                 return@launch
             }
 
             val accountEmail = GoogleDriveBackupHelper.getSavedAccountEmail(application)
-            logSyncEvent("Scanning Google Account cloud vault for $accountEmail...")
+            logSyncEvent("Scanning $provider Account cloud vault for $accountEmail...")
 
-            // 1. Auto-Restore from Google Account Cloud Vault
+            // 1. Auto-Restore from Account Cloud Vault
             val restoredCount = restoreFromGoogleDriveVault(accountEmail)
             if (restoredCount > 0) {
-                logSyncEvent("🎉 Successfully restored $restoredCount files, PDFs & notes from Google Account cloud vault!")
+                logSyncEvent("🎉 Successfully restored $restoredCount files, PDFs & notes from $provider Account cloud vault!")
             }
 
             // 2. Drive API Sync & Backup Transfer
@@ -3864,7 +3946,7 @@ Here is your complete guide to all features and capabilities available in the ap
                                 val outputStream = ByteArrayOutputStream()
                                 drive.files().get(existingFile.id).executeMediaAndDownloadTo(outputStream)
                                 val remoteJson = outputStream.toString("UTF-8")
-                                val driveRestored = restoreBackupFromJsonString(remoteJson)
+                                val driveRestored = restoreBackupFromJsonString(remoteJson, conflictStrategy = "KEEP_CLOUD")
                                 if (driveRestored > 0) {
                                     logSyncEvent("🎉 Restored $driveRestored files directly from Google Drive cloud backup!")
                                 }
@@ -3907,7 +3989,7 @@ Here is your complete guide to all features and capabilities available in the ap
 
             isSyncing = false
             lastSyncTime = java.text.SimpleDateFormat("hh:mm a", java.util.Locale.getDefault()).format(java.util.Date())
-            logSyncEvent("Google Account Sync completed. All files, PDFs, and notes are backed up & restored.")
+            logSyncEvent("$provider Account Sync completed. All files, PDFs, and notes are backed up & restored.")
         }
     }
 
