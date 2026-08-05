@@ -140,9 +140,58 @@ fun NoteinApp(
     val scope = rememberCoroutineScope()
 
     val context = androidx.compose.ui.platform.LocalContext.current
-    // Intercept Back Gesture in Full View Mode to cleanly exit full view mode back to normal mode
-    androidx.activity.compose.BackHandler(enabled = viewModel.isFullscreen) {
-        viewModel.isFullscreen = false
+    val tabStack = remember { mutableStateListOf("home") }
+
+    fun navigateToTab(tab: String, filter: String? = null) {
+        if (filter != null) {
+            selectedFilter = filter
+        }
+        if (tab == "home") {
+            tabStack.clear()
+            tabStack.add("home")
+            activeTab = "home"
+        } else {
+            if (tab != activeTab) {
+                activeTab = tab
+                if (tabStack.lastOrNull() != tab) {
+                    tabStack.add(tab)
+                }
+            }
+        }
+    }
+
+    val isBackHandlerEnabled = drawerState.isOpen ||
+            viewModel.isFullscreen ||
+            selectedNote != null ||
+            searchKeyword.isNotEmpty() ||
+            tabStack.size > 1 ||
+            activeTab != "home"
+
+    // Intercept Back Gesture to navigate step-by-step back to previous section before exiting
+    androidx.activity.compose.BackHandler(enabled = isBackHandlerEnabled) {
+        when {
+            drawerState.isOpen -> {
+                scope.launch { drawerState.close() }
+            }
+            viewModel.isFullscreen -> {
+                viewModel.isFullscreen = false
+            }
+            selectedNote != null -> {
+                viewModel.selectNote(null)
+            }
+            searchKeyword.isNotEmpty() -> {
+                searchKeyword = ""
+            }
+            tabStack.size > 1 -> {
+                tabStack.removeAt(tabStack.lastIndex)
+                val prevTab = tabStack.lastOrNull() ?: "home"
+                activeTab = prevTab
+            }
+            activeTab != "home" -> {
+                activeTab = "home"
+                selectedFilter = "All Notes"
+            }
+        }
     }
 
     LaunchedEffect(viewModel.isFullscreen) {
@@ -181,7 +230,7 @@ fun NoteinApp(
                         viewModel = viewModel,
                         activeTab = activeTab,
                         onTabChange = { tab ->
-                            activeTab = tab
+                            navigateToTab(tab)
                             scope.launch { drawerState.close() }
                         },
                         selectedFilter = selectedFilter,
@@ -207,25 +256,25 @@ fun NoteinApp(
                             icon = { Icon(Icons.Default.Home, contentDescription = "Home") },
                             label = { Text("Home") },
                             selected = activeTab == "home",
-                            onClick = { activeTab = "home" }
+                            onClick = { navigateToTab("home") }
                         )
                         NavigationBarItem(
                             icon = { Icon(Icons.Default.Edit, contentDescription = "Notes") },
                             label = { Text("Notes") },
                             selected = activeTab == "notes",
-                            onClick = { activeTab = "notes" }
+                            onClick = { navigateToTab("notes") }
                         )
                         NavigationBarItem(
                             icon = { Icon(Icons.Default.Cloud, contentDescription = "Sync") },
                             label = { Text("Backup") },
                             selected = activeTab == "sync",
-                            onClick = { activeTab = "sync" }
+                            onClick = { navigateToTab("sync") }
                         )
                         NavigationBarItem(
                             icon = { Icon(Icons.Default.AutoAwesome, contentDescription = "AI Hub") },
                             label = { Text("AI Hub") },
                             selected = activeTab == "ai",
-                            onClick = { activeTab = "ai" }
+                            onClick = { navigateToTab("ai") }
                         )
                     }
                 }
@@ -247,7 +296,7 @@ fun NoteinApp(
                             notes = notes,
                             viewModel = viewModel,
                             activeTab = activeTab,
-                            onTabChange = { activeTab = it },
+                            onTabChange = { navigateToTab(it) },
                             selectedFilter = selectedFilter,
                             onFilterChange = { selectedFilter = it },
                             searchKeyword = searchKeyword,
@@ -275,12 +324,10 @@ fun NoteinApp(
                                     notes = notes,
                                     viewModel = viewModel,
                                     onNavigateToNotes = {
-                                        selectedFilter = "All Notes"
-                                        activeTab = "notes"
+                                        navigateToTab("notes", "All Notes")
                                     },
                                     onNavigateToNotesWithFilter = { filter ->
-                                        selectedFilter = filter
-                                        activeTab = "notes"
+                                        navigateToTab("notes", filter)
                                     },
                                     onMenuClick = { scope.launch { drawerState.open() } },
                                     isTablet = isTablet
@@ -301,7 +348,7 @@ fun NoteinApp(
                                     onToggleSidebar = { isSidebarExpanded = !isSidebarExpanded },
                                     isNoteListExpanded = isNoteListExpanded,
                                     onToggleNoteList = { isNoteListExpanded = !isNoteListExpanded },
-                                    onHomeClick = { activeTab = "home" },
+                                    onHomeClick = { navigateToTab("home") },
                                     onOpenMenu = { scope.launch { drawerState.open() } }
                                 )
                             }
@@ -324,7 +371,7 @@ fun NoteinApp(
             onCreate = { title, templateType ->
                 viewModel.createNewNote(title, templateType)
                 showCreateDialog = false
-                activeTab = "notes" // Switch back to editor
+                navigateToTab("notes") // Switch back to editor
             }
         )
     }
@@ -911,113 +958,27 @@ fun NoteWorkspace(
                     )
                 }
             } else {
-                Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-                    Column(modifier = Modifier.fillMaxSize()) {
-                        NoteListHeader(
-                            searchKeyword = searchKeyword,
-                            onSearchChange = onSearchChange,
-                            onCreateNoteClick = onCreateNoteClick,
-                            onImportPdfClick = { pdfPickerLauncher.launch("application/pdf") },
-                            onImportDocxClick = { docxPickerLauncher.launch("application/vnd.openxmlformats-officedocument.wordprocessingml.document") },
-                            selectedFilter = selectedFilter,
-                            onFilterSelected = onFilterSelected,
-                            onMenuClick = onOpenMenu,
-                            onHomeClick = onHomeClick,
-                            isTablet = false,
-                            viewModel = viewModel,
-                            isGridView = isGridView,
-                            onToggleGridView = { isGridView = !isGridView },
-                            selectedSortOption = selectedSortOption,
-                            onSortOptionSelected = { selectedSortOption = it }
-                        )
-
-                        AnimatedContent(
-                            targetState = selectedFilter,
-                            transitionSpec = {
-                                (fadeIn(animationSpec = tween(220, easing = FastOutSlowInEasing)) +
-                                        slideInVertically(animationSpec = tween(220, easing = FastOutSlowInEasing), initialOffsetY = { 20 }))
-                                    .togetherWith(
-                                        fadeOut(animationSpec = tween(160, easing = FastOutSlowInEasing))
-                                    )
-                            },
-                            label = "FilterSectionSwitchAnimation",
-                            modifier = Modifier.weight(1f).fillMaxWidth()
-                        ) { _ ->
-                            NoteList(
-                                notes = filteredNotes,
-                                selectedNote = null,
-                                onSelect = { viewModel.selectNote(it) },
-                                onDelete = { viewModel.deleteNote(it) },
-                                onRename = { note, newTitle -> viewModel.renameNote(note, newTitle) },
-                                onDuplicate = { viewModel.duplicateNote(it) },
-                                viewModel = viewModel,
-                                isGridView = isGridView,
-                                starredNoteIds = starredNoteIds,
-                                onToggleStar = { id ->
-                                    starredNoteIds = if (starredNoteIds.contains(id)) starredNoteIds - id else starredNoteIds + id
-                                }
-                            )
-                        }
-                    }
-                
-                // Floating Action Buttons on bottom right
-                var expandedFab by remember { mutableStateOf(false) }
-                Column(
-                    modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 32.dp, end = 32.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    androidx.compose.animation.AnimatedVisibility(
-                        visible = expandedFab,
-                        enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.slideInVertically(initialOffsetY = { it / 2 }),
-                        exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.slideOutVertically(targetOffsetY = { it / 2 })
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(16.dp)
-                        ) {
-                            FloatingActionButton(
-                                onClick = { 
-                                    expandedFab = false
-                                    pdfPickerLauncher.launch("application/pdf") 
-                                },
-                                containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                                shape = CircleShape,
-                                modifier = Modifier.size(48.dp)
-                            ) {
-                                Icon(Icons.Default.PictureAsPdf, contentDescription = "Import PDF", modifier = Modifier.size(24.dp))
-                            }
-                            FloatingActionButton(
-                                onClick = { 
-                                    expandedFab = false
-                                    onCreateNoteClick() 
-                                },
-                                containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                                shape = CircleShape,
-                                modifier = Modifier.size(48.dp)
-                            ) {
-                                Icon(Icons.Default.NoteAdd, contentDescription = "Create Notebook", modifier = Modifier.size(24.dp))
-                            }
-                        }
-                    }
-
-                    FloatingActionButton(
-                        onClick = { expandedFab = !expandedFab },
-                        containerColor = MaterialTheme.colorScheme.primaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                        shape = CircleShape,
-                        modifier = Modifier.size(64.dp)
-                    ) {
-                        val icon = if (expandedFab) Icons.Default.Close else Icons.Default.Add
-                        Icon(icon, contentDescription = "Menu", modifier = Modifier.size(32.dp))
-                    }
-                }
+                RedesignedAllNotesView(
+                    notes = notes,
+                    selectedNote = selectedNote,
+                    viewModel = viewModel,
+                    isTablet = isTablet,
+                    searchKeyword = searchKeyword,
+                    onSearchChange = onSearchChange,
+                    onCreateNoteClick = onCreateNoteClick,
+                    selectedFilter = selectedFilter,
+                    onFilterSelected = onFilterSelected,
+                    onHomeClick = onHomeClick,
+                    onOpenMenu = onOpenMenu,
+                    onSelectNote = { viewModel.selectNote(it) },
+                    onDeleteNote = { viewModel.deleteNote(it) },
+                    onRenameNote = { note, newTitle -> viewModel.renameNote(note, newTitle) },
+                    onDuplicateNote = { viewModel.duplicateNote(it) },
+                    modifier = Modifier.fillMaxSize()
+                )
             }
         }
     }
-}
 }
 
 @Composable
@@ -4356,6 +4317,55 @@ if (showLayersDialog) {
                         )
                     }
                     
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Pressure Sensitivity Calibration Launch Card
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable {
+                                viewModel.showPressureCalibrationDialog = true
+                            },
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                Icon(
+                                    imageVector = Icons.Default.Tune,
+                                    contentDescription = "Calibration Utility",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column {
+                                    Text(
+                                        text = "Pressure Sensitivity Calibration",
+                                        fontWeight = FontWeight.Bold,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = "Calibrate stroke weight response curves & deadzones with live test pad.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                            Icon(
+                                imageVector = Icons.Default.ChevronRight,
+                                contentDescription = "Open Calibration Utility",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                    
                     Spacer(modifier = Modifier.height(20.dp))
                     
                     Text(
@@ -4418,6 +4428,13 @@ if (showLayersDialog) {
                 }
             }
         }
+    }
+
+    if (viewModel.showPressureCalibrationDialog) {
+        StylusPressureCalibrationDialog(
+            viewModel = viewModel,
+            onDismiss = { viewModel.showPressureCalibrationDialog = false }
+        )
     }
 
     LaunchedEffect(selectedNote.id) {
@@ -4923,8 +4940,24 @@ if (showLayersDialog) {
                         }
                     }
 
-                    // Extract PDF Text (Google ML Kit)
+                    // Extract PDF Text (Google ML Kit) & PDF Annotation Mode
                     if (selectedNote.templateType == "pdf" || selectedNote.templateType == "docx" || !selectedNote.pdfTitle.isNullOrEmpty()) {
+                        IconButton(
+                            onClick = {
+                                viewModel.showPdfAnnotationViewer = true
+                            },
+                            modifier = Modifier
+                                .size(32.dp)
+                                .testTag("open_pdf_annotation_mode_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.EditNote,
+                                contentDescription = "Open PDF Annotation Viewer & Drive Sync",
+                                tint = Color(0xFFD32F2F), // Red PDF Accent
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+
                         IconButton(
                             onClick = {
                                 viewModel.extractPdfTextWithMlKit()
@@ -6012,6 +6045,23 @@ if (showLayersDialog) {
             viewModel = viewModel,
             onDismiss = { showHandwrittenSearchDialog = false }
         )
+    }
+
+    if (viewModel.showPdfAnnotationViewer) {
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { viewModel.showPdfAnnotationViewer = false },
+            properties = androidx.compose.ui.window.DialogProperties(
+                usePlatformDefaultWidth = false,
+                decorFitsSystemWindows = false
+            )
+        ) {
+            PdfAnnotationViewer(
+                note = selectedNote,
+                viewModel = viewModel,
+                onClose = { viewModel.showPdfAnnotationViewer = false },
+                modifier = Modifier.fillMaxSize()
+            )
+        }
     }
 }
 

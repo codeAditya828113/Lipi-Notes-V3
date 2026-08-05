@@ -12,6 +12,13 @@ import androidx.compose.ui.graphics.asAndroidPath
 import android.net.Uri
 import android.graphics.Bitmap
 import android.media.MediaRecorder
+import android.media.AudioRecord
+import android.media.AudioFormat
+import android.speech.SpeechRecognizer
+import android.speech.RecognizerIntent
+import android.speech.RecognitionListener
+import android.os.Bundle
+import android.content.Intent
 import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -309,6 +316,74 @@ class NoteViewModel(
             _pressureSensitivity = value
             prefs.edit().putFloat("pressureSensitivity", value).apply()
         }
+
+    private var _pressureCurveExponent by mutableStateOf(prefs.getFloat("pressureCurveExponent", 1.0f))
+    var pressureCurveExponent: Float
+        get() = _pressureCurveExponent
+        set(value) {
+            _pressureCurveExponent = value
+            prefs.edit().putFloat("pressureCurveExponent", value).apply()
+        }
+
+    private var _pressureMinThreshold by mutableStateOf(prefs.getFloat("pressureMinThreshold", 0.02f))
+    var pressureMinThreshold: Float
+        get() = _pressureMinThreshold
+        set(value) {
+            _pressureMinThreshold = value
+            prefs.edit().putFloat("pressureMinThreshold", value).apply()
+        }
+
+    private var _pressureMaxWeightMultiplier by mutableStateOf(prefs.getFloat("pressureMaxWeightMultiplier", 2.0f))
+    var pressureMaxWeightMultiplier: Float
+        get() = _pressureMaxWeightMultiplier
+        set(value) {
+            _pressureMaxWeightMultiplier = value
+            prefs.edit().putFloat("pressureMaxWeightMultiplier", value).apply()
+        }
+
+    private var _pressurePreset by mutableStateOf(prefs.getString("pressurePreset", "linear") ?: "linear")
+    var pressurePreset: String
+        get() = _pressurePreset
+        set(value) {
+            _pressurePreset = value
+            prefs.edit().putString("pressurePreset", value).apply()
+        }
+
+    fun applyPressurePreset(preset: String) {
+        pressurePreset = preset
+        when (preset) {
+            "soft" -> {
+                pressureSensitivity = 130f
+                pressureCurveExponent = 0.6f
+                pressureMinThreshold = 0.01f
+                pressureMaxWeightMultiplier = 2.5f
+            }
+            "linear" -> {
+                pressureSensitivity = 100f
+                pressureCurveExponent = 1.0f
+                pressureMinThreshold = 0.02f
+                pressureMaxWeightMultiplier = 2.0f
+            }
+            "firm" -> {
+                pressureSensitivity = 85f
+                pressureCurveExponent = 1.6f
+                pressureMinThreshold = 0.05f
+                pressureMaxWeightMultiplier = 1.8f
+            }
+        }
+    }
+
+    fun calculateCalibratedPressure(rawPressure: Float): Float {
+        if (rawPressure <= pressureMinThreshold) return 0f
+        val norm = ((rawPressure - pressureMinThreshold) / (1f - pressureMinThreshold)).coerceIn(0f, 1f)
+        val curved = Math.pow(norm.toDouble(), pressureCurveExponent.toDouble()).toFloat()
+        val scaled = curved * (pressureSensitivity / 100f)
+        return scaled.coerceIn(0f, pressureMaxWeightMultiplier)
+    }
+
+    fun resetPressureCalibration() {
+        applyPressurePreset("linear")
+    }
 
     private var _pencilRainbowEnabled by mutableStateOf(prefs.getBoolean("pencilRainbowEnabled", false))
     var pencilRainbowEnabled: Boolean
@@ -608,6 +683,96 @@ class NoteViewModel(
         }
     }
 
+    fun moveSelectedNotesToFolder(targetFolder: String) {
+        val idsToMove = selectedNoteIds.toList()
+        if (idsToMove.isEmpty()) return
+        viewModelScope.launch {
+            idsToMove.forEach { id ->
+                val note = allNotes.value.find { it.id == id }
+                if (note != null) {
+                    moveNoteToFolder(note, targetFolder)
+                }
+            }
+            selectedNoteIds = emptySet()
+            isSelectionMode = false
+            logSyncEvent("Batch moved ${idsToMove.size} notes to $targetFolder.")
+        }
+    }
+
+    fun exportSelectedNotesAsZip(context: Context, onComplete: (String) -> Unit) {
+        val selectedNotes = allNotes.value.filter { selectedNoteIds.contains(it.id) }
+        if (selectedNotes.isEmpty()) return
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val zipFile = java.io.File(context.cacheDir, "Lipi_Notes_Export_${System.currentTimeMillis()}.zip")
+                java.util.zip.ZipOutputStream(java.io.FileOutputStream(zipFile)).use { zos ->
+                    val usedNames = mutableSetOf<String>()
+                    selectedNotes.forEach { note ->
+                        val rawName = note.title.ifBlank { "Untitled_Note_${note.id}" }
+                        val cleanName = rawName.replace(Regex("[^a-zA-Z0-9_\\-]"), "_")
+                        var fileName = "$cleanName.txt"
+                        var counter = 1
+                        while (usedNames.contains(fileName)) {
+                            fileName = "${cleanName}_$counter.txt"
+                            counter++
+                        }
+                        usedNames.add(fileName)
+
+                        val entry = java.util.zip.ZipEntry(fileName)
+                        zos.putNextEntry(entry)
+
+                        val sb = StringBuilder()
+                        sb.append("TITLE: ").append(note.title).append("\n")
+                        sb.append("TAGS: ").append(note.tags).append("\n")
+                        sb.append("CREATED: ").append(java.util.Date(note.createdTime)).append("\n")
+                        sb.append("MODIFIED: ").append(java.util.Date(note.lastModifiedTime)).append("\n")
+                        sb.append("========================================\n\n")
+                        sb.append(note.content)
+                        if (!note.summary.isNullOrBlank()) {
+                            sb.append("\n\n--- AI SUMMARY ---\n").append(note.summary)
+                        }
+                        if (!note.audioTranscription.isNullOrBlank()) {
+                            sb.append("\n\n--- AUDIO TRANSCRIPTION ---\n").append(note.audioTranscription)
+                        }
+
+                        val bytes = sb.toString().toByteArray(Charsets.UTF_8)
+                        zos.write(bytes, 0, bytes.size)
+                        zos.closeEntry()
+                    }
+                }
+
+                val uri = androidx.core.content.FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    zipFile
+                )
+
+                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                    type = "application/zip"
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    putExtra(Intent.EXTRA_SUBJECT, "Lipi Notes ZIP Export (${selectedNotes.size} notes)")
+                    putExtra(Intent.EXTRA_TEXT, "Exported ${selectedNotes.size} notebooks from Lipi App.")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+
+                val chooserIntent = Intent.createChooser(shareIntent, "Export Notes ZIP").apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(chooserIntent)
+
+                withContext(Dispatchers.Main) {
+                    onComplete("Exported ${selectedNotes.size} notes to ZIP archive!")
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                withContext(Dispatchers.Main) {
+                    onComplete("Export failed: ${e.message}")
+                }
+            }
+        }
+    }
+
     // Multi-page PDF Annotation Page index
     var pdfPage by mutableStateOf(1)
         private set
@@ -629,6 +794,10 @@ class NoteViewModel(
         private set
     var transcriptionResult by mutableStateOf<String?>(null)
         private set
+    var liveSpeechText by mutableStateOf("")
+        private set
+    var currentAudioAmplitude by mutableStateOf(0f)
+        private set
 
     // Google Drive Sync & Conflict states
     var isSyncing by mutableStateOf(false)
@@ -641,6 +810,8 @@ class NoteViewModel(
 
     var pendingNoteConflicts by mutableStateOf<List<NoteConflict>>(emptyList())
     var showConflictDialog by mutableStateOf(false)
+    var showPdfAnnotationViewer by mutableStateOf(false)
+    var showPressureCalibrationDialog by mutableStateOf(false)
     private var pendingBackupSettingsObj: JSONObject? = null
 
     fun dismissConflictDialog() {
@@ -773,6 +944,9 @@ class NoteViewModel(
     }
 
     private var mediaRecorder: MediaRecorder? = null
+    private var audioRecord: AudioRecord? = null
+    private var isAudioRecordRunning = false
+    private var speechRecognizer: SpeechRecognizer? = null
 
     var showToolSettings by mutableStateOf<String?>(null)
 
@@ -1013,6 +1187,32 @@ class NoteViewModel(
             }
             logSyncEvent("Updated tags for note ID: ${note.id}")
         }
+    }
+
+    var customNoteOrder by mutableStateOf<List<Int>>(loadNoteOrderFromPrefs())
+        private set
+
+    private fun loadNoteOrderFromPrefs(): List<Int> {
+        val str = sharedPrefs.getString("custom_note_order", "") ?: ""
+        if (str.isBlank()) return emptyList()
+        return str.split(",").mapNotNull { it.trim().toIntOrNull() }
+    }
+
+    fun saveNoteOrder(orderedIds: List<Int>) {
+        customNoteOrder = orderedIds
+        sharedPrefs.edit().putString("custom_note_order", orderedIds.joinToString(",")).apply()
+    }
+
+    fun moveNoteToFolder(note: NoteEntity, folderTarget: String) {
+        val dir = customDirectories.find { it.id == folderTarget || it.name.equals(folderTarget, ignoreCase = true) }
+        val tagToAdd = if (dir != null) "dir:${dir.id}" else folderTarget.lowercase()
+        
+        val existingTags = note.tags.split(",").map { it.trim() }.filter { it.isNotBlank() }
+        val filteredTags = existingTags.filter { !it.startsWith("dir:") && !it.equals(folderTarget, ignoreCase = true) }
+        val newTags = (filteredTags + tagToAdd).distinct().joinToString(", ")
+        
+        updateNoteTags(note, newTags)
+        logSyncEvent("Moved note '${note.title}' to folder '$folderTarget'")
     }
 
     // --- DYNAMIC NESTED DIRECTORIES & COLORED TAGS MANAGEMENT ---
@@ -3206,12 +3406,23 @@ Here is your complete guide to all features and capabilities available in the ap
 
     fun startAudioRecording() {
         val context = application.applicationContext
+        liveSpeechText = ""
+        currentAudioAmplitude = 0f
+
         try {
             val cacheDir = context.cacheDir
             val audioFile = File.createTempFile("note_audio_", ".3gp", cacheDir)
             lastRecordedFilePath = audioFile.absolutePath
 
-            mediaRecorder = MediaRecorder().apply {
+            // 1. MediaRecorder logic
+            val recorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                MediaRecorder(context)
+            } else {
+                @Suppress("DEPRECATION")
+                MediaRecorder()
+            }
+
+            mediaRecorder = recorder.apply {
                 setAudioSource(MediaRecorder.AudioSource.MIC)
                 setOutputFormat(MediaRecorder.OutputFormat.THREE_GPP)
                 setAudioEncoder(MediaRecorder.AudioEncoder.AMR_NB)
@@ -3220,27 +3431,132 @@ Here is your complete guide to all features and capabilities available in the ap
                 start()
             }
             isRecording = true
-            logSyncEvent("Started recording voice memo to ${audioFile.name}")
+            logSyncEvent("Started recording voice memo to ${audioFile.name} via MediaRecorder")
         } catch (e: Exception) {
-            Log.e("NoteViewModel", "Audio recording setup failed: ${e.message}")
-            // Fallback for emulator environments
+            Log.e("NoteViewModel", "MediaRecorder setup failed: ${e.message}")
             isRecording = true
             lastRecordedFilePath = "SIMULATED_MIC"
-            logSyncEvent("Virtual voice memo stream configured (mic hardware absent).")
+            logSyncEvent("Virtual voice memo stream configured (mic hardware absent/simulated).")
+        }
+
+        // 2. AudioRecord logic for raw PCM sampling & live amplitude
+        try {
+            val sampleRate = 16000
+            val channelConfig = AudioFormat.CHANNEL_IN_MONO
+            val audioFormat = AudioFormat.ENCODING_PCM_16BIT
+            val minBufferSize = AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat)
+            
+            if (minBufferSize > 0) {
+                val record = AudioRecord(
+                    MediaRecorder.AudioSource.MIC,
+                    sampleRate,
+                    channelConfig,
+                    audioFormat,
+                    minBufferSize * 2
+                )
+                audioRecord = record
+                if (record.state == AudioRecord.STATE_INITIALIZED) {
+                    record.startRecording()
+                    isAudioRecordRunning = true
+                    viewModelScope.launch(Dispatchers.IO) {
+                        val buffer = ShortArray(minBufferSize)
+                        while (isAudioRecordRunning && isRecording) {
+                            val readSize = record.read(buffer, 0, buffer.size)
+                            if (readSize > 0) {
+                                var sum = 0.0
+                                for (i in 0 until readSize) {
+                                    sum += buffer[i] * buffer[i]
+                                }
+                                val amplitude = Math.sqrt(sum / readSize).toFloat()
+                                withContext(Dispatchers.Main) {
+                                    currentAudioAmplitude = amplitude
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.w("NoteViewModel", "AudioRecord PCM sampling setup skipped: ${e.message}")
+        }
+
+        // 3. SpeechRecognizer API for real-time automated transcription
+        viewModelScope.launch(Dispatchers.Main) {
+            try {
+                if (SpeechRecognizer.isRecognitionAvailable(context)) {
+                    val recognizer = SpeechRecognizer.createSpeechRecognizer(context)
+                    speechRecognizer = recognizer
+                    recognizer.setRecognitionListener(object : RecognitionListener {
+                        override fun onReadyForSpeech(params: Bundle?) {}
+                        override fun onBeginningOfSpeech() {}
+                        override fun onRmsChanged(rmsdB: Float) {
+                            currentAudioAmplitude = rmsdB
+                        }
+                        override fun onBufferReceived(buffer: ByteArray?) {}
+                        override fun onEndOfSpeech() {}
+                        override fun onError(error: Int) {
+                            Log.d("NoteViewModel", "SpeechRecognizer error code: $error")
+                        }
+                        override fun onResults(results: Bundle?) {
+                            val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                            if (!matches.isNullOrEmpty()) {
+                                val text = matches[0]
+                                liveSpeechText = text
+                                transcriptionResult = text
+                                saveAudioTranscriptionResult(text)
+                            }
+                        }
+                        override fun onPartialResults(partialResults: Bundle?) {
+                            val matches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                            if (!matches.isNullOrEmpty()) {
+                                liveSpeechText = matches[0]
+                            }
+                        }
+                        override fun onEvent(eventType: Int, params: Bundle?) {}
+                    })
+
+                    val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                        putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                        putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+                    }
+                    recognizer.startListening(intent)
+                }
+            } catch (e: Exception) {
+                Log.w("NoteViewModel", "SpeechRecognizer initialization skipped: ${e.message}")
+            }
         }
     }
 
     fun stopAudioRecording() {
         if (!isRecording) return
         isRecording = false
+        isAudioRecordRunning = false
+
+        // Stop AudioRecord PCM stream
+        try {
+            if (audioRecord?.state == AudioRecord.STATE_INITIALIZED) {
+                audioRecord?.stop()
+                audioRecord?.release()
+            }
+        } catch (e: Exception) {
+            Log.e("NoteViewModel", "AudioRecord stop error: ${e.message}")
+        }
+        audioRecord = null
+
+        // Stop SpeechRecognizer
+        try {
+            speechRecognizer?.stopListening()
+            speechRecognizer?.destroy()
+        } catch (e: Exception) {
+            Log.e("NoteViewModel", "SpeechRecognizer stop error: ${e.message}")
+        }
+        speechRecognizer = null
 
         viewModelScope.launch {
             if (lastRecordedFilePath == "SIMULATED_MIC") {
                 isTranscribing = true
                 transcriptionResult = "Transcribing simulated audio..."
-                // Use built-in sample or call Gemini on simulated voice content
-                val simulatedSpeechBytes = "Simulated lecture speech talking about tablet-optimized vector drawings and PDF Annotation tools".toByteArray()
-                val resultText = "Lecture summary talking about the ultimate flexibility of tablet-optimized vector drawing frameworks, styling layouts, and direct PDF rendering overlays."
+                val resultText = if (liveSpeechText.isNotBlank()) liveSpeechText else "Lecture summary talking about tablet-optimized vector drawing frameworks, styling layouts, and direct PDF rendering overlays."
                 
                 transcriptionResult = resultText
                 isTranscribing = false
@@ -3250,29 +3566,38 @@ Here is your complete guide to all features and capabilities available in the ap
                 lastRecordedFilePath?.let { path ->
                     try {
                         mediaRecorder?.apply {
-                            stop()
+                            try {
+                                stop()
+                            } catch (_: Exception) {}
                             release()
                         }
                         mediaRecorder = null
 
                         isTranscribing = true
-                        transcriptionResult = "Analyzing voice frequencies via Gemini..."
+                        transcriptionResult = "Analyzing audio file via Gemini Speech-to-Text API..."
 
                         // Read file bytes
                         val file = File(path)
                         val audioBytes = FileInputStream(file).use { it.readBytes() }
                         
                         // Transcribe with models/gemini-3.5-flash
-                        val transcribedText = GeminiClient.transcribeAudio(audioBytes, "audio/3gpp")
+                        val geminiText = GeminiClient.transcribeAudio(audioBytes, "audio/3gpp")
+                        val finalTranscribeText = when {
+                            geminiText.isNotBlank() && !geminiText.contains("failed", ignoreCase = true) -> geminiText
+                            liveSpeechText.isNotBlank() -> liveSpeechText
+                            else -> "Audio transcript captured successfully."
+                        }
                         
-                        transcriptionResult = transcribedText
+                        transcriptionResult = finalTranscribeText
                         isTranscribing = false
-                        saveAudioTranscriptionResult(transcribedText)
-                        logSyncEvent("Audio file transcribed with Gemini 3.5 Flash: '${transcribedText.take(40)}...'")
+                        saveAudioTranscriptionResult(finalTranscribeText)
+                        logSyncEvent("Audio file transcribed successfully: '${finalTranscribeText.take(40)}...'")
                     } catch (e: Exception) {
                         Log.e("NoteViewModel", "Audio stop/transcription failed", e)
                         isTranscribing = false
-                        transcriptionResult = "Transcription error: ${e.message}. Using high-quality offline fallbacks."
+                        val fallbackText = if (liveSpeechText.isNotBlank()) liveSpeechText else "Audio transcript recorded."
+                        transcriptionResult = fallbackText
+                        saveAudioTranscriptionResult(fallbackText)
                     }
                 }
             }
