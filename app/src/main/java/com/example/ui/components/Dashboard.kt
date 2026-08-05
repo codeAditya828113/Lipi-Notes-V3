@@ -103,15 +103,17 @@ fun NovaDashboard(
                         Text(
                             text = "Lipi",
                             fontSize = 28.sp,
-                            fontWeight = FontWeight.Bold,
+                            fontWeight = FontWeight.ExtraBold,
                             color = MaterialTheme.colorScheme.primary,
-                            letterSpacing = (-0.5).sp
+                            letterSpacing = (-0.5).sp,
+                            fontFamily = FontFamily.SansSerif
                         )
                         Text(
                             text = "by Aditya Kumar",
                             fontSize = 13.sp,
                             fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontFamily = FontFamily.SansSerif
                         )
                         val context = androidx.compose.ui.platform.LocalContext.current
                         val isSignedIn = GoogleDriveBackupHelper.isSignedIn(context)
@@ -123,7 +125,8 @@ fun NovaDashboard(
                             text = greetingText,
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontFamily = FontFamily.SansSerif
                         )
                     }
                 }
@@ -760,7 +763,8 @@ fun ActionCard(
                 Text(
                     text = subtitle,
                     fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontWeight = FontWeight.Medium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -1056,7 +1060,7 @@ fun DashboardTasksWidget() {
                     Icon(
                         imageVector = Icons.Default.TaskAlt,
                         contentDescription = null,
-                        tint = Color(0xFF4CAF50),
+                        tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
@@ -1071,8 +1075,8 @@ fun DashboardTasksWidget() {
                 Text(
                     text = "${tasks.count { it.done }} of ${tasks.size} done",
                     fontSize = 10.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = Color(0xFF4CAF50)
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
                 )
             }
 
@@ -1091,7 +1095,7 @@ fun DashboardTasksWidget() {
                         Icon(
                             imageVector = if (t.done) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
                             contentDescription = null,
-                            tint = if (t.done) Color(0xFF4CAF50) else MaterialTheme.colorScheme.outline,
+                            tint = if (t.done) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(10.dp))
@@ -1160,7 +1164,7 @@ fun DashboardTasksWidget() {
                     },
                     modifier = Modifier
                         .size(36.dp)
-                        .background(Color(0xFF4CAF50), RoundedCornerShape(8.dp))
+                        .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp))
                 ) {
                     Icon(Icons.Default.Add, contentDescription = "Add Task", tint = androidx.compose.ui.graphics.Color.White, modifier = Modifier.size(16.dp))
                 }

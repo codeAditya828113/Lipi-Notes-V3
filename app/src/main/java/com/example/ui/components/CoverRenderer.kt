@@ -1380,11 +1380,13 @@ fun SubjectMathCover(title: String, subtitle: String, author: String, extra: Str
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .clip(RoundedCornerShape(8.dp))
             .background(
                 Brush.linearGradient(
-                    colors = listOf(Color(0xFF0F172A), Color(0xFF1E1B4B), Color(0xFF312E81))
+                    colors = listOf(Color(0xFF1E293B), Color(0xFF0F172A), Color(0xFF1E3A8A))
                 )
             )
+            .border(1.dp, Color(0xFF38BDF8).copy(alpha = 0.3f), RoundedCornerShape(8.dp))
     ) {
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width
@@ -1392,10 +1394,10 @@ fun SubjectMathCover(title: String, subtitle: String, author: String, extra: Str
             // Coordinate axis grid
             val grid = 28f
             for (i in 0..(w / grid).toInt()) {
-                drawLine(Color(0xFF38BDF8).copy(alpha = 0.1f), Offset(i * grid, 0f), Offset(i * grid, h))
+                drawLine(Color(0xFF38BDF8).copy(alpha = 0.12f), Offset(i * grid, 0f), Offset(i * grid, h))
             }
             for (j in 0..(h / grid).toInt()) {
-                drawLine(Color(0xFF38BDF8).copy(alpha = 0.1f), Offset(0f, j * grid), Offset(w, j * grid))
+                drawLine(Color(0xFF38BDF8).copy(alpha = 0.12f), Offset(0f, j * grid), Offset(w, j * grid))
             }
             // 3D Geometry Triangle & Sine Wave
             val wavePath = Path().apply {
@@ -1419,12 +1421,12 @@ fun SubjectMathCover(title: String, subtitle: String, author: String, extra: Str
             modifier = Modifier
                 .align(Alignment.Center)
                 .fillMaxWidth(0.85f),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1B4B).copy(alpha = 0.94f)),
-            border = BorderStroke(1.5.dp, Color(0xFF38BDF8)),
-            elevation = CardDefaults.cardElevation(defaultElevation = 12.dp)
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A).copy(alpha = 0.92f)),
+            border = BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.6f)),
+            elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
         ) {
-            Column(modifier = Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(modifier = Modifier.padding(14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Surface(
                     shape = RoundedCornerShape(6.dp),
                     color = Color(0xFF0284C7),
@@ -1436,26 +1438,29 @@ fun SubjectMathCover(title: String, subtitle: String, author: String, extra: Str
                         fontWeight = FontWeight.Bold,
                         color = Color.White,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                        letterSpacing = 1.sp
+                        letterSpacing = 1.sp,
+                        fontFamily = FontFamily.SansSerif
                     )
                 }
                 Text(
                     text = if (title.isNotBlank()) title else "MATH & ALGEBRA",
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Black,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.ExtraBold,
                     color = Color.White,
-                    textAlign = TextAlign.Center
+                    textAlign = TextAlign.Center,
+                    fontFamily = FontFamily.SansSerif
                 )
                 if (subtitle.isNotBlank()) {
                     Spacer(modifier = Modifier.height(4.dp))
-                    Text(text = subtitle, fontSize = 11.sp, color = Color(0xFFBAE6FD))
+                    Text(text = subtitle, fontSize = 11.sp, color = Color(0xFFBAE6FD), fontFamily = FontFamily.SansSerif)
                 }
-                Divider(color = Color(0xFF38BDF8).copy(alpha = 0.4f), thickness = 1.dp, modifier = Modifier.padding(vertical = 10.dp))
+                Divider(color = Color(0xFF38BDF8).copy(alpha = 0.4f), thickness = 1.dp, modifier = Modifier.padding(vertical = 8.dp))
                 Text(
                     text = if (author.isNotBlank()) author else "Aditya Kumar",
                     fontSize = 11.sp,
                     color = Color(0xFF38BDF8),
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.SansSerif
                 )
             }
         }

@@ -97,15 +97,17 @@ fun ResponsiveSidebar(
                     Text(
                         text = "Lipi",
                         fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
+                        fontWeight = FontWeight.ExtraBold,
                         color = MaterialTheme.colorScheme.onSurface,
-                        letterSpacing = (-0.3).sp
+                        letterSpacing = (-0.3).sp,
+                        fontFamily = FontFamily.SansSerif
                     )
                     Text(
                         text = "by Aditya Kumar",
                         fontSize = 10.sp,
-                        color = MaterialTheme.colorScheme.outline,
-                        fontWeight = FontWeight.Medium
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = FontWeight.SemiBold,
+                        fontFamily = FontFamily.SansSerif
                     )
                 }
             }
@@ -1293,9 +1295,9 @@ fun FolderItem(
 ) {
     Surface(
         onClick = onClick,
-        shape = RoundedCornerShape(12.dp),
-        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f) else Color.Transparent,
-        border = if (isSelected) BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)) else null,
+        shape = RoundedCornerShape(10.dp),
+        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f) else Color.Transparent,
+        border = if (isSelected) BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)) else null,
         modifier = Modifier
             .fillMaxWidth()
             .height(42.dp)
@@ -1307,8 +1309,8 @@ fun FolderItem(
             if (isSelected) {
                 Box(
                     modifier = Modifier
-                        .width(3.dp)
-                        .height(18.dp)
+                        .width(3.5.dp)
+                        .height(20.dp)
                         .clip(RoundedCornerShape(2.dp))
                         .background(MaterialTheme.colorScheme.primary)
                 )
@@ -1325,7 +1327,8 @@ fun FolderItem(
                 text = label,
                 fontSize = 12.sp,
                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                color = if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                fontFamily = FontFamily.SansSerif,
                 modifier = Modifier.weight(1f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
