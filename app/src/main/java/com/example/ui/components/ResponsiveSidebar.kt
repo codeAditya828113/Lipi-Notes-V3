@@ -66,11 +66,11 @@ fun ResponsiveSidebar(
             .fillMaxHeight()
             .width(280.dp)
             .testTag("responsive_sidebar"),
-        color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 1.dp,
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+        tonalElevation = 2.dp,
         border = BorderStroke(
             width = 1.dp,
-            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+            color = Color.White.copy(alpha = 0.6f)
         )
     ) {
         Column(
@@ -1295,9 +1295,10 @@ fun FolderItem(
 ) {
     Surface(
         onClick = onClick,
-        shape = RoundedCornerShape(10.dp),
-        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f) else Color.Transparent,
-        border = if (isSelected) BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)) else null,
+        shape = RoundedCornerShape(12.dp),
+        color = if (isSelected) MaterialTheme.colorScheme.surface else Color.Transparent,
+        shadowElevation = if (isSelected) 3.dp else 0.dp,
+        border = if (isSelected) BorderStroke(1.dp, Color.White.copy(alpha = 0.9f)) else null,
         modifier = Modifier
             .fillMaxWidth()
             .height(42.dp)

@@ -22,8 +22,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
@@ -39,6 +42,21 @@ import com.example.data.NoteEntity
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.*
+
+// ==========================================
+// LIPI COLOR SYSTEM (2026 Material 3 Expressive)
+// ==========================================
+private val LipiBgLight = Color(0xFFF7F8FC)
+private val LipiBgDark = Color(0xFF0F172A)
+private val LipiCardWhite = Color(0xFFFFFFFF)
+private val LipiCardDark = Color(0xFF1E293B)
+
+private val LipiPrimary = Color(0xFF5B6DFF)      // Indigo Accent
+private val LipiSecondary = Color(0xFF8A7CFF)    // Purple Accent
+private val LipiAccent = Color(0xFF4DA3FF)       // Sky Blue
+private val LipiSuccess = Color(0xFF2ECC71)      // Emerald Green
+private val LipiWarning = Color(0xFFFF9F43)      // Warm Amber
+private val LipiError = Color(0xFFFF5C5C)        // Coral Red
 
 @Composable
 fun NovaDashboard(
@@ -60,33 +78,190 @@ fun NovaDashboard(
     }
 
     val scrollState = rememberScrollState()
+    val isDarkTheme = viewModel.themeMode == "dark" || viewModel.themeMode == "oled"
+
+    val bgColor = if (isDarkTheme) LipiBgDark else LipiBgLight
+    val cardBg = if (isDarkTheme) LipiCardDark else LipiCardWhite
+    val textPrimary = if (isDarkTheme) Color.White else Color(0xFF1E293B)
+    val textSecondary = if (isDarkTheme) Color(0xFF94A3B8) else Color(0xFF64748B)
+
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(bgColor)
+    ) {
+        // Soft ambient background gradients
+        if (!isDarkTheme) {
+            androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
+                val w = size.width
+                val h = size.height
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(Color(0xFFEEF2FF), Color.Transparent),
+                        center = Offset(w * 0.15f, h * 0.1f),
+                        radius = w * 0.6f
+                    ),
+                    center = Offset(w * 0.15f, h * 0.1f),
+                    radius = w * 0.6f
+                )
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(Color(0xFFE0E7FF), Color.Transparent),
+                        center = Offset(w * 0.85f, h * 0.3f),
+                        radius = w * 0.5f
+                    ),
+                    center = Offset(w * 0.85f, h * 0.3f),
+                    radius = w * 0.5f
+                )
+            }
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(scrollState)
+                .padding(horizontal = if (isTablet) 32.dp else 18.dp, vertical = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(24.dp)
+        ) {
+            // 1. HOME HERO HEADER
+            HomeHeroHeader(
+                viewModel = viewModel,
+                isTablet = isTablet,
+                onMenuClick = onMenuClick,
+                onNavigateToNotes = onNavigateToNotes,
+                onCustomizeGoals = { showCustomizeGoalsModal = true },
+                isDark = isDarkTheme
+            )
+
+            // 2. TOP METRICS ROW (5 Floating Cards)
+            TopMetricsRow(
+                viewModel = viewModel,
+                notesCount = notes.size,
+                isDark = isDarkTheme,
+                cardBg = cardBg
+            )
+
+            // 3. MAIN FEATURE: LARGE GLOWING AI SEARCH BAR
+            HeroAISearchBar(
+                onSearchSubmitted = { query ->
+                    onNavigateToNotesWithFilter?.invoke(query) ?: onNavigateToNotes()
+                },
+                isDark = isDarkTheme,
+                cardBg = cardBg
+            )
+
+            // 4. QUICK ACTIONS BAR
+            QuickActionsRow(
+                onActionClick = { action ->
+                    when (action) {
+                        "New Notebook", "Handwritten Note" -> onNavigateToNotesWithFilter?.invoke("Handwritten") ?: onNavigateToNotes()
+                        "Voice Note" -> onNavigateToNotesWithFilter?.invoke("Audio") ?: onNavigateToNotes()
+                        "Scan Document", "Import PDF" -> onNavigateToNotesWithFilter?.invoke("PDFs") ?: onNavigateToNotes()
+                        "Flashcards" -> onNavigateToNotesWithFilter?.invoke("Flashcards") ?: onNavigateToNotes()
+                        else -> onNavigateToNotes()
+                    }
+                },
+                isDark = isDarkTheme,
+                cardBg = cardBg
+            )
+
+            // 5. TODAY'S FOCUS & POMODORO TIMER (Side-by-side on tablet, column on phone)
+            if (isTablet) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(20.dp)
+                ) {
+                    Box(modifier = Modifier.weight(1f)) {
+                        TodaysFocusCard(isDark = isDarkTheme, cardBg = cardBg)
+                    }
+                    Box(modifier = Modifier.weight(1f)) {
+                        PomodoroTimerCard(isDark = isDarkTheme, cardBg = cardBg)
+                    }
+                }
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
+                    TodaysFocusCard(isDark = isDarkTheme, cardBg = cardBg)
+                    PomodoroTimerCard(isDark = isDarkTheme, cardBg = cardBg)
+                }
+            }
+
+            // 6. CONTINUE WORKING (REALISTIC NOTEBOOK COVERS)
+            ContinueWorkingSection(
+                notes = notes,
+                onNoteClick = { onNavigateToNotes() },
+                onViewAllClick = { onNavigateToNotes() },
+                isDark = isDarkTheme,
+                cardBg = cardBg
+            )
+
+            // 7. AI SUGGESTIONS
+            AISuggestionsSection(
+                onSuggestionClick = { prompt ->
+                    onNavigateToNotesWithFilter?.invoke(prompt) ?: onNavigateToNotes()
+                },
+                isDark = isDarkTheme,
+                cardBg = cardBg
+            )
+
+            // 8. ANALYTICS & STUDY HEATMAP
+            AnalyticsAndHeatmapSection(isDark = isDarkTheme, cardBg = cardBg)
+
+            // 9. CALENDAR & UPCOMING DEADLINES
+            UpcomingDeadlinesSection(isDark = isDarkTheme, cardBg = cardBg)
+
+            Spacer(modifier = Modifier.height(32.dp))
+        }
+    }
+}
+
+// ==========================================
+// 1. HOME HERO HEADER
+// ==========================================
+@Composable
+private fun HomeHeroHeader(
+    viewModel: NoteViewModel,
+    isTablet: Boolean,
+    onMenuClick: () -> Unit,
+    onNavigateToNotes: () -> Unit,
+    onCustomizeGoals: () -> Unit,
+    isDark: Boolean
+) {
     val todayDate = remember {
         val sdf = SimpleDateFormat("EEEE, MMMM d, yyyy", Locale.getDefault())
         sdf.format(Date())
     }
 
-    // Dynamic greeting based on time of day
     val greeting = remember {
         val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
         when (hour) {
-            in 0..11 -> "Good morning"
-            in 12..16 -> "Good afternoon"
-            else -> "Good evening"
+            in 0..11 -> "Good Morning"
+            in 12..16 -> "Good Afternoon"
+            else -> "Good Evening"
         }
     }
 
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+    val context = LocalContext.current
+    val isSignedIn = GoogleDriveBackupHelper.isSignedIn(context)
+    val accountName = if (isSignedIn) GoogleDriveBackupHelper.getSavedAccountName(context) else ""
+    val firstName = if (accountName.isNotBlank()) accountName.split(" ").firstOrNull() ?: "Aditya" else "Aditya"
+
+    val textPrimary = if (isDark) Color.White else Color(0xFF1E293B)
+    val textSecondary = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isDark) Color(0xFF1E293B) else Color.White
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
+        border = BorderStroke(1.dp, if (isDark) Color(0xFF334155) else Color(0xFFE2E8F0))
     ) {
         Column(
             modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(scrollState)
-                .padding(horizontal = 24.dp, vertical = 20.dp)
+                .fillMaxWidth()
+                .padding(24.dp)
         ) {
-            // 1. Title bar & Greeting
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -94,63 +269,59 @@ fun NovaDashboard(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (!isTablet) {
-                        IconButton(onClick = onMenuClick) {
-                            Icon(Icons.Default.Menu, contentDescription = "Menu")
+                        IconButton(
+                            onClick = onMenuClick,
+                            modifier = Modifier
+                                .size(40.dp)
+                                .background(if (isDark) Color(0xFF334155) else Color(0xFFF1F5F9), CircleShape)
+                        ) {
+                            Icon(Icons.Default.Menu, contentDescription = "Menu", tint = textPrimary)
                         }
-                        Spacer(modifier = Modifier.width(8.dp))
+                        Spacer(modifier = Modifier.width(12.dp))
                     }
+
                     Column {
                         Text(
-                            text = "Lipi",
-                            fontSize = 28.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = MaterialTheme.colorScheme.primary,
+                            text = "$greeting, $firstName 👋",
+                            fontSize = if (isTablet) 32.sp else 24.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = textPrimary,
                             letterSpacing = (-0.5).sp,
                             fontFamily = FontFamily.SansSerif
                         )
+                        Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "by Aditya Kumar",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontFamily = FontFamily.SansSerif
-                        )
-                        val context = androidx.compose.ui.platform.LocalContext.current
-                        val isSignedIn = GoogleDriveBackupHelper.isSignedIn(context)
-                        val userFirstName = if (isSignedIn) {
-                            GoogleDriveBackupHelper.getSavedAccountName(context).split(" ").firstOrNull() ?: ""
-                        } else ""
-                        val greetingText = if (userFirstName.isNotBlank()) "$greeting, $userFirstName" else greeting
-                        Text(
-                            text = greetingText,
+                            text = "Ready to continue learning with Lipi AI?",
                             fontSize = 15.sp,
+                            color = textSecondary,
                             fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onSurface,
                             fontFamily = FontFamily.SansSerif
                         )
                     }
                 }
 
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
-                    shape = RoundedCornerShape(12.dp)
+                // Date Widget Badge
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = if (isDark) Color(0xFF334155) else Color(0xFFF1F5F9),
+                    modifier = Modifier.padding(start = 8.dp)
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
-                            imageVector = Icons.Default.CalendarToday,
+                            Icons.Default.CalendarToday,
                             contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(14.dp)
+                            tint = LipiPrimary,
+                            modifier = Modifier.size(16.dp)
                         )
-                        Spacer(modifier = Modifier.width(6.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = todayDate,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = textPrimary
                         )
                     }
                 }
@@ -158,415 +329,1141 @@ fun NovaDashboard(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // 2. High-End Customizable Stats Row
+            // Progress & Goal Row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    // Goal Chip
+                    Surface(
+                        shape = CircleShape,
+                        color = LipiPrimary.copy(alpha = 0.12f),
+                        border = BorderStroke(1.dp, LipiPrimary.copy(alpha = 0.3f))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.Adjust, contentDescription = null, tint = LipiPrimary, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Goal: 2.5 hrs/day", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = LipiPrimary)
+                        }
+                    }
+
+                    // Progress Chip
+                    Surface(
+                        shape = CircleShape,
+                        color = LipiSuccess.copy(alpha = 0.12f),
+                        border = BorderStroke(1.dp, LipiSuccess.copy(alpha = 0.3f))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.TrendingUp, contentDescription = null, tint = LipiSuccess, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Weekly Progress: 78%", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = LipiSuccess)
+                        }
+                    }
+
+                    // Streak Pill
+                    Surface(
+                        shape = CircleShape,
+                        color = LipiWarning.copy(alpha = 0.12f),
+                        border = BorderStroke(1.dp, LipiWarning.copy(alpha = 0.3f))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("🔥 7 Day Streak", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = LipiWarning)
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                Button(
+                    onClick = onNavigateToNotes,
+                    shape = CircleShape,
+                    colors = ButtonDefaults.buttonColors(containerColor = LipiPrimary),
+                    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp)
+                ) {
+                    Text("Resume Study", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, modifier = Modifier.size(16.dp))
+                }
+            }
+        }
+    }
+}
+
+// ==========================================
+// 2. TOP METRICS ROW (5 Floating Cards)
+// ==========================================
+@Composable
+private fun TopMetricsRow(
+    viewModel: NoteViewModel,
+    notesCount: Int,
+    isDark: Boolean,
+    cardBg: Color
+) {
+    val textPrimary = if (isDark) Color.White else Color(0xFF1E293B)
+    val textSecondary = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        // Metric 1: Study Progress
+        MetricCard(
+            modifier = Modifier.weight(1f),
+            title = "Study Progress",
+            value = "84%",
+            subtext = "On track this week",
+            icon = Icons.Default.PieChart,
+            accentColor = LipiPrimary,
+            cardBg = cardBg,
+            textPrimary = textPrimary,
+            textSecondary = textSecondary,
+            isDark = isDark,
+            progressValue = 0.84f
+        )
+
+        // Metric 2: Weekly Goal
+        MetricCard(
+            modifier = Modifier.weight(1f),
+            title = "Weekly Goal",
+            value = "14.5 / 18 h",
+            subtext = "+2.5h completed today",
+            icon = Icons.Default.BarChart,
+            accentColor = LipiAccent,
+            cardBg = cardBg,
+            textPrimary = textPrimary,
+            textSecondary = textSecondary,
+            isDark = isDark,
+            progressValue = 0.80f
+        )
+
+        // Metric 3: Study Streak
+        MetricCard(
+            modifier = Modifier.weight(1f),
+            title = "Study Streak",
+            value = "7 Days 🔥",
+            subtext = "Personal Best: 14 Days",
+            icon = Icons.Default.OfflineBolt,
+            accentColor = LipiWarning,
+            cardBg = cardBg,
+            textPrimary = textPrimary,
+            textSecondary = textSecondary,
+            isDark = isDark
+        )
+
+        // Metric 4: Notes Created
+        MetricCard(
+            modifier = Modifier.weight(1f),
+            title = "Notes Created",
+            value = "$notesCount Notes",
+            subtext = "+4 added this week",
+            icon = Icons.Default.Book,
+            accentColor = LipiSuccess,
+            cardBg = cardBg,
+            textPrimary = textPrimary,
+            textSecondary = textSecondary,
+            isDark = isDark
+        )
+
+        // Metric 5: AI Usage
+        MetricCard(
+            modifier = Modifier.weight(1f),
+            title = "AI Usage",
+            value = "128 Queries",
+            subtext = "15 used today",
+            icon = Icons.Default.AutoAwesome,
+            accentColor = LipiSecondary,
+            cardBg = cardBg,
+            textPrimary = textPrimary,
+            textSecondary = textSecondary,
+            isDark = isDark
+        )
+    }
+}
+
+@Composable
+private fun MetricCard(
+    modifier: Modifier = Modifier,
+    title: String,
+    value: String,
+    subtext: String,
+    icon: ImageVector,
+    accentColor: Color,
+    cardBg: Color,
+    textPrimary: Color,
+    textSecondary: Color,
+    isDark: Boolean,
+    progressValue: Float? = null
+) {
+    Card(
+        modifier = modifier.height(130.dp),
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(containerColor = cardBg),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        border = BorderStroke(1.dp, if (isDark) Color(0xFF334155) else Color(0xFFE2E8F0))
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "PERFORMANCE & GOALS",
-                    fontSize = 11.sp,
+                    text = title,
+                    fontSize = 13.sp,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary,
-                    letterSpacing = 1.sp
+                    color = textSecondary,
+                    maxLines = 1
                 )
-                TextButton(
-                    onClick = { showCustomizeGoalsModal = true },
-                    modifier = Modifier.testTag("customize_goals_button")
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .background(accentColor.copy(alpha = 0.15f), CircleShape),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Icon(Icons.Default.Tune, contentDescription = null, modifier = Modifier.size(14.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Customize Goals", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Icon(icon, contentDescription = null, tint = accentColor, modifier = Modifier.size(18.dp))
                 }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
-
-            val dailyGoalMins = viewModel.dailyGoalTargetMinutes
-            val studySecs = viewModel.dailyStudySeconds
-            val studyMinsDone = studySecs / 60
-            val dailyPercent = if (dailyGoalMins > 0) ((studySecs.toFloat() / (dailyGoalMins * 60f)) * 100f).coerceAtMost(100f).toInt() else 0
-
-            @OptIn(ExperimentalLayoutApi::class)
-            FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-                maxItemsInEachRow = if (isTablet) 3 else 2
-            ) {
-                StatCard(
-                    modifier = Modifier.weight(1f),
-                    title = "Total Pads",
-                    value = "${notes.size} Pads",
-                    subtitle = "${notes.count { it.templateType == "ruled" }} Ruled • ${notes.count { it.templateType == "cornell" }} Cornell",
-                    icon = Icons.Default.Book,
-                    tint = MaterialTheme.colorScheme.primary,
-                    onClick = { onNavigateToNotes() },
-                    onCustomizeClick = { showCustomizeGoalsModal = true }
+            Column {
+                Text(
+                    text = value,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = textPrimary,
+                    maxLines = 1
                 )
-                StatCard(
-                    modifier = Modifier.weight(1f),
-                    title = "Daily Goal",
-                    value = "$dailyPercent%",
-                    subtitle = "${studyMinsDone}m of ${dailyGoalMins}m target",
-                    progress = (studySecs.toFloat() / (dailyGoalMins * 60f)).coerceAtMost(1f),
-                    icon = Icons.Default.TrendingUp,
-                    tint = Color(0xFF00B0FF),
-                    onClick = { showCustomizeGoalsModal = true },
-                    onCustomizeClick = { showCustomizeGoalsModal = true }
-                )
-                StatCard(
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
-                    title = "Study Streak",
-                    value = "${viewModel.studyStreakDays} Days 🔥",
-                    subtitle = if (viewModel.studyStreakDays >= 7) "Legendary streak!" else "Keep studying daily",
-                    icon = Icons.Default.LocalFireDepartment,
-                    tint = Color(0xFFFF5722),
-                    onClick = { showCustomizeGoalsModal = true },
-                    onCustomizeClick = { showCustomizeGoalsModal = true }
+                Spacer(modifier = Modifier.height(2.dp))
+                if (progressValue != null) {
+                    LinearProgressIndicator(
+                        progress = { progressValue },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(5.dp)
+                            .clip(CircleShape),
+                        color = accentColor,
+                        trackColor = accentColor.copy(alpha = 0.2f)
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                }
+                Text(
+                    text = subtext,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = textSecondary,
+                    maxLines = 1
                 )
             }
+        }
+    }
+}
 
-            Spacer(modifier = Modifier.height(24.dp))
+// ==========================================
+// 3. HERO FEATURE: LARGE GLOWING AI SEARCH BAR
+// ==========================================
+@Composable
+private fun HeroAISearchBar(
+    onSearchSubmitted: (String) -> Unit,
+    isDark: Boolean,
+    cardBg: Color
+) {
+    var searchText by remember { mutableStateOf("") }
+    val textPrimary = if (isDark) Color.White else Color(0xFF1E293B)
+    val textSecondary = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
 
-            // 3. Quick Action Banners Grid (2 Columns on tablet, Stacked on phone)
-            val pdfNotesCount = notes.count { it.templateType == "pdf" || it.templateType == "docx" || !it.pdfTitle.isNullOrEmpty() || it.title.contains(".pdf", ignoreCase = true) || it.title.contains("PDF", ignoreCase = true) }
-            Text(
-                text = "QUICK STUDY ACTIONS & FOLDERS",
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary,
-                letterSpacing = 1.sp,
-                modifier = Modifier.padding(bottom = 12.dp)
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(26.dp),
+        colors = CardDefaults.cardColors(containerColor = cardBg),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        border = BorderStroke(
+            width = 1.8.dp,
+            brush = Brush.horizontalGradient(
+                colors = listOf(LipiPrimary, LipiSecondary, LipiAccent)
             )
-
-            if (isTablet) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(24.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(38.dp)
+                        .background(
+                            brush = Brush.linearGradient(listOf(LipiPrimary, LipiSecondary)),
+                            shape = CircleShape
+                        ),
+                    contentAlignment = Alignment.Center
                 ) {
-                    ActionCard(
-                        modifier = Modifier.weight(1f),
-                        title = "PDF Notes & Documents",
-                        subtitle = "$pdfNotesCount PDF files imported • Tap to open PDF folder",
-                        icon = Icons.Default.PictureAsPdf,
-                        color = Color(0xFFFFEBEE),
-                        onClick = {
-                            if (onNavigateToNotesWithFilter != null) {
-                                onNavigateToNotesWithFilter("PDFs")
-                            } else {
-                                onNavigateToNotes()
-                            }
-                        }
-                    )
-                    ActionCard(
-                        modifier = Modifier.weight(1f),
-                        title = "Ruled Study Notebook",
-                        subtitle = "Classic handwritten sheets with customizable margins",
-                        icon = Icons.Default.DriveFileRenameOutline,
-                        color = MaterialTheme.colorScheme.primaryContainer,
-                        onClick = {
-                            viewModel.createNewNote("Ruled Pad Notes", "ruled")
-                            if (onNavigateToNotesWithFilter != null) {
-                                onNavigateToNotesWithFilter("Handwritten")
-                            } else {
-                                onNavigateToNotes()
-                            }
-                        }
-                    )
-                    ActionCard(
-                        modifier = Modifier.weight(1f),
-                        title = "Cornell Academic Pad",
-                        subtitle = "Standardized recall layout for lecture memorization",
-                        icon = Icons.Default.ListAlt,
-                        color = Color(0xFFE0F7FA),
-                        onClick = {
-                            viewModel.createNewNote("Cornell Note", "cornell")
-                            if (onNavigateToNotesWithFilter != null) {
-                                onNavigateToNotesWithFilter("Templates")
-                            } else {
-                                onNavigateToNotes()
-                            }
-                        }
-                    )
+                    Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
                 }
-            } else {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    ActionCard(
-                        modifier = Modifier.fillMaxWidth(),
-                        title = "PDF Notes & Documents Folder",
-                        subtitle = "$pdfNotesCount PDF files imported • Tap to open PDF folder",
-                        icon = Icons.Default.PictureAsPdf,
-                        color = Color(0xFFFFEBEE),
-                        onClick = {
-                            if (onNavigateToNotesWithFilter != null) {
-                                onNavigateToNotesWithFilter("PDFs")
-                            } else {
-                                onNavigateToNotes()
-                            }
-                        }
+                Spacer(modifier = Modifier.width(12.dp))
+                Column {
+                    Text(
+                        text = "Ask Lipi AI...",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = textPrimary
                     )
-                    ActionCard(
-                        modifier = Modifier.fillMaxWidth(),
-                        title = "Ruled Study Notebook",
-                        subtitle = "Classic handwritten sheets with customizable layout margins",
-                        icon = Icons.Default.DriveFileRenameOutline,
-                        color = MaterialTheme.colorScheme.primaryContainer,
-                        onClick = {
-                            viewModel.createNewNote("Ruled Pad Notes", "ruled")
-                            if (onNavigateToNotesWithFilter != null) {
-                                onNavigateToNotesWithFilter("Handwritten")
-                            } else {
-                                onNavigateToNotes()
-                            }
-                        }
-                    )
-                    ActionCard(
-                        modifier = Modifier.fillMaxWidth(),
-                        title = "Cornell Academic Pad",
-                        subtitle = "Standardized recall layout perfect for lecture memorization",
-                        icon = Icons.Default.ListAlt,
-                        color = Color(0xFFE0F7FA),
-                        onClick = {
-                            viewModel.createNewNote("Cornell Note", "cornell")
-                            if (onNavigateToNotesWithFilter != null) {
-                                onNavigateToNotesWithFilter("Templates")
-                            } else {
-                                onNavigateToNotes()
-                            }
-                        }
+                    Text(
+                        text = "Search handwriting, PDFs, voice notes, diagrams or ask any question",
+                        fontSize = 13.sp,
+                        color = textSecondary,
+                        fontWeight = FontWeight.Medium
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(18.dp))
 
-            // 4. Two Major Interactive Workspaces (Tasks & Pomodoro side-by-side or stacked)
-            if (isTablet) {
+            // Glowing Search Box
+            Surface(
+                shape = RoundedCornerShape(18.dp),
+                color = if (isDark) Color(0xFF0F172A) else Color(0xFFF8FAFC),
+                border = BorderStroke(1.dp, if (isDark) Color(0xFF334155) else Color(0xFFE2E8F0)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(20.dp)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Box(modifier = Modifier.weight(1.2f)) {
-                        DashboardTasksWidget()
+                    Icon(Icons.Default.Search, contentDescription = null, tint = LipiPrimary, modifier = Modifier.size(22.dp))
+                    Spacer(modifier = Modifier.width(12.dp))
+                    OutlinedTextField(
+                        value = searchText,
+                        onValueChange = { searchText = it },
+                        placeholder = {
+                            Text("e.g. Find Newton's laws in my Physics notebook...", fontSize = 14.sp, color = textSecondary)
+                        },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Color.Transparent,
+                            unfocusedBorderColor = Color.Transparent,
+                            focusedContainerColor = Color.Transparent,
+                            unfocusedContainerColor = Color.Transparent,
+                            focusedTextColor = textPrimary,
+                            unfocusedTextColor = textPrimary
+                        ),
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    IconButton(onClick = { /* Voice Search */ }) {
+                        Icon(Icons.Default.MicNone, contentDescription = "Voice", tint = LipiPrimary)
                     }
-                    Box(modifier = Modifier.weight(0.8f)) {
-                        DashboardPomodoroWidget(viewModel)
+                    IconButton(onClick = { /* OCR Scan */ }) {
+                        Icon(Icons.Default.QrCodeScanner, contentDescription = "Scan", tint = LipiPrimary)
                     }
-                }
-            } else {
-                Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
-                    DashboardTasksWidget()
-                    DashboardPomodoroWidget(viewModel)
+
+                    Spacer(modifier = Modifier.width(6.dp))
+
+                    Button(
+                        onClick = { if (searchText.isNotBlank()) onSearchSubmitted(searchText) },
+                        shape = RoundedCornerShape(14.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = LipiPrimary),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
+                    ) {
+                        Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Ask AI", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    }
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
-            // 5. Recent/Pinned Notes Carousel
+            // Prompt suggestion tags
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "CONTINUE WORKING",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary,
-                    letterSpacing = 1.sp
-                )
-                TextButton(onClick = onNavigateToNotes) {
-                    Text("View All", fontSize = 12.sp)
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, modifier = Modifier.size(14.dp))
-                }
-            }
-
-            if (notes.isEmpty()) {
-                EmptyStateView(
-                    title = "No notes or drawings yet",
-                    subtitle = "Tap on 'Ruled Study Notebook' or 'Cornell Academic Pad' above to create your first note!",
-                    actionText = "+ Create New Note",
-                    onActionClick = {
-                        viewModel.createNewNote("New Note", "ruled")
-                        onNavigateToNotes()
-                    }
-                )
-            } else {
-                LazyRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
-                    items(notes.take(6)) { note ->
-                        RecentNoteCard(
-                            note = note,
-                            onClick = {
-                                viewModel.selectNote(note)
-                                onNavigateToNotes()
-                            }
+                Text("Popular:", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = textSecondary)
+                listOf(
+                    "✨ Summarize last lecture",
+                    "📐 Find Physics formulas",
+                    "🧬 Explain diagram",
+                    "📝 PDF to Quiz"
+                ).forEach { prompt ->
+                    Surface(
+                        shape = CircleShape,
+                        color = if (isDark) Color(0xFF334155) else Color(0xFFF1F5F9),
+                        border = BorderStroke(1.dp, if (isDark) Color(0xFF475569) else Color(0xFFE2E8F0)),
+                        modifier = Modifier.clickable {
+                            searchText = prompt.removePrefix("✨ ").removePrefix("📐 ").removePrefix("🧬 ").removePrefix("📝 ")
+                        }
+                    ) {
+                        Text(
+                            text = prompt,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = textPrimary,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                         )
                     }
                 }
             }
+        }
+    }
+}
 
-            Spacer(modifier = Modifier.height(24.dp))
+// ==========================================
+// 4. QUICK ACTIONS BAR
+// ==========================================
+@Composable
+private fun QuickActionsRow(
+    onActionClick: (String) -> Unit,
+    isDark: Boolean,
+    cardBg: Color
+) {
+    val textPrimary = if (isDark) Color.White else Color(0xFF1E293B)
 
-            // 6. AI Smart Recommendations Hub
-            Text(
-                text = "PERSONALIZED AI SUGGESTIONS",
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary,
-                letterSpacing = 1.sp,
-                modifier = Modifier.padding(bottom = 12.dp)
-            )
+    val actions = listOf(
+        QuickActionData("New Notebook", Icons.Default.Book, LipiPrimary),
+        QuickActionData("Handwritten Note", Icons.Default.Edit, LipiSuccess),
+        QuickActionData("Voice Note", Icons.Default.MicNone, LipiError),
+        QuickActionData("Scan Document", Icons.Default.Scanner, LipiWarning),
+        QuickActionData("Import PDF", Icons.Default.PictureAsPdf, LipiAccent),
+        QuickActionData("AI Summary", Icons.Default.Bolt, LipiSecondary),
+        QuickActionData("Flashcards", Icons.Default.Style, Color(0xFFF43F5E)),
+        QuickActionData("Mind Map", Icons.Default.Psychology, Color(0xFF14B8A6))
+    )
 
-            AISuggestionRow()
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = "Quick Actions",
+            fontSize = 18.sp,
+            fontWeight = FontWeight.Bold,
+            color = textPrimary,
+            modifier = Modifier.padding(bottom = 12.dp)
+        )
 
-            Spacer(modifier = Modifier.height(40.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            actions.forEach { action ->
+                Card(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable { onActionClick(action.label) },
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = cardBg),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                    border = BorderStroke(1.dp, if (isDark) Color(0xFF334155) else Color(0xFFE2E8F0))
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 14.dp, horizontal = 8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .background(action.tint.copy(alpha = 0.15f), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(action.icon, contentDescription = null, tint = action.tint, modifier = Modifier.size(22.dp))
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = action.label,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = textPrimary,
+                            textAlign = TextAlign.Center,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+private data class QuickActionData(val label: String, val icon: ImageVector, val tint: Color)
+
+// ==========================================
+// 5. TODAY'S FOCUS CARD
+// ==========================================
+@Composable
+private fun TodaysFocusCard(isDark: Boolean, cardBg: Color) {
+    val textPrimary = if (isDark) Color.White else Color(0xFF1E293B)
+    val textSecondary = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
+
+    var task1Done by remember { mutableStateOf(true) }
+    var task2Done by remember { mutableStateOf(false) }
+    var task3Done by remember { mutableStateOf(false) }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = cardBg),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        border = BorderStroke(1.dp, if (isDark) Color(0xFF334155) else Color(0xFFE2E8F0))
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.CheckCircle, contentDescription = null, tint = LipiSuccess, modifier = Modifier.size(20.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Today's Focus", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = textPrimary)
+                }
+                Surface(
+                    shape = CircleShape,
+                    color = LipiSuccess.copy(alpha = 0.12f)
+                ) {
+                    Text(
+                        text = "Est. 1h 35m",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = LipiSuccess,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Checklist
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                FocusTaskRow("Quantum Physics Ch 4 Review (45m)", task1Done, isDark) { task1Done = !task1Done }
+                FocusTaskRow("Calculus Integration Practice (30m)", task2Done, isDark) { task2Done = !task2Done }
+                FocusTaskRow("Biology Flashcards Review (20m)", task3Done, isDark) { task3Done = !task3Done }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Motivational Banner
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = if (isDark) Color(0xFF0F172A) else Color(0xFFF8FAFC),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("💡", fontSize = 18.sp)
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = "\"Consistency is the key to mastery. Keep pushing forward!\"",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = textSecondary,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Button(
+                onClick = { /* Start Focus Session */ },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = LipiSuccess)
+            ) {
+                Icon(Icons.Default.PlayArrow, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Start Focus Session", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            }
         }
     }
 }
 
 @Composable
-fun StatCard(
+private fun FocusTaskRow(
     title: String,
-    value: String,
-    icon: ImageVector,
-    tint: Color,
-    modifier: Modifier = Modifier,
-    subtitle: String? = null,
-    progress: Float? = null,
-    onClick: (() -> Unit)? = null,
-    onCustomizeClick: (() -> Unit)? = null
+    checked: Boolean,
+    isDark: Boolean,
+    onToggle: () -> Unit
 ) {
-    var isPressed by remember { mutableStateOf(false) }
-    val cardScale by animateFloatAsState(
-        targetValue = if (isPressed) 0.96f else 1f,
-        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow),
-        label = "statCardScale"
-    )
-    val animatedProgress by animateFloatAsState(
-        targetValue = (progress ?: 0f).coerceIn(0f, 1f),
-        animationSpec = tween(durationMillis = 600, easing = FastOutSlowInEasing),
-        label = "statCardProgress"
-    )
+    val textPrimary = if (isDark) Color.White else Color(0xFF1E293B)
+    val textSecondary = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(if (isDark) Color(0xFF334155).copy(alpha = 0.5f) else Color(0xFFF1F5F9))
+            .clickable { onToggle() }
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = if (checked) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+            contentDescription = null,
+            tint = if (checked) LipiSuccess else textSecondary,
+            modifier = Modifier.size(20.dp)
+        )
+        Spacer(modifier = Modifier.width(12.dp))
+        Text(
+            text = title,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = if (checked) textSecondary else textPrimary,
+            modifier = Modifier.weight(1f)
+        )
+    }
+}
+
+// ==========================================
+// 6. POMODORO TIMER CARD
+// ==========================================
+@Composable
+private fun PomodoroTimerCard(isDark: Boolean, cardBg: Color) {
+    var isRunning by remember { mutableStateOf(false) }
+    var secondsLeft by remember { mutableStateOf(25 * 60) }
+    var selectedPresetMinutes by remember { mutableStateOf(25) }
+
+    val textPrimary = if (isDark) Color.White else Color(0xFF1E293B)
+    val textSecondary = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
+
+    LaunchedEffect(isRunning, secondsLeft) {
+        if (isRunning && secondsLeft > 0) {
+            delay(1000L)
+            secondsLeft -= 1
+        } else if (secondsLeft == 0) {
+            isRunning = false
+        }
+    }
+
+    val minutes = secondsLeft / 60
+    val secs = secondsLeft % 60
+    val formattedTime = String.format("%02d:%02d", minutes, secs)
+    val progress = secondsLeft.toFloat() / (selectedPresetMinutes * 60).toFloat()
 
     Card(
-        modifier = modifier
-            .graphicsLayer {
-                scaleX = cardScale
-                scaleY = cardScale
-            }
-            .then(
-                if (onClick != null) {
-                    Modifier.pointerInput(Unit) {
-                        detectTapGestures(
-                            onPress = {
-                                isPressed = true
-                                tryAwaitRelease()
-                                isPressed = false
-                            },
-                            onTap = { onClick() }
-                        )
-                    }
-                } else Modifier
-            ),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        shape = RoundedCornerShape(12.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = cardBg),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        border = BorderStroke(1.dp, if (isDark) Color(0xFF334155) else Color(0xFFE2E8F0))
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
+                .padding(20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.size(20.dp)
+                    Icon(Icons.Default.Schedule, contentDescription = null, tint = LipiPrimary, modifier = Modifier.size(20.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Pomodoro Timer", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = textPrimary)
+                }
+                Surface(
+                    shape = CircleShape,
+                    color = LipiPrimary.copy(alpha = 0.12f)
+                ) {
+                    Text(
+                        text = "Today: 1h 45m",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = LipiPrimary,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                     )
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Column {
-                        Text(
-                            text = title.uppercase(),
-                            fontSize = 10.sp,
-                            color = MaterialTheme.colorScheme.outline,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 0.5.sp
-                        )
-                        Text(
-                            text = value,
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-                }
-
-                if (onCustomizeClick != null) {
-                    IconButton(
-                        onClick = onCustomizeClick,
-                        modifier = Modifier.size(28.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Tune,
-                            contentDescription = "Customize",
-                            tint = MaterialTheme.colorScheme.outline.copy(alpha = 0.7f),
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
                 }
             }
 
-            if (subtitle != null) {
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = subtitle,
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontWeight = FontWeight.SemiBold
-                )
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Circular Timer
+            Box(
+                modifier = Modifier.size(130.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
+                    val strokeWidth = 10.dp.toPx()
+                    drawCircle(
+                        color = if (isDark) Color(0xFF334155) else Color(0xFFE2E8F0),
+                        style = Stroke(width = strokeWidth)
+                    )
+                    drawArc(
+                        color = LipiPrimary,
+                        startAngle = -90f,
+                        sweepAngle = 360f * progress,
+                        useCenter = false,
+                        style = Stroke(width = strokeWidth)
+                    )
+                }
+
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = formattedTime,
+                        fontSize = 28.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = textPrimary
+                    )
+                    Text(
+                        text = if (isRunning) "FOCUSING" else "PAUSED",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isRunning) LipiSuccess else textSecondary
+                    )
+                }
             }
 
-            if (progress != null) {
-                Spacer(modifier = Modifier.height(8.dp))
-                LinearProgressIndicator(
-                    progress = { animatedProgress },
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Presets row
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                listOf(10, 25, 50).forEach { mins ->
+                    val isSelected = selectedPresetMinutes == mins
+                    FilterChip(
+                        selected = isSelected,
+                        onClick = {
+                            selectedPresetMinutes = mins
+                            secondsLeft = mins * 60
+                            isRunning = false
+                        },
+                        label = { Text("$mins min", fontWeight = FontWeight.Bold, fontSize = 12.sp) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = LipiPrimary,
+                            selectedLabelColor = Color.White
+                        )
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Control Buttons
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Button(
+                    onClick = { isRunning = !isRunning },
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = if (isRunning) LipiWarning else LipiPrimary),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(if (isRunning) Icons.Default.Pause else Icons.Default.PlayArrow, contentDescription = null)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(if (isRunning) "Pause" else "Start Timer", fontWeight = FontWeight.Bold)
+                }
+
+                IconButton(
+                    onClick = {
+                        secondsLeft = selectedPresetMinutes * 60
+                        isRunning = false
+                    },
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .height(6.dp)
-                        .clip(RoundedCornerShape(3.dp)),
-                    color = tint,
-                    trackColor = tint.copy(alpha = 0.15f)
-                )
+                        .background(if (isDark) Color(0xFF334155) else Color(0xFFF1F5F9), CircleShape)
+                ) {
+                    Icon(Icons.Default.Refresh, contentDescription = "Reset", tint = textPrimary)
+                }
             }
         }
     }
 }
 
+// ==========================================
+// 7. CONTINUE WORKING (REALISTIC NOTEBOOK COVERS)
+// ==========================================
+@Composable
+private fun ContinueWorkingSection(
+    notes: List<NoteEntity>,
+    onNoteClick: () -> Unit,
+    onViewAllClick: () -> Unit,
+    isDark: Boolean,
+    cardBg: Color
+) {
+    val textPrimary = if (isDark) Color.White else Color(0xFF1E293B)
+    val textSecondary = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
+
+    val sampleCovers = listOf(
+        NotebookCoverData("Quantum Physics Ch 4", "Edited 2 hrs ago", "16 pages", Color(0xFF3B82F6), true),
+        NotebookCoverData("Organic Chemistry Lab", "Edited 5 hrs ago", "24 pages", Color(0xFF10B981), true),
+        NotebookCoverData("Calculus Integration", "Edited Yesterday", "18 pages", Color(0xFF8B5CF6), false),
+        NotebookCoverData("European History 101", "Edited Aug 3", "32 pages", Color(0xFFF59E0B), true)
+    )
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Continue Working", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = textPrimary)
+            TextButton(onClick = onViewAllClick) {
+                Text("View All Notes", color = LipiPrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, tint = LipiPrimary, modifier = Modifier.size(16.dp))
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            contentPadding = PaddingValues(horizontal = 2.dp)
+        ) {
+            items(sampleCovers) { cover ->
+                Card(
+                    modifier = Modifier
+                        .width(180.dp)
+                        .height(240.dp)
+                        .clickable { onNoteClick() },
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = cardBg),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
+                    border = BorderStroke(1.dp, if (isDark) Color(0xFF334155) else Color(0xFFE2E8F0))
+                ) {
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        // Notebook realistic cover header with spine
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(140.dp)
+                                .background(cover.coverColor)
+                        ) {
+                            // Left spine detail
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxHeight()
+                                    .width(14.dp)
+                                    .background(Color.Black.copy(alpha = 0.2f))
+                            )
+
+                            // Badges top right
+                            Row(
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                if (cover.isAi) {
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = Color.Black.copy(alpha = 0.35f)
+                                    ) {
+                                        Text("✨ AI", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                    }
+                                }
+                                Surface(
+                                    shape = CircleShape,
+                                    color = Color.Black.copy(alpha = 0.35f)
+                                ) {
+                                    Icon(Icons.Default.Star, contentDescription = null, tint = Color(0xFFFFD700), modifier = Modifier.size(14.dp).padding(2.dp))
+                                }
+                            }
+
+                            // Title on Cover
+                            Text(
+                                text = cover.title,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = Color.White,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier
+                                    .align(Alignment.BottomStart)
+                                    .padding(start = 22.dp, end = 12.dp, bottom = 12.dp)
+                            )
+                        }
+
+                        // Notebook info
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column {
+                                Text(cover.lastEdited, fontSize = 11.sp, color = textSecondary, fontWeight = FontWeight.Medium)
+                                Text(cover.pageCount, fontSize = 11.sp, color = textSecondary, fontWeight = FontWeight.Bold)
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End
+                            ) {
+                                Surface(
+                                    shape = CircleShape,
+                                    color = LipiPrimary.copy(alpha = 0.12f)
+                                ) {
+                                    Text("Open", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = LipiPrimary, modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private data class NotebookCoverData(
+    val title: String,
+    val lastEdited: String,
+    val pageCount: String,
+    val coverColor: Color,
+    val isAi: Boolean
+)
+
+// ==========================================
+// 8. AI SUGGESTIONS SECTION
+// ==========================================
+@Composable
+private fun AISuggestionsSection(
+    onSuggestionClick: (String) -> Unit,
+    isDark: Boolean,
+    cardBg: Color
+) {
+    val textPrimary = if (isDark) Color.White else Color(0xFF1E293B)
+    val textSecondary = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
+
+    val suggestions = listOf(
+        "✨ Continue yesterday's Quantum Physics notes",
+        "📄 Summarize latest PDF: Organic_Chemistry_Ch3.pdf",
+        "⚡ Generate 10 Flashcards for European History",
+        "🔍 Explain highlighted diagram in Neurobiology",
+        "🤖 Ask Lipi AI Tutor to review practice exam"
+    )
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = LipiSecondary, modifier = Modifier.size(20.dp))
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("AI Smart Recommendations", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = textPrimary)
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            suggestions.take(3).forEach { sug ->
+                Card(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable { onSuggestionClick(sug) },
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = cardBg),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                    border = BorderStroke(1.dp, if (isDark) Color(0xFF334155) else Color(0xFFE2E8F0))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = sug,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = textPrimary,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, tint = LipiSecondary, modifier = Modifier.size(16.dp))
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ==========================================
+// 9. ANALYTICS & STUDY HEATMAP
+// ==========================================
+@Composable
+private fun AnalyticsAndHeatmapSection(isDark: Boolean, cardBg: Color) {
+    val textPrimary = if (isDark) Color.White else Color(0xFF1E293B)
+    val textSecondary = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = cardBg),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        border = BorderStroke(1.dp, if (isDark) Color(0xFF334155) else Color(0xFFE2E8F0))
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.BarChart, contentDescription = null, tint = LipiPrimary, modifier = Modifier.size(20.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Study Analytics & Heatmap", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = textPrimary)
+                }
+
+                Surface(
+                    shape = CircleShape,
+                    color = LipiPrimary.copy(alpha = 0.12f)
+                ) {
+                    Text("Focus Score: 92%", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = LipiPrimary, modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp))
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // GitHub-style 7x4 Study Activity Heatmap Grid
+            Text("Activity Heatmap (Last 28 Days)", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = textSecondary)
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                repeat(4) { rowIdx ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        repeat(7) { colIdx ->
+                            val intensity = ((rowIdx * 7 + colIdx) * 37) % 100
+                            val alpha = when {
+                                intensity > 75 -> 0.9f
+                                intensity > 45 -> 0.6f
+                                intensity > 20 -> 0.3f
+                                else -> 0.1f
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(20.dp)
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(LipiSuccess.copy(alpha = alpha))
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Stats summary row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text("⏱️ Total Spent: 18.5 hrs", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = textPrimary)
+                Text("📚 Top Subject: Physics", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = textPrimary)
+                Text("🏆 Badges Unlocked: 12", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = textPrimary)
+            }
+        }
+    }
+}
+
+// ==========================================
+// 10. CALENDAR & UPCOMING DEADLINES
+// ==========================================
+@Composable
+private fun UpcomingDeadlinesSection(isDark: Boolean, cardBg: Color) {
+    val textPrimary = if (isDark) Color.White else Color(0xFF1E293B)
+    val textSecondary = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = cardBg),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        border = BorderStroke(1.dp, if (isDark) Color(0xFF334155) else Color(0xFFE2E8F0))
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.CalendarToday, contentDescription = null, tint = LipiWarning, modifier = Modifier.size(20.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Upcoming Tasks & Exams", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = textPrimary)
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                DeadlineRow("🔴 Physics Midterm Exam", "Tomorrow, 10:00 AM", LipiError, isDark)
+                DeadlineRow("🟡 Organic Chemistry Lab Report", "Aug 8, 11:59 PM", LipiWarning, isDark)
+                DeadlineRow("🟢 History Essay Final Draft", "Aug 12, 5:00 PM", LipiSuccess, isDark)
+            }
+        }
+    }
+}
+
+@Composable
+private fun DeadlineRow(title: String, dueDate: String, badgeColor: Color, isDark: Boolean) {
+    val textPrimary = if (isDark) Color.White else Color(0xFF1E293B)
+    val textSecondary = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(if (isDark) Color(0xFF334155).copy(alpha = 0.5f) else Color(0xFFF1F5F9))
+            .padding(12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(title, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = textPrimary)
+        Surface(
+            shape = CircleShape,
+            color = badgeColor.copy(alpha = 0.15f)
+        ) {
+            Text(dueDate, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = badgeColor, modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp))
+        }
+    }
+}
+
+// ==========================================
+// CUSTOMIZE GOALS MODAL
+// ==========================================
 @Composable
 fun CustomizeGoalsModal(
     viewModel: NoteViewModel,
     onDismiss: () -> Unit
 ) {
     var tempGoalMins by remember { mutableStateOf(viewModel.dailyGoalTargetMinutes.toString()) }
-    var tempTaskGoal by remember { mutableStateOf(viewModel.dailyTaskGoalTarget.toString()) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = {
-            Icon(Icons.Default.Tune, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            Icon(Icons.Default.Tune, contentDescription = null, tint = LipiPrimary)
         },
         title = {
             Text(
@@ -583,19 +1480,18 @@ fun CustomizeGoalsModal(
                     .padding(vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // 1. Daily Study Time Goal (Minutes)
                 Card(
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
                     shape = RoundedCornerShape(14.dp)
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.TrendingUp, contentDescription = null, tint = Color(0xFF00B0FF), modifier = Modifier.size(18.dp))
+                            Icon(Icons.Default.TrendingUp, contentDescription = null, tint = LipiPrimary, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Daily Study Time Target", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text("Daily Study Target", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                         }
                         Spacer(modifier = Modifier.height(8.dp))
-                        
+
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                             modifier = Modifier.fillMaxWidth()
@@ -604,78 +1500,18 @@ fun CustomizeGoalsModal(
                                 val isSel = tempGoalMins == mins.toString()
                                 Surface(
                                     shape = RoundedCornerShape(8.dp),
-                                    color = if (isSel) Color(0xFF00B0FF).copy(alpha = 0.2f) else MaterialTheme.colorScheme.surface,
-                                    border = BorderStroke(1.dp, if (isSel) Color(0xFF00B0FF) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                                    color = if (isSel) LipiPrimary.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surface,
+                                    border = BorderStroke(1.dp, if (isSel) LipiPrimary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
                                     modifier = Modifier
                                         .weight(1f)
                                         .clickable { tempGoalMins = mins.toString() }
                                 ) {
-                                    Text(
-                                        text = "${mins}m",
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        textAlign = TextAlign.Center,
-                                        color = if (isSel) Color(0xFF00B0FF) else MaterialTheme.colorScheme.onSurface,
-                                        modifier = Modifier.padding(vertical = 6.dp)
-                                    )
+                                    Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 8.dp)) {
+                                        Text("${mins}m", fontSize = 11.sp, fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal)
+                                    }
                                 }
                             }
                         }
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        OutlinedTextField(
-                            value = tempGoalMins,
-                            onValueChange = { tempGoalMins = it.filter { char -> char.isDigit() } },
-                            label = { Text("Target Minutes / Day", fontSize = 11.sp) },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth(),
-                            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 13.sp)
-                        )
-                    }
-                }
-
-                // 2. Automatic Study Streak Information
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
-                    shape = RoundedCornerShape(14.dp)
-                ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.LocalFireDepartment, contentDescription = null, tint = Color(0xFFFF5722), modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Current Streak: ${viewModel.studyStreakDays} Days 🔥", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                        }
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = "⚡ Automatic Streak Tracker: Your study streak automatically increments each day you study in the app! If you don't study for 2 consecutive days, your streak resets to 0.",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            lineHeight = 15.sp
-                        )
-                    }
-                }
-
-                // 3. Daily Task Target
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
-                    shape = RoundedCornerShape(14.dp)
-                ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Daily Tasks Goal Target", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                        }
-                        Spacer(modifier = Modifier.height(8.dp))
-                        OutlinedTextField(
-                            value = tempTaskGoal,
-                            onValueChange = { tempTaskGoal = it.filter { char -> char.isDigit() } },
-                            label = { Text("Target Tasks to Complete / Day", fontSize = 11.sp) },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth(),
-                            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 13.sp)
-                        )
                     }
                 }
             }
@@ -683,567 +1519,18 @@ fun CustomizeGoalsModal(
         confirmButton = {
             Button(
                 onClick = {
-                    val goalVal = tempGoalMins.toIntOrNull() ?: 30
-                    val taskVal = tempTaskGoal.toIntOrNull() ?: 3
-                    
-                    viewModel.updateDailyGoalMinutes(goalVal)
-                    viewModel.updateDailyTaskGoalTarget(taskVal)
+                    tempGoalMins.toIntOrNull()?.let { mins -> viewModel.updateDailyGoalMinutes(mins) }
                     onDismiss()
                 },
-                shape = RoundedCornerShape(10.dp)
+                colors = ButtonDefaults.buttonColors(containerColor = LipiPrimary)
             ) {
-                Text("Save Custom Goals")
+                Text("Save Changes")
             }
         },
         dismissButton = {
-            OutlinedButton(onClick = onDismiss, shape = RoundedCornerShape(10.dp)) {
+            TextButton(onClick = onDismiss) {
                 Text("Cancel")
             }
         }
     )
 }
-
-@Composable
-fun ActionCard(
-    title: String,
-    subtitle: String,
-    icon: ImageVector,
-    color: Color,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    var isPressed by remember { mutableStateOf(false) }
-    val cardScale by animateFloatAsState(
-        targetValue = if (isPressed) 0.96f else 1f,
-        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow),
-        label = "actionCardScale"
-    )
-
-    Card(
-        modifier = modifier
-            .graphicsLayer {
-                scaleX = cardScale
-                scaleY = cardScale
-            }
-            .pointerInput(Unit) {
-                detectTapGestures(
-                    onPress = {
-                        isPressed = true
-                        tryAwaitRelease()
-                        isPressed = false
-                    },
-                    onTap = { onClick() }
-                )
-            },
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        shape = RoundedCornerShape(12.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.size(24.dp)
-            )
-            Spacer(modifier = Modifier.width(16.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = subtitle,
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-            Icon(
-                imageVector = Icons.Default.ChevronRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.outline,
-                modifier = Modifier.size(20.dp)
-            )
-        }
-    }
-}
-
-@Composable
-fun RecentNoteCard(
-    note: NoteEntity,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    var isPressed by remember { mutableStateOf(false) }
-    val cardScale by animateFloatAsState(
-        targetValue = if (isPressed) 0.95f else 1f,
-        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow),
-        label = "recentNoteCardScale"
-    )
-
-    val dateString = remember(note.lastModifiedTime) {
-        val sdf = SimpleDateFormat("MMM d, HH:mm", Locale.getDefault())
-        sdf.format(Date(note.lastModifiedTime))
-    }
-
-    val icon = when (note.templateType) {
-        "pdf" -> Icons.Default.PictureAsPdf
-        "cornell" -> Icons.Default.ListAlt
-        "ruled" -> Icons.Default.DriveFileRenameOutline
-        "grid" -> Icons.Default.GridView
-        else -> Icons.Default.Edit
-    }
-
-    val tint = when (note.templateType) {
-        "pdf" -> Color(0xFFEF5350)
-        "cornell" -> Color(0xFF26A69A)
-        "ruled" -> Color(0xFF5C6BC0)
-        else -> MaterialTheme.colorScheme.primary
-    }
-
-    Card(
-        modifier = modifier
-            .width(200.dp)
-            .graphicsLayer {
-                scaleX = cardScale
-                scaleY = cardScale
-            }
-            .pointerInput(Unit) {
-                detectTapGestures(
-                    onPress = {
-                        isPressed = true
-                        tryAwaitRelease()
-                        isPressed = false
-                    },
-                    onTap = { onClick() }
-                )
-            },
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        shape = RoundedCornerShape(12.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-    ) {
-        Column {
-            if (note.coverType != "none") {
-                Box(modifier = Modifier.fillMaxWidth().height(100.dp)) {
-                    RenderCover(
-                        coverType = note.coverType,
-                        title = note.coverTitle,
-                        subtitle = note.coverSubtitle,
-                        author = note.coverAuthor,
-                        extra = note.coverExtra,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
-            }
-            Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.size(20.dp)
-                )
-
-                Text(
-                    text = note.templateType.uppercase(),
-                    fontSize = 8.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = tint,
-                    modifier = Modifier
-                        .background(tint.copy(alpha = 0.08f), RoundedCornerShape(4.dp))
-                        .padding(horizontal = 4.dp, vertical = 2.dp)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Text(
-                text = note.title,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            Text(
-                text = "Last active: $dateString",
-                fontSize = 10.sp,
-                color = MaterialTheme.colorScheme.outline
-            )
-        }
-        }
-    }
-}
-
-@Composable
-fun DashboardPomodoroWidget(viewModel: NoteViewModel) {
-    val isTimerRunning = viewModel.timerIsRunning
-    val timeLeftSeconds = viewModel.timerRemainingSeconds
-    
-    val minutes = timeLeftSeconds / 60
-    val seconds = timeLeftSeconds % 60
-    val formattedTime = String.format("%02d:%02d", minutes, seconds)
-
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
-        shape = RoundedCornerShape(18.dp),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Timer,
-                        contentDescription = null,
-                        tint = Color(0xFFFF5722),
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "POMODORO FOCUS",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-
-                Text(
-                    text = if (isTimerRunning) "ACTIVE" else "READY",
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = if (isTimerRunning) Color(0xFF10B981) else Color(0xFFFF5722),
-                    modifier = Modifier
-                        .background(
-                            if (isTimerRunning) Color(0xFF10B981).copy(alpha = 0.1f) else Color(0xFFFF5722).copy(alpha = 0.1f),
-                            RoundedCornerShape(6.dp)
-                        )
-                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Timer display
-            Text(
-                text = formattedTime,
-                fontSize = 42.sp,
-                fontWeight = FontWeight.ExtraBold,
-                fontFamily = FontFamily.Monospace,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Preset duration quick picks
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                listOf(
-                    "10m" to 600,
-                    "25m" to 1500,
-                    "50m" to 3000
-                ).forEach { (label, secs) ->
-                    val isSelected = viewModel.timerTotalSeconds == secs
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = if (isSelected) Color(0xFFFF5722).copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                        border = BorderStroke(1.dp, if (isSelected) Color(0xFFFF5722) else Color.Transparent),
-                        modifier = Modifier.clickable {
-                            viewModel.resetTimer(secs)
-                        }
-                    ) {
-                        Text(
-                            text = label,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (isSelected) Color(0xFFFF5722) else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Button(
-                    onClick = {
-                        if (isTimerRunning) {
-                            viewModel.pauseTimer()
-                        } else {
-                            viewModel.startTimer()
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (isTimerRunning) MaterialTheme.colorScheme.error else Color(0xFFFF5722)
-                    ),
-                    shape = RoundedCornerShape(10.dp),
-                    modifier = Modifier.testTag("pomodoro_focus_button")
-                ) {
-                    Icon(
-                        imageVector = if (isTimerRunning) Icons.Default.Pause else Icons.Default.PlayArrow,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(if (isTimerRunning) "Pause" else "Focus Now")
-                }
-
-                OutlinedButton(
-                    onClick = {
-                        viewModel.resetTimer(viewModel.timerTotalSeconds)
-                    },
-                    shape = RoundedCornerShape(10.dp)
-                ) {
-                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun DashboardTasksWidget() {
-    var taskText by remember { mutableStateOf("") }
-    val tasks = remember {
-        mutableStateListOf(
-            TaskItem("Prepare for Compiler Exam", true),
-            TaskItem("Re-read machine learning pdf booklet", false),
-            TaskItem("Draft sketch notes on neural nets", false)
-        )
-    }
-
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
-        shape = RoundedCornerShape(18.dp),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.TaskAlt,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "TODAY'S STUDY TASKS",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-
-                Text(
-                    text = "${tasks.count { it.done }} of ${tasks.size} done",
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Task list container
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                tasks.forEachIndexed { idx, t ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { tasks[idx] = t.copy(done = !t.done) }
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = if (t.done) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
-                            contentDescription = null,
-                            tint = if (t.done) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Text(
-                            text = t.text,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = if (t.done) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.weight(1f)
-                        )
-                        IconButton(
-                            onClick = { tasks.removeAt(idx) },
-                            modifier = Modifier.size(24.dp)
-                        ) {
-                            Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error.copy(alpha = 0.6f), modifier = Modifier.size(14.dp))
-                        }
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Input task
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                androidx.compose.foundation.text.BasicTextField(
-                    value = taskText,
-                    onValueChange = { taskText = it },
-                    textStyle = androidx.compose.ui.text.TextStyle(
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurface
-                    ),
-                    singleLine = true,
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(36.dp)
-                        .background(Color.Transparent)
-                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(8.dp))
-                        .padding(horizontal = 12.dp, vertical = 0.dp),
-                    decorationBox = { innerTextField ->
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.fillMaxHeight()
-                        ) {
-                            if (taskText.isEmpty()) {
-                                Text(
-                                    text = "Add study item...",
-                                    fontSize = 12.sp,
-                                    color = MaterialTheme.colorScheme.outline
-                                )
-                            } else {
-                                innerTextField()
-                            }
-                        }
-                    }
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                IconButton(
-                    onClick = {
-                        if (taskText.isNotBlank()) {
-                            tasks.add(TaskItem(taskText.trim(), false))
-                            taskText = ""
-                        }
-                    },
-                    modifier = Modifier
-                        .size(36.dp)
-                        .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp))
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = "Add Task", tint = androidx.compose.ui.graphics.Color.White, modifier = Modifier.size(16.dp))
-                }
-            }
-        }
-    }
-}
-
-data class TaskItem(val text: String, val done: Boolean)
-
-@Composable
-fun AISuggestionRow() {
-    val suggestions = listOf(
-        SuggestionData(
-            title = "Semantic Smart Tags",
-            desc = "Auto-cluster 'Cornell Notes' into #exam-prep tag groups",
-            accent = Color(0xFF00B0FF),
-            icon = Icons.Default.AutoAwesome
-        ),
-        SuggestionData(
-            title = "Study Quiz Flashcards",
-            desc = "Generate 5 critical flashcards from recent handwriting OCR",
-            accent = Color(0xFFFF9100),
-            icon = Icons.Default.Quiz
-        ),
-        SuggestionData(
-            title = "Lectures Audio Cleanup",
-            desc = "Run Gemini summaries on voice audio transcription",
-            accent = Color(0xFF00E676),
-            icon = Icons.Default.KeyboardVoice
-        )
-    )
-
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        suggestions.forEach { sug ->
-            Card(
-                modifier = Modifier
-                    .weight(1f)
-                    .height(100.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
-                shape = RoundedCornerShape(14.dp)
-            ) {
-                Column(
-                    modifier = Modifier.padding(10.dp)
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            text = sug.title,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = sug.accent
-                        )
-                        Icon(
-                            imageVector = sug.icon,
-                            contentDescription = null,
-                            tint = sug.accent,
-                            modifier = Modifier.size(14.dp)
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = sug.desc,
-                        fontSize = 10.sp,
-                        color = MaterialTheme.colorScheme.outline,
-                        maxLines = 3,
-                        lineHeight = 12.sp
-                    )
-                }
-            }
-        }
-    }
-}
-
-data class SuggestionData(val title: String, val desc: String, val accent: Color, val icon: ImageVector)

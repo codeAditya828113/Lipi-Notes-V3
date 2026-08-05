@@ -956,7 +956,7 @@ class NoteViewModel(
     private var lastStudyDateString = ""
 
     // Theme Mode & Dynamic Color
-    var themeMode by mutableStateOf(sharedPrefs.getString("theme_mode", "system") ?: "system")
+    var themeMode by mutableStateOf(sharedPrefs.getString("theme_mode", "light") ?: "light")
         private set
 
     var dynamicColorEnabled by mutableStateOf(sharedPrefs.getBoolean("dynamic_color_enabled", true))

@@ -45,7 +45,7 @@ class MainActivity : ComponentActivity() {
       val isDark = when (viewModel.themeMode) {
         "dark", "oled" -> true
         "light" -> false
-        else -> isSystemInDarkTheme()
+        else -> false
       }
       val isOled = viewModel.themeMode == "oled"
       MyApplicationTheme(
