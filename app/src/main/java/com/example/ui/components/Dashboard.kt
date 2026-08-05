@@ -425,153 +425,143 @@ private fun TopMetricsRow(
 
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(14.dp)
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Hero Metric Card 1: Study Progress (Featured with 1.8x weight & Donut Chart)
+        // Study Progress Card
         Card(
             modifier = Modifier
-                .weight(if (isTablet) 1.6f else 1.2f)
-                .height(130.dp),
-            shape = RoundedCornerShape(22.dp),
+                .weight(if (isTablet) 2.2f else 1f)
+                .height(160.dp),
+            shape = RoundedCornerShape(24.dp),
             colors = CardDefaults.cardColors(containerColor = cardBg),
-            elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
-            border = BorderStroke(
-                width = 1.5.dp,
-                brush = Brush.linearGradient(listOf(LipiPrimary, LipiSecondary))
-            )
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+            border = BorderStroke(1.dp, if (isDark) Color(0xFF334155) else Color(0xFFE2E8F0))
         ) {
-            Row(
+            Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                    .padding(20.dp)
             ) {
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.SpaceBetween
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.TrendingUp, contentDescription = null, tint = LipiPrimary, modifier = Modifier.size(20.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Study Progress", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = textPrimary)
+                }
+                Spacer(modifier = Modifier.weight(1f))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.Bottom
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Surface(
-                            shape = CircleShape,
-                            color = LipiPrimary.copy(alpha = 0.15f)
-                        ) {
-                            Icon(
-                                Icons.Default.PieChart,
-                                contentDescription = null,
-                                tint = LipiPrimary,
-                                modifier = Modifier
-                                    .padding(4.dp)
-                                    .size(14.dp)
+                    // Circular Progress
+                    Box(
+                        modifier = Modifier.size(80.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Canvas(modifier = Modifier.fillMaxSize()) {
+                            val strokeW = 10.dp.toPx()
+                            drawCircle(
+                                color = LipiPrimary.copy(alpha = 0.15f),
+                                style = Stroke(width = strokeW)
+                            )
+                            drawArc(
+                                brush = Brush.sweepGradient(listOf(LipiPrimary, LipiSecondary, LipiPrimary)),
+                                startAngle = -90f,
+                                sweepAngle = 360f * 0.74f,
+                                useCenter = false,
+                                style = Stroke(width = strokeW, cap = androidx.compose.ui.graphics.StrokeCap.Round)
                             )
                         }
-                        Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = "Study Progress",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = LipiPrimary,
-                            maxLines = 1
-                        )
-                    }
-
-                    Column {
-                        Text(
-                            text = "84%",
-                            fontSize = 26.sp,
+                            text = "74%",
+                            fontSize = 20.sp,
                             fontWeight = FontWeight.ExtraBold,
-                            color = textPrimary,
-                            letterSpacing = (-0.5).sp
-                        )
-                        Text(
-                            text = "+12% vs last week",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = LipiSuccess
+                            color = textPrimary
                         )
                     }
-                }
 
-                // Mini Circular Donut Progress Ring
-                Box(
-                    modifier = Modifier.size(64.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Canvas(modifier = Modifier.fillMaxSize()) {
-                        val strokeW = 7.dp.toPx()
-                        drawCircle(
-                            color = if (isDark) Color(0xFF334155) else Color(0xFFE2E8F0),
-                            style = Stroke(width = strokeW)
-                        )
-                        drawArc(
-                            brush = Brush.sweepGradient(listOf(LipiPrimary, LipiSecondary, LipiPrimary)),
-                            startAngle = -90f,
-                            sweepAngle = 360f * 0.84f,
-                            useCenter = false,
-                            style = Stroke(width = strokeW)
-                        )
+                    // Bar Chart Area
+                    Column(
+                        horizontalAlignment = Alignment.Start,
+                        modifier = Modifier.padding(start = 24.dp).weight(1f)
+                    ) {
+                        Text("This Week", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = textSecondary)
+                        Text("22h 15m", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = textPrimary)
+                        Text("of 30h goal", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = textSecondary)
+                        Spacer(modifier = Modifier.height(12.dp))
+                        
+                        // Mini Bar Chart
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.Bottom,
+                            modifier = Modifier.height(30.dp)
+                        ) {
+                            val heights = listOf(0.4f, 0.7f, 0.5f, 0.9f, 0.6f, 0.2f, 0.3f)
+                            val days = listOf("M", "T", "W", "T", "F", "S", "S")
+                            heights.forEachIndexed { index, h ->
+                                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Bottom) {
+                                    Box(
+                                        modifier = Modifier
+                                            .width(6.dp)
+                                            .height((30 * h).dp)
+                                            .clip(CircleShape)
+                                            .background(LipiPrimary)
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(days[index], fontSize = 8.sp, color = textSecondary, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
                     }
-                    Text(
-                        text = "84%",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = textPrimary
-                    )
                 }
             }
         }
 
-        // Metric 2: Weekly Goal
-        MetricCard(
-            modifier = Modifier.weight(1f),
-            title = "Weekly Goal",
-            value = "14.5 / 18 h",
-            subtext = "2h 15m remaining",
-            icon = Icons.Default.BarChart,
-            accentColor = LipiAccent,
-            cardBg = cardBg,
-            textPrimary = textPrimary,
-            textSecondary = textSecondary,
-            isDark = isDark,
-            progressValue = 0.80f
-        )
-
-        // Metric 3: Study Streak
-        MetricCard(
+        // Study Streak Card
+        WaveMetricCard(
             modifier = Modifier.weight(1f),
             title = "Study Streak",
-            value = "12 Days 🔥",
-            subtext = "Personal Best: 14 Days",
-            icon = Icons.Default.OfflineBolt,
-            accentColor = LipiWarning,
+            value = "12",
+            unit = "Days",
+            subtext = "Keep it up! 🔥",
+            subtextColor = textPrimary,
+            icon = Icons.Default.LocalFireDepartment,
+            iconTint = LipiWarning,
+            waveColor = LipiWarning,
             cardBg = cardBg,
             textPrimary = textPrimary,
             textSecondary = textSecondary,
             isDark = isDark
         )
 
-        // Metric 4: Notes Created
-        MetricCard(
+        // Notes Created Card
+        WaveMetricCard(
             modifier = Modifier.weight(1f),
             title = "Notes Created",
-            value = "$notesCount Notes",
-            subtext = "+4 added this week",
+            value = "$notesCount",
+            unit = "",
+            subtext = "+18 this week",
+            subtextColor = LipiSuccess,
             icon = Icons.Default.Book,
-            accentColor = LipiSuccess,
+            iconTint = LipiSecondary,
+            waveColor = LipiSecondary,
             cardBg = cardBg,
             textPrimary = textPrimary,
             textSecondary = textSecondary,
             isDark = isDark
         )
 
-        // Metric 5: AI Usage
-        MetricCard(
+        // AI Interactions Card
+        WaveMetricCard(
             modifier = Modifier.weight(1f),
-            title = "AI Usage",
-            value = "128 Queries",
-            subtext = "15 used today",
-            icon = Icons.Default.AutoAwesome,
-            accentColor = LipiSecondary,
+            title = "AI Interactions",
+            value = "36",
+            unit = "",
+            subtext = "+5 this week",
+            subtextColor = LipiSuccess,
+            icon = Icons.Default.SmartToy,
+            iconTint = LipiAccent,
+            waveColor = LipiAccent,
             cardBg = cardBg,
             textPrimary = textPrimary,
             textSecondary = textSecondary,
@@ -581,82 +571,125 @@ private fun TopMetricsRow(
 }
 
 @Composable
-private fun MetricCard(
+private fun WaveMetricCard(
     modifier: Modifier = Modifier,
     title: String,
     value: String,
+    unit: String,
     subtext: String,
+    subtextColor: Color,
     icon: ImageVector,
-    accentColor: Color,
+    iconTint: Color,
+    waveColor: Color,
     cardBg: Color,
     textPrimary: Color,
     textSecondary: Color,
-    isDark: Boolean,
-    progressValue: Float? = null
+    isDark: Boolean
 ) {
     Card(
-        modifier = modifier.height(130.dp),
-        shape = RoundedCornerShape(22.dp),
+        modifier = modifier.height(160.dp),
+        shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = cardBg),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         border = BorderStroke(1.dp, if (isDark) Color(0xFF334155) else Color(0xFFE2E8F0))
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.SpaceBetween
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = title,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = textSecondary,
-                    maxLines = 1
-                )
-                Box(
-                    modifier = Modifier
-                        .size(30.dp)
-                        .background(accentColor.copy(alpha = 0.15f), CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(icon, contentDescription = null, tint = accentColor, modifier = Modifier.size(16.dp))
-                }
-            }
-
-            Column {
-                Text(
-                    text = value,
-                    fontSize = 19.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = textPrimary,
-                    maxLines = 1
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                if (progressValue != null) {
-                    LinearProgressIndicator(
-                        progress = { progressValue },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(5.dp)
-                            .clip(CircleShape),
-                        color = accentColor,
-                        trackColor = accentColor.copy(alpha = 0.2f)
+        Box(modifier = Modifier.fillMaxSize()) {
+            // Wave background at bottom
+            Canvas(modifier = Modifier.fillMaxSize().align(Alignment.BottomCenter)) {
+                val path = Path().apply {
+                    moveTo(0f, size.height * 0.7f)
+                    cubicTo(
+                        size.width * 0.3f, size.height * 0.6f,
+                        size.width * 0.7f, size.height * 0.9f,
+                        size.width, size.height * 0.7f
                     )
-                    Spacer(modifier = Modifier.height(4.dp))
+                    lineTo(size.width, size.height)
+                    lineTo(0f, size.height)
+                    close()
                 }
+                drawPath(
+                    path = path,
+                    brush = Brush.verticalGradient(
+                        colors = listOf(waveColor.copy(alpha = 0.2f), waveColor.copy(alpha = 0.05f)),
+                        startY = size.height * 0.5f,
+                        endY = size.height
+                    )
+                )
+                
+                // Draw wave line
+                val linePath = Path().apply {
+                    moveTo(0f, size.height * 0.7f)
+                    cubicTo(
+                        size.width * 0.3f, size.height * 0.6f,
+                        size.width * 0.7f, size.height * 0.9f,
+                        size.width, size.height * 0.7f
+                    )
+                }
+                drawPath(
+                    path = linePath,
+                    color = waveColor.copy(alpha = 0.6f),
+                    style = Stroke(width = 2.dp.toPx())
+                )
+                
+                // Add some dots on the line
+                drawCircle(color = waveColor, radius = 4.dp.toPx(), center = Offset(size.width * 0.2f, size.height * 0.68f))
+                drawCircle(color = waveColor, radius = 4.dp.toPx(), center = Offset(size.width * 0.5f, size.height * 0.77f))
+                drawCircle(color = waveColor, radius = 4.dp.toPx(), center = Offset(size.width * 0.8f, size.height * 0.8f))
+            }
+            
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(20.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        icon,
+                        contentDescription = null,
+                        tint = iconTint,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = title,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = textPrimary,
+                        maxLines = 1
+                    )
+                }
+                
+                Spacer(modifier = Modifier.weight(1f))
+                
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Text(
+                        text = value,
+                        fontSize = 36.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = textPrimary,
+                        letterSpacing = (-1).sp
+                    )
+                    if (unit.isNotEmpty()) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = unit,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = textSecondary,
+                            modifier = Modifier.padding(bottom = 6.dp)
+                        )
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(4.dp))
+                
                 Text(
                     text = subtext,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = textSecondary,
-                    maxLines = 1
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = subtextColor
                 )
+                Spacer(modifier = Modifier.height(16.dp))
             }
         }
     }
@@ -1465,76 +1498,202 @@ private fun AnalyticsAndHeatmapSection(isDark: Boolean, cardBg: Color) {
     val textPrimary = if (isDark) Color.White else Color(0xFF1E293B)
     val textSecondary = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
 
-    Card(
+    Row(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = cardBg),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        border = BorderStroke(1.dp, if (isDark) Color(0xFF334155) else Color(0xFFE2E8F0))
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(20.dp)
+        // Study Analytics (Bar Chart)
+        Card(
+            modifier = Modifier.weight(1f).height(240.dp),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = cardBg),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+            border = BorderStroke(1.dp, if (isDark) Color(0xFF334155) else Color(0xFFE2E8F0))
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+            Column(
+                modifier = Modifier.fillMaxSize().padding(20.dp)
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.BarChart, contentDescription = null, tint = LipiPrimary, modifier = Modifier.size(20.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Study Analytics & Heatmap", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = textPrimary)
-                }
-
-                Surface(
-                    shape = CircleShape,
-                    color = LipiPrimary.copy(alpha = 0.12f)
+                Text("Study Analytics", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = textPrimary)
+                Text("Study Time (Hours)", fontSize = 11.sp, fontWeight = FontWeight.Medium, color = textSecondary)
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                Row(
+                    modifier = Modifier.fillMaxSize()
                 ) {
-                    Text("Focus Score: 92%", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = LipiPrimary, modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp))
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // GitHub-style 7x4 Study Activity Heatmap Grid
-            Text("Activity Heatmap (Last 28 Days)", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = textSecondary)
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                repeat(4) { rowIdx ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        repeat(7) { colIdx ->
-                            val intensity = ((rowIdx * 7 + colIdx) * 37) % 100
-                            val alpha = when {
-                                intensity > 75 -> 0.9f
-                                intensity > 45 -> 0.6f
-                                intensity > 20 -> 0.3f
-                                else -> 0.1f
+                    // Y-Axis
+                    Column(
+                        modifier = Modifier.fillMaxHeight().padding(bottom = 20.dp),
+                        verticalArrangement = Arrangement.SpaceBetween,
+                        horizontalAlignment = Alignment.End
+                    ) {
+                        listOf("8h", "6h", "4h", "2h", "0h").forEach { label ->
+                            Text(label, fontSize = 10.sp, color = textSecondary, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.width(12.dp))
+                    
+                    // Bar Chart
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        Row(
+                            modifier = Modifier.fillMaxSize().padding(bottom = 20.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.Bottom
+                        ) {
+                            val days = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+                            val values = listOf(0.3f, 0.6f, 0.8f, 0.4f, 0.6f, 0.2f, 0.5f)
+                            
+                            days.forEachIndexed { index, day ->
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Bottom,
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    if (day == "Wed") {
+                                        Surface(
+                                            color = Color(0xFF334155),
+                                            shape = RoundedCornerShape(8.dp),
+                                            modifier = Modifier.padding(bottom = 6.dp)
+                                        ) {
+                                            Text(
+                                                "Wed\n6h 30m",
+                                                fontSize = 9.sp,
+                                                color = Color.White,
+                                                fontWeight = FontWeight.Bold,
+                                                textAlign = TextAlign.Center,
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                            )
+                                        }
+                                    }
+                                    
+                                    Box(
+                                        modifier = Modifier
+                                            .width(20.dp)
+                                            .fillMaxHeight(values[index])
+                                            .clip(RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
+                                            .background(if (day == "Wed") LipiPrimary else LipiSecondary.copy(alpha = 0.5f))
+                                    )
+                                }
                             }
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(20.dp)
-                                    .clip(RoundedCornerShape(4.dp))
-                                    .background(LipiSuccess.copy(alpha = alpha))
-                            )
+                        }
+                        
+                        // X-Axis Labels
+                        Row(
+                            modifier = Modifier.fillMaxWidth().align(Alignment.BottomCenter),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            val days = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+                            days.forEach { day ->
+                                Text(
+                                    day,
+                                    fontSize = 10.sp,
+                                    color = textSecondary,
+                                    fontWeight = FontWeight.SemiBold,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
                         }
                     }
                 }
             }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Stats summary row
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+        }
+        
+        // Study Heatmap
+        Card(
+            modifier = Modifier.weight(1f).height(240.dp),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = cardBg),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+            border = BorderStroke(1.dp, if (isDark) Color(0xFF334155) else Color(0xFFE2E8F0))
+        ) {
+            Column(
+                modifier = Modifier.fillMaxSize().padding(20.dp)
             ) {
-                Text("⏱️ Total Spent: 18.5 hrs", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = textPrimary)
-                Text("📚 Top Subject: Physics", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = textPrimary)
-                Text("🏆 Badges Unlocked: 12", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = textPrimary)
+                Text("Study Heatmap", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = textPrimary)
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                // Days header
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(start = 24.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun").forEach { day ->
+                        Text(day, fontSize = 10.sp, color = textSecondary, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                // Grid
+                Column(
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                    verticalArrangement = Arrangement.SpaceBetween
+                ) {
+                    val weeks = listOf("W1", "W2", "W3", "W4")
+                    val gridData = listOf(
+                        listOf(1, 2, 0, 3, 4, 1, 0),
+                        listOf(2, 4, 1, 2, 3, 0, 1),
+                        listOf(4, 3, 2, 4, 1, 2, 0),
+                        listOf(3, 1, 0, 2, 4, 1, 1)
+                    )
+                    
+                    weeks.forEachIndexed { rowIndex, week ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(week, fontSize = 10.sp, color = textSecondary, fontWeight = FontWeight.SemiBold, modifier = Modifier.width(24.dp))
+                            
+                            Row(
+                                modifier = Modifier.weight(1f),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                gridData[rowIndex].forEach { level ->
+                                    val alpha = when (level) {
+                                        0 -> 0.1f
+                                        1 -> 0.3f
+                                        2 -> 0.6f
+                                        3 -> 0.8f
+                                        4 -> 1.0f
+                                        else -> 0.1f
+                                    }
+                                    Box(
+                                        modifier = Modifier
+                                            .size(16.dp)
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .background(LipiPrimary.copy(alpha = alpha))
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                // Legend
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Less", fontSize = 10.sp, color = textSecondary, fontWeight = FontWeight.SemiBold)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        listOf(0.1f, 0.3f, 0.6f, 0.8f, 1.0f).forEach { alpha ->
+                            Box(
+                                modifier = Modifier
+                                    .size(12.dp)
+                                    .clip(RoundedCornerShape(2.dp))
+                                    .background(LipiPrimary.copy(alpha = alpha))
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("More", fontSize = 10.sp, color = textSecondary, fontWeight = FontWeight.SemiBold)
+                }
             }
         }
     }
