@@ -3,10 +3,11 @@ package com.example.ui.components
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -23,18 +24,21 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -44,15 +48,15 @@ import java.text.SimpleDateFormat
 import java.util.*
 
 // ==========================================
-// LIPI COLOR SYSTEM (2026 Material 3 Expressive)
+// LIPI COLOR SYSTEM (Android 16 M3 Expressive)
 // ==========================================
 private val LipiBgLight = Color(0xFFF7F8FC)
 private val LipiBgDark = Color(0xFF0F172A)
 private val LipiCardWhite = Color(0xFFFFFFFF)
 private val LipiCardDark = Color(0xFF1E293B)
 
-private val LipiPrimary = Color(0xFF5B6DFF)      // Indigo Accent
-private val LipiSecondary = Color(0xFF8A7CFF)    // Purple Accent
+private val LipiPrimary = Color(0xFF5B6DFF)      // Royal Indigo Accent
+private val LipiSecondary = Color(0xFF8A7CFF)    // Lavender Accent
 private val LipiAccent = Color(0xFF4DA3FF)       // Sky Blue
 private val LipiSuccess = Color(0xFF2ECC71)      // Emerald Green
 private val LipiWarning = Color(0xFFFF9F43)      // Warm Amber
@@ -82,36 +86,34 @@ fun NovaDashboard(
 
     val bgColor = if (isDarkTheme) LipiBgDark else LipiBgLight
     val cardBg = if (isDarkTheme) LipiCardDark else LipiCardWhite
-    val textPrimary = if (isDarkTheme) Color.White else Color(0xFF1E293B)
-    val textSecondary = if (isDarkTheme) Color(0xFF94A3B8) else Color(0xFF64748B)
 
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(bgColor)
     ) {
-        // Soft ambient background gradients
+        // Soft ambient background aura for 2026 Material 3 Expressive look
         if (!isDarkTheme) {
-            androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
                 val w = size.width
                 val h = size.height
                 drawCircle(
                     brush = Brush.radialGradient(
                         colors = listOf(Color(0xFFEEF2FF), Color.Transparent),
-                        center = Offset(w * 0.15f, h * 0.1f),
-                        radius = w * 0.6f
+                        center = Offset(w * 0.15f, h * 0.08f),
+                        radius = w * 0.65f
                     ),
-                    center = Offset(w * 0.15f, h * 0.1f),
-                    radius = w * 0.6f
+                    center = Offset(w * 0.15f, h * 0.08f),
+                    radius = w * 0.65f
                 )
                 drawCircle(
                     brush = Brush.radialGradient(
-                        colors = listOf(Color(0xFFE0E7FF), Color.Transparent),
-                        center = Offset(w * 0.85f, h * 0.3f),
-                        radius = w * 0.5f
+                        colors = listOf(Color(0xFFE0E7FF).copy(alpha = 0.7f), Color.Transparent),
+                        center = Offset(w * 0.85f, h * 0.25f),
+                        radius = w * 0.55f
                     ),
-                    center = Offset(w * 0.85f, h * 0.3f),
-                    radius = w * 0.5f
+                    center = Offset(w * 0.85f, h * 0.25f),
+                    radius = w * 0.55f
                 )
             }
         }
@@ -133,10 +135,11 @@ fun NovaDashboard(
                 isDark = isDarkTheme
             )
 
-            // 2. TOP METRICS ROW (5 Floating Cards)
+            // 2. TOP METRICS ROW (Hierarchy with Hero Progress Card)
             TopMetricsRow(
                 viewModel = viewModel,
                 notesCount = notes.size,
+                isTablet = isTablet,
                 isDark = isDarkTheme,
                 cardBg = cardBg
             )
@@ -165,16 +168,16 @@ fun NovaDashboard(
                 cardBg = cardBg
             )
 
-            // 5. TODAY'S FOCUS & POMODORO TIMER (Side-by-side on tablet, column on phone)
+            // 5. TODAY'S FOCUS & POMODORO TIMER
             if (isTablet) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(20.dp)
                 ) {
-                    Box(modifier = Modifier.weight(1f)) {
+                    Box(modifier = Modifier.weight(1.1f)) {
                         TodaysFocusCard(isDark = isDarkTheme, cardBg = cardBg)
                     }
-                    Box(modifier = Modifier.weight(1f)) {
+                    Box(modifier = Modifier.weight(0.9f)) {
                         PomodoroTimerCard(isDark = isDarkTheme, cardBg = cardBg)
                     }
                 }
@@ -283,7 +286,7 @@ private fun HomeHeroHeader(
                     Column {
                         Text(
                             text = "$greeting, $firstName 👋",
-                            fontSize = if (isTablet) 32.sp else 24.sp,
+                            fontSize = if (isTablet) 30.sp else 24.sp,
                             fontWeight = FontWeight.Bold,
                             color = textPrimary,
                             letterSpacing = (-0.5).sp,
@@ -344,7 +347,8 @@ private fun HomeHeroHeader(
                     Surface(
                         shape = CircleShape,
                         color = LipiPrimary.copy(alpha = 0.12f),
-                        border = BorderStroke(1.dp, LipiPrimary.copy(alpha = 0.3f))
+                        border = BorderStroke(1.dp, LipiPrimary.copy(alpha = 0.3f)),
+                        modifier = Modifier.clickable { onCustomizeGoals() }
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
@@ -352,7 +356,7 @@ private fun HomeHeroHeader(
                         ) {
                             Icon(Icons.Default.Adjust, contentDescription = null, tint = LipiPrimary, modifier = Modifier.size(14.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Goal: 2.5 hrs/day", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = LipiPrimary)
+                            Text("Goal: ${viewModel.dailyGoalTargetMinutes}m/day", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = LipiPrimary)
                         }
                     }
 
@@ -382,7 +386,7 @@ private fun HomeHeroHeader(
                             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("🔥 7 Day Streak", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = LipiWarning)
+                            Text("🔥 12 Day Streak", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = LipiWarning)
                         }
                     }
                 }
@@ -393,9 +397,10 @@ private fun HomeHeroHeader(
                     onClick = onNavigateToNotes,
                     shape = CircleShape,
                     colors = ButtonDefaults.buttonColors(containerColor = LipiPrimary),
-                    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp)
+                    contentPadding = PaddingValues(horizontal = 22.dp, vertical = 12.dp),
+                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 2.dp)
                 ) {
-                    Text("Resume Study", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text("Resume Learning", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                     Spacer(modifier = Modifier.width(6.dp))
                     Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, modifier = Modifier.size(16.dp))
                 }
@@ -405,12 +410,13 @@ private fun HomeHeroHeader(
 }
 
 // ==========================================
-// 2. TOP METRICS ROW (5 Floating Cards)
+// 2. TOP METRICS ROW (Hierarchy with Hero Circular Card)
 // ==========================================
 @Composable
 private fun TopMetricsRow(
     viewModel: NoteViewModel,
     notesCount: Int,
+    isTablet: Boolean,
     isDark: Boolean,
     cardBg: Color
 ) {
@@ -421,27 +427,106 @@ private fun TopMetricsRow(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        // Metric 1: Study Progress
-        MetricCard(
-            modifier = Modifier.weight(1f),
-            title = "Study Progress",
-            value = "84%",
-            subtext = "On track this week",
-            icon = Icons.Default.PieChart,
-            accentColor = LipiPrimary,
-            cardBg = cardBg,
-            textPrimary = textPrimary,
-            textSecondary = textSecondary,
-            isDark = isDark,
-            progressValue = 0.84f
-        )
+        // Hero Metric Card 1: Study Progress (Featured with 1.8x weight & Donut Chart)
+        Card(
+            modifier = Modifier
+                .weight(if (isTablet) 1.6f else 1.2f)
+                .height(130.dp),
+            shape = RoundedCornerShape(22.dp),
+            colors = CardDefaults.cardColors(containerColor = cardBg),
+            elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
+            border = BorderStroke(
+                width = 1.5.dp,
+                brush = Brush.linearGradient(listOf(LipiPrimary, LipiSecondary))
+            )
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Surface(
+                            shape = CircleShape,
+                            color = LipiPrimary.copy(alpha = 0.15f)
+                        ) {
+                            Icon(
+                                Icons.Default.PieChart,
+                                contentDescription = null,
+                                tint = LipiPrimary,
+                                modifier = Modifier
+                                    .padding(4.dp)
+                                    .size(14.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Study Progress",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = LipiPrimary,
+                            maxLines = 1
+                        )
+                    }
+
+                    Column {
+                        Text(
+                            text = "84%",
+                            fontSize = 26.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = textPrimary,
+                            letterSpacing = (-0.5).sp
+                        )
+                        Text(
+                            text = "+12% vs last week",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = LipiSuccess
+                        )
+                    }
+                }
+
+                // Mini Circular Donut Progress Ring
+                Box(
+                    modifier = Modifier.size(64.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                        val strokeW = 7.dp.toPx()
+                        drawCircle(
+                            color = if (isDark) Color(0xFF334155) else Color(0xFFE2E8F0),
+                            style = Stroke(width = strokeW)
+                        )
+                        drawArc(
+                            brush = Brush.sweepGradient(listOf(LipiPrimary, LipiSecondary, LipiPrimary)),
+                            startAngle = -90f,
+                            sweepAngle = 360f * 0.84f,
+                            useCenter = false,
+                            style = Stroke(width = strokeW)
+                        )
+                    }
+                    Text(
+                        text = "84%",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = textPrimary
+                    )
+                }
+            }
+        }
 
         // Metric 2: Weekly Goal
         MetricCard(
             modifier = Modifier.weight(1f),
             title = "Weekly Goal",
             value = "14.5 / 18 h",
-            subtext = "+2.5h completed today",
+            subtext = "2h 15m remaining",
             icon = Icons.Default.BarChart,
             accentColor = LipiAccent,
             cardBg = cardBg,
@@ -455,7 +540,7 @@ private fun TopMetricsRow(
         MetricCard(
             modifier = Modifier.weight(1f),
             title = "Study Streak",
-            value = "7 Days 🔥",
+            value = "12 Days 🔥",
             subtext = "Personal Best: 14 Days",
             icon = Icons.Default.OfflineBolt,
             accentColor = LipiWarning,
@@ -529,25 +614,25 @@ private fun MetricCard(
             ) {
                 Text(
                     text = title,
-                    fontSize = 13.sp,
+                    fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
                     color = textSecondary,
                     maxLines = 1
                 )
                 Box(
                     modifier = Modifier
-                        .size(32.dp)
+                        .size(30.dp)
                         .background(accentColor.copy(alpha = 0.15f), CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(icon, contentDescription = null, tint = accentColor, modifier = Modifier.size(18.dp))
+                    Icon(icon, contentDescription = null, tint = accentColor, modifier = Modifier.size(16.dp))
                 }
             }
 
             Column {
                 Text(
                     text = value,
-                    fontSize = 20.sp,
+                    fontSize = 19.sp,
                     fontWeight = FontWeight.ExtraBold,
                     color = textPrimary,
                     maxLines = 1
@@ -590,15 +675,31 @@ private fun HeroAISearchBar(
     val textPrimary = if (isDark) Color.White else Color(0xFF1E293B)
     val textSecondary = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
 
+    // Glowing aura animation
+    val infiniteTransition = rememberInfiniteTransition(label = "SearchGlow")
+    val glowAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.35f,
+        targetValue = 0.75f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2200, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "glowAlpha"
+    )
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(26.dp),
         colors = CardDefaults.cardColors(containerColor = cardBg),
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
         border = BorderStroke(
-            width = 1.8.dp,
+            width = 2.dp,
             brush = Brush.horizontalGradient(
-                colors = listOf(LipiPrimary, LipiSecondary, LipiAccent)
+                colors = listOf(
+                    LipiPrimary.copy(alpha = glowAlpha),
+                    LipiSecondary.copy(alpha = glowAlpha),
+                    LipiAccent.copy(alpha = glowAlpha)
+                )
             )
         )
     ) {
@@ -610,22 +711,23 @@ private fun HeroAISearchBar(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     modifier = Modifier
-                        .size(38.dp)
+                        .size(42.dp)
                         .background(
                             brush = Brush.linearGradient(listOf(LipiPrimary, LipiSecondary)),
                             shape = CircleShape
                         ),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+                    Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = Color.White, modifier = Modifier.size(22.dp))
                 }
-                Spacer(modifier = Modifier.width(12.dp))
+                Spacer(modifier = Modifier.width(14.dp))
                 Column {
                     Text(
                         text = "Ask Lipi AI...",
-                        fontSize = 20.sp,
+                        fontSize = 22.sp,
                         fontWeight = FontWeight.ExtraBold,
-                        color = textPrimary
+                        color = textPrimary,
+                        letterSpacing = (-0.3).sp
                     )
                     Text(
                         text = "Search handwriting, PDFs, voice notes, diagrams or ask any question",
@@ -684,7 +786,7 @@ private fun HeroAISearchBar(
                         onClick = { if (searchText.isNotBlank()) onSearchSubmitted(searchText) },
                         shape = RoundedCornerShape(14.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = LipiPrimary),
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
+                        contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp)
                     ) {
                         Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(6.dp))
@@ -695,7 +797,7 @@ private fun HeroAISearchBar(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Prompt suggestion tags
+            // Popular tag chips
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -706,14 +808,15 @@ private fun HeroAISearchBar(
                     "✨ Summarize last lecture",
                     "📐 Find Physics formulas",
                     "🧬 Explain diagram",
-                    "📝 PDF to Quiz"
+                    "📝 PDF to Quiz",
+                    "⚡ Create Flashcards"
                 ).forEach { prompt ->
                     Surface(
                         shape = CircleShape,
                         color = if (isDark) Color(0xFF334155) else Color(0xFFF1F5F9),
                         border = BorderStroke(1.dp, if (isDark) Color(0xFF475569) else Color(0xFFE2E8F0)),
                         modifier = Modifier.clickable {
-                            searchText = prompt.removePrefix("✨ ").removePrefix("📐 ").removePrefix("🧬 ").removePrefix("📝 ")
+                            searchText = prompt.removePrefix("✨ ").removePrefix("📐 ").removePrefix("🧬 ").removePrefix("📝 ").removePrefix("⚡ ")
                         }
                     ) {
                         Text(
@@ -821,6 +924,9 @@ private fun TodaysFocusCard(isDark: Boolean, cardBg: Color) {
     var task2Done by remember { mutableStateOf(false) }
     var task3Done by remember { mutableStateOf(false) }
 
+    val completedCount = (if (task1Done) 1 else 0) + (if (task2Done) 1 else 0) + (if (task3Done) 1 else 0)
+    val focusProgress = completedCount / 3f
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
@@ -856,6 +962,19 @@ private fun TodaysFocusCard(isDark: Boolean, cardBg: Color) {
                     )
                 }
             }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Progress bar
+            LinearProgressIndicator(
+                progress = { focusProgress },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(6.dp)
+                    .clip(CircleShape),
+                color = LipiSuccess,
+                trackColor = LipiSuccess.copy(alpha = 0.15f)
+            )
 
             Spacer(modifier = Modifier.height(14.dp))
 
@@ -937,6 +1056,7 @@ private fun FocusTaskRow(
             fontSize = 13.sp,
             fontWeight = FontWeight.SemiBold,
             color = if (checked) textSecondary else textPrimary,
+            textDecoration = if (checked) TextDecoration.LineThrough else TextDecoration.None,
             modifier = Modifier.weight(1f)
         )
     }
@@ -953,6 +1073,18 @@ private fun PomodoroTimerCard(isDark: Boolean, cardBg: Color) {
 
     val textPrimary = if (isDark) Color.White else Color(0xFF1E293B)
     val textSecondary = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
+
+    // Pulse animation when running
+    val infiniteTransition = rememberInfiniteTransition(label = "PomodoroPulse")
+    val pulseAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.1f,
+        targetValue = 0.35f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1200, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "pulseAlpha"
+    )
 
     LaunchedEffect(isRunning, secondsLeft) {
         if (isRunning && secondsLeft > 0) {
@@ -1007,19 +1139,25 @@ private fun PomodoroTimerCard(isDark: Boolean, cardBg: Color) {
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Circular Timer
+            // Circular Timer with Breathing Aura
             Box(
                 modifier = Modifier.size(130.dp),
                 contentAlignment = Alignment.Center
             ) {
-                androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
+                Canvas(modifier = Modifier.fillMaxSize()) {
                     val strokeWidth = 10.dp.toPx()
+                    if (isRunning) {
+                        drawCircle(
+                            color = LipiPrimary.copy(alpha = pulseAlpha),
+                            radius = size.minDimension / 2f + 8.dp.toPx()
+                        )
+                    }
                     drawCircle(
                         color = if (isDark) Color(0xFF334155) else Color(0xFFE2E8F0),
                         style = Stroke(width = strokeWidth)
                     )
                     drawArc(
-                        color = LipiPrimary,
+                        brush = Brush.sweepGradient(listOf(LipiPrimary, LipiSecondary, LipiPrimary)),
                         startAngle = -90f,
                         sweepAngle = 360f * progress,
                         useCenter = false,
@@ -1113,10 +1251,10 @@ private fun ContinueWorkingSection(
     val textSecondary = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
 
     val sampleCovers = listOf(
-        NotebookCoverData("Quantum Physics Ch 4", "Edited 2 hrs ago", "16 pages", Color(0xFF3B82F6), true),
-        NotebookCoverData("Organic Chemistry Lab", "Edited 5 hrs ago", "24 pages", Color(0xFF10B981), true),
-        NotebookCoverData("Calculus Integration", "Edited Yesterday", "18 pages", Color(0xFF8B5CF6), false),
-        NotebookCoverData("European History 101", "Edited Aug 3", "32 pages", Color(0xFFF59E0B), true)
+        NotebookCoverData("Quantum Physics Ch 4", "Edited 2 hrs ago", "16 pages", Color(0xFF3B82F6), true, true),
+        NotebookCoverData("Organic Chemistry Lab", "Edited 5 hrs ago", "24 pages", Color(0xFF10B981), true, false),
+        NotebookCoverData("Calculus Integration", "Edited Yesterday", "18 pages", Color(0xFF8B5CF6), false, true),
+        NotebookCoverData("European History 101", "Edited Aug 3", "32 pages", Color(0xFFF59E0B), true, false)
     )
 
     Column(modifier = Modifier.fillMaxWidth()) {
@@ -1141,8 +1279,8 @@ private fun ContinueWorkingSection(
             items(sampleCovers) { cover ->
                 Card(
                     modifier = Modifier
-                        .width(180.dp)
-                        .height(240.dp)
+                        .width(185.dp)
+                        .height(245.dp)
                         .clickable { onNoteClick() },
                     shape = RoundedCornerShape(20.dp),
                     colors = CardDefaults.cardColors(containerColor = cardBg),
@@ -1162,7 +1300,7 @@ private fun ContinueWorkingSection(
                                 modifier = Modifier
                                     .fillMaxHeight()
                                     .width(14.dp)
-                                    .background(Color.Black.copy(alpha = 0.2f))
+                                    .background(Color.Black.copy(alpha = 0.22f))
                             )
 
                             // Badges top right
@@ -1180,11 +1318,13 @@ private fun ContinueWorkingSection(
                                         Text("✨ AI", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
                                     }
                                 }
-                                Surface(
-                                    shape = CircleShape,
-                                    color = Color.Black.copy(alpha = 0.35f)
-                                ) {
-                                    Icon(Icons.Default.Star, contentDescription = null, tint = Color(0xFFFFD700), modifier = Modifier.size(14.dp).padding(2.dp))
+                                if (cover.isPinned) {
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = Color.Black.copy(alpha = 0.35f)
+                                    ) {
+                                        Icon(Icons.Default.PushPin, contentDescription = null, tint = Color.White, modifier = Modifier.size(12.dp).padding(2.dp))
+                                    }
                                 }
                             }
 
@@ -1202,14 +1342,24 @@ private fun ContinueWorkingSection(
                             )
                         }
 
-                        // Notebook info
+                        // Realistic Notebook Page Preview Lines
                         Column(
                             modifier = Modifier
                                 .fillMaxSize()
                                 .padding(12.dp),
                             verticalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Column {
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                repeat(3) { idx ->
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth(if (idx == 2) 0.6f else 0.95f)
+                                            .height(3.dp)
+                                            .clip(CircleShape)
+                                            .background(if (isDark) Color(0xFF475569) else Color(0xFFE2E8F0))
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(4.dp))
                                 Text(cover.lastEdited, fontSize = 11.sp, color = textSecondary, fontWeight = FontWeight.Medium)
                                 Text(cover.pageCount, fontSize = 11.sp, color = textSecondary, fontWeight = FontWeight.Bold)
                             }
@@ -1222,7 +1372,7 @@ private fun ContinueWorkingSection(
                                     shape = CircleShape,
                                     color = LipiPrimary.copy(alpha = 0.12f)
                                 ) {
-                                    Text("Open", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = LipiPrimary, modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp))
+                                    Text("Open Note", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = LipiPrimary, modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp))
                                 }
                             }
                         }
@@ -1238,7 +1388,8 @@ private data class NotebookCoverData(
     val lastEdited: String,
     val pageCount: String,
     val coverColor: Color,
-    val isAi: Boolean
+    val isAi: Boolean,
+    val isPinned: Boolean
 )
 
 // ==========================================
