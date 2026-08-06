@@ -57,16 +57,18 @@ import kotlinx.coroutines.launch
 // ==========================================
 // LIPI COLOR SYSTEM (Android 16 M3 Expressive)
 // ==========================================
-private val LipiBgLight = Color(0xFFF7F8FC)
-private val LipiCardWhite = Color(0xFFFFFFFF)
+private val LipiBgLight @Composable get() = if (androidx.compose.foundation.isSystemInDarkTheme()) Color(0xFF0F172A) else Color(0xFFF7F8FC)
+private val LipiCardWhite @Composable get() = if (androidx.compose.foundation.isSystemInDarkTheme()) Color(0xFF1E293B) else Color(0xFFFFFFFF)
 private val LipiPrimary = Color(0xFF5B6DFF)      // Royal Indigo
 private val LipiSecondary = Color(0xFF8A7CFF)    // Lavender
 private val LipiAccent = Color(0xFF4DA3FF)       // Sky Blue
 private val LipiSuccess = Color(0xFF2ECC71)      // Emerald Green
 private val LipiWarning = Color(0xFFFF9F43)      // Warm Amber
 private val LipiError = Color(0xFFFF5C5C)        // Coral Red
-private val LipiTextPrimary = Color(0xFF1E293B)  // Dark Slate
-private val LipiTextSecondary = Color(0xFF64748B)// Slate Gray
+private val LipiTextPrimary @Composable get() = if (androidx.compose.foundation.isSystemInDarkTheme()) Color(0xFFF8FAFC) else Color(0xFF1E293B)
+private val LipiTextSecondary @Composable get() = if (androidx.compose.foundation.isSystemInDarkTheme()) Color(0xFF94A3B8) else Color(0xFF64748B)
+private val LipiBorder @Composable get() = if (androidx.compose.foundation.isSystemInDarkTheme()) Color(0xFF334155) else Color(0xFFE2E8F0)
+private val LipiSoftBg @Composable get() = if (androidx.compose.foundation.isSystemInDarkTheme()) Color(0xFF1E293B) else Color(0xFFF1F5F9)
 
 /**
  * Redesigned "All Notes" screen matching the homepage's visual language.
@@ -389,7 +391,13 @@ fun RedesignedAllNotesView(
                     AnimatedContent(
                         targetState = selectedFilter to selectedSortOption,
                         transitionSpec = {
-                            fadeIn(tween(200)) + slideInVertically { 16 } togetherWith fadeOut(tween(150))
+                            (fadeIn(animationSpec = tween(280, easing = LinearOutSlowInEasing)) +
+                             slideInHorizontally(animationSpec = tween(280, easing = FastOutSlowInEasing)) { width -> if (targetState.first != initialState.first) width / 8 else 0 } +
+                             scaleIn(initialScale = 0.96f, animationSpec = tween(280)))
+                            .togetherWith(
+                                fadeOut(animationSpec = tween(180, easing = FastOutLinearInEasing)) +
+                                scaleOut(targetScale = 0.96f, animationSpec = tween(180))
+                            )
                         },
                         label = "GridFilterTransition",
                         modifier = Modifier.weight(1f)
@@ -486,9 +494,11 @@ fun RedesignedAllNotesView(
                                         activeHoveredFolder = null
                                         activeHoveredSwapNoteId = null
                                     },
-                                    modifier = Modifier.onGloballyPositioned { coordinates ->
-                                        noteBoundsMap[note.id] = coordinates.boundsInWindow()
-                                    }
+                                    modifier = Modifier
+                                        .animateItem()
+                                        .onGloballyPositioned { coordinates ->
+                                            noteBoundsMap[note.id] = coordinates.boundsInWindow()
+                                        }
                                 )
                             }
                         }
@@ -644,10 +654,11 @@ private fun AllNotesHeaderSection(
                 }
 
                 // Cloud Sync Status Indicator
+                val isDark = androidx.compose.foundation.isSystemInDarkTheme()
                 Surface(
                     shape = RoundedCornerShape(20.dp),
-                    color = if (viewModel.isSyncing) LipiPrimary.copy(alpha = 0.12f) else Color(0xFFF0FDF4),
-                    border = BorderStroke(1.dp, if (viewModel.isSyncing) LipiPrimary.copy(alpha = 0.3f) else Color(0xFFBBF7D0)),
+                    color = if (viewModel.isSyncing) LipiPrimary.copy(alpha = 0.12f) else if (isDark) Color(0xFF132E1D) else Color(0xFFF0FDF4),
+                    border = BorderStroke(1.dp, if (viewModel.isSyncing) LipiPrimary.copy(alpha = 0.3f) else if (isDark) Color(0xFF166534) else Color(0xFFBBF7D0)),
                     modifier = Modifier
                         .clip(RoundedCornerShape(20.dp))
                         .clickable { showDriveBackupDialog = true }
@@ -887,7 +898,7 @@ private fun AllNotesHeaderSection(
                     Surface(
                         shape = RoundedCornerShape(14.dp),
                         color = LipiCardWhite,
-                        border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                        border = BorderStroke(1.dp, LipiBorder),
                         modifier = Modifier
                             .clip(RoundedCornerShape(14.dp))
                             .clickable { showSortMenu = true }
@@ -958,109 +969,178 @@ private fun AllNotesFilterChipsRow(
     activeHoveredFolder: String? = null,
     onFolderBoundsChanged: (String, Rect) -> Unit = { _, _ -> }
 ) {
+    var isShrunk by remember { mutableStateOf(false) }
+
     val baseFilters = listOf("All", "Recent", "Favorites", "Handwritten", "PDF", "Projects", "Templates", "Personal", "School")
     val customDirs = viewModel.customDirectories.filter { it.parentId == null }.map { it.name }
     val allChipLabels = baseFilters + customDirs
 
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        allChipLabels.forEach { label ->
-            val isSelected = when (label) {
-                "All" -> selectedFilter == "All Notes" || selectedFilter == "All"
-                "Recent" -> selectedFilter == "Recent"
-                "Favorites" -> selectedFilter == "Favorites" || selectedFilter == "Starred"
-                "Handwritten" -> selectedFilter == "Handwritten" || selectedFilter == "Note"
-                "PDF" -> selectedFilter == "PDFs" || selectedFilter == "PDF"
-                "Projects" -> selectedFilter == "Projects" || selectedFilter == "Work/Projects"
-                "Templates" -> selectedFilter == "Templates" || selectedFilter == "Folder"
-                "Personal" -> selectedFilter == "Personal" || selectedFilter == "Personal/Ideas"
-                "School" -> selectedFilter == "School" || selectedFilter == "School/Lectures"
-                else -> {
-                    val dir = viewModel.customDirectories.find { it.name == label }
-                    if (dir != null) selectedFilter == "dir:${dir.id}" else label == selectedFilter
-                }
+        // Shrink / Expand Toggle Button
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = if (isShrunk) LipiPrimary.copy(alpha = 0.12f) else LipiCardWhite,
+            border = BorderStroke(1.dp, LipiPrimary.copy(alpha = 0.3f)),
+            shadowElevation = 1.dp,
+            modifier = Modifier
+                .clip(RoundedCornerShape(20.dp))
+                .clickable { isShrunk = !isShrunk }
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Icon(
+                    imageVector = if (isShrunk) Icons.Default.FilterList else Icons.Default.UnfoldLess,
+                    contentDescription = if (isShrunk) "Expand Folders & Filters" else "Shrink Folders & Filters",
+                    tint = LipiPrimary,
+                    modifier = Modifier.size(16.dp)
+                )
+                Text(
+                    text = if (isShrunk) "Filters" else "Shrink",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = LipiPrimary
+                )
             }
+        }
 
-            val isHoveredByDrag = activeHoveredFolder == label
-
-            val targetFilter = when (label) {
-                "All" -> "All Notes"
-                "Recent" -> "Recent"
-                "Favorites" -> "Favorites"
-                "Handwritten" -> "Handwritten"
-                "PDF" -> "PDFs"
-                "Projects" -> "Projects"
-                "Templates" -> "Templates"
-                "Personal" -> "Personal"
-                "School" -> "School"
-                else -> {
-                    val dir = viewModel.customDirectories.find { it.name == label }
-                    if (dir != null) "dir:${dir.id}" else label
+        if (isShrunk) {
+            val activeLabel = when {
+                selectedFilter == "All Notes" || selectedFilter == "All" -> "All Notes"
+                selectedFilter.startsWith("dir:") -> {
+                    val dirId = selectedFilter.removePrefix("dir:")
+                    viewModel.customDirectories.find { it.id == dirId }?.name ?: selectedFilter
                 }
+                selectedFilter.startsWith("tag:") -> selectedFilter.removePrefix("tag:")
+                else -> selectedFilter
             }
-
-            val scale by animateFloatAsState(
-                targetValue = if (isHoveredByDrag) 1.15f else if (isSelected) 1.04f else 1.0f,
-                animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
-                label = "ChipScale"
-            )
-
             Surface(
                 shape = RoundedCornerShape(20.dp),
-                color = if (isHoveredByDrag) LipiSuccess else if (isSelected) LipiPrimary else LipiCardWhite,
-                shadowElevation = if (isHoveredByDrag) 8.dp else if (isSelected) 4.dp else 1.dp,
-                border = BorderStroke(
-                    width = if (isHoveredByDrag) 2.dp else 1.dp,
-                    color = if (isHoveredByDrag) LipiSuccess else if (isSelected) LipiPrimary else Color(0xFFE2E8F0)
-                ),
-                modifier = Modifier
-                    .graphicsLayer {
-                        scaleX = scale
-                        scaleY = scale
-                    }
-                    .onGloballyPositioned { coordinates ->
-                        onFolderBoundsChanged(label, coordinates.boundsInWindow())
-                    }
-                    .clip(RoundedCornerShape(20.dp))
-                    .clickable { onFilterSelected(targetFilter) }
+                color = LipiPrimary,
+                shadowElevation = 2.dp
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 9.dp),
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    val iconVector = when {
-                        isHoveredByDrag -> Icons.Default.Folder
-                        label == "All" -> Icons.Default.AllInclusive
-                        label == "Recent" -> Icons.Default.Schedule
-                        label == "Favorites" -> Icons.Default.Star
-                        label == "Handwritten" -> Icons.Default.Draw
-                        label == "PDF" -> Icons.Default.PictureAsPdf
-                        label == "Projects" -> Icons.Default.FolderSpecial
-                        label == "Templates" -> Icons.Default.DashboardCustomize
-                        label == "Personal" -> Icons.Default.Person
-                        label == "School" -> Icons.Default.School
-                        else -> Icons.Default.Folder
+                    Icon(Icons.Default.Folder, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
+                    Text(
+                        text = "Active: $activeLabel",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                }
+            }
+        } else {
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                allChipLabels.forEach { label ->
+                    val isSelected = when (label) {
+                        "All" -> selectedFilter == "All Notes" || selectedFilter == "All"
+                        "Recent" -> selectedFilter == "Recent"
+                        "Favorites" -> selectedFilter == "Favorites" || selectedFilter == "Starred"
+                        "Handwritten" -> selectedFilter == "Handwritten" || selectedFilter == "Note"
+                        "PDF" -> selectedFilter == "PDFs" || selectedFilter == "PDF"
+                        "Projects" -> selectedFilter == "Projects" || selectedFilter == "Work/Projects"
+                        "Templates" -> selectedFilter == "Templates" || selectedFilter == "Folder"
+                        "Personal" -> selectedFilter == "Personal" || selectedFilter == "Personal/Ideas"
+                        "School" -> selectedFilter == "School" || selectedFilter == "School/Lectures"
+                        else -> {
+                            val dir = viewModel.customDirectories.find { it.name == label }
+                            if (dir != null) selectedFilter == "dir:${dir.id}" else label == selectedFilter
+                        }
                     }
 
-                    Icon(
-                        imageVector = iconVector,
-                        contentDescription = null,
-                        tint = if (isHoveredByDrag || isSelected) Color.White else LipiTextSecondary,
-                        modifier = Modifier.size(16.dp)
+                    val isHoveredByDrag = activeHoveredFolder == label
+
+                    val targetFilter = when (label) {
+                        "All" -> "All Notes"
+                        "Recent" -> "Recent"
+                        "Favorites" -> "Favorites"
+                        "Handwritten" -> "Handwritten"
+                        "PDF" -> "PDFs"
+                        "Projects" -> "Projects"
+                        "Templates" -> "Templates"
+                        "Personal" -> "Personal"
+                        "School" -> "School"
+                        else -> {
+                            val dir = viewModel.customDirectories.find { it.name == label }
+                            if (dir != null) "dir:${dir.id}" else label
+                        }
+                    }
+
+                    val scale by animateFloatAsState(
+                        targetValue = if (isHoveredByDrag) 1.15f else if (isSelected) 1.04f else 1.0f,
+                        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+                        label = "ChipScale"
                     )
 
-                    Text(
-                        text = if (isHoveredByDrag) "Drop into $label" else label,
-                        fontSize = 13.sp,
-                        fontWeight = if (isHoveredByDrag || isSelected) FontWeight.Bold else FontWeight.Medium,
-                        color = if (isHoveredByDrag || isSelected) Color.White else LipiTextPrimary
-                    )
+                    Surface(
+                        shape = RoundedCornerShape(20.dp),
+                        color = if (isHoveredByDrag) LipiSuccess else if (isSelected) LipiPrimary else LipiCardWhite,
+                        shadowElevation = if (isHoveredByDrag) 8.dp else if (isSelected) 4.dp else 1.dp,
+                        border = BorderStroke(
+                            width = if (isHoveredByDrag) 2.dp else 1.dp,
+                            color = if (isHoveredByDrag) LipiSuccess else if (isSelected) LipiPrimary else LipiBorder
+                        ),
+                        modifier = Modifier
+                            .graphicsLayer {
+                                scaleX = scale
+                                scaleY = scale
+                            }
+                            .onGloballyPositioned { coordinates ->
+                                onFolderBoundsChanged(label, coordinates.boundsInWindow())
+                            }
+                            .clip(RoundedCornerShape(20.dp))
+                            .clickable { onFilterSelected(targetFilter) }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 9.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            val iconVector = when {
+                                isHoveredByDrag -> Icons.Default.Folder
+                                label == "All" -> Icons.Default.AllInclusive
+                                label == "Recent" -> Icons.Default.Schedule
+                                label == "Favorites" -> Icons.Default.Star
+                                label == "Handwritten" -> Icons.Default.Draw
+                                label == "PDF" -> Icons.Default.PictureAsPdf
+                                label == "Projects" -> Icons.Default.FolderSpecial
+                                label == "Templates" -> Icons.Default.DashboardCustomize
+                                label == "Personal" -> Icons.Default.Person
+                                label == "School" -> Icons.Default.School
+                                else -> Icons.Default.Folder
+                            }
+
+                            Icon(
+                                imageVector = iconVector,
+                                contentDescription = null,
+                                tint = if (isHoveredByDrag || isSelected) Color.White else LipiTextSecondary,
+                                modifier = Modifier.size(16.dp)
+                            )
+
+                            Text(
+                                text = if (isHoveredByDrag) "Drop into $label" else label,
+                                fontSize = 13.sp,
+                                fontWeight = if (isHoveredByDrag || isSelected) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isHoveredByDrag || isSelected) Color.White else LipiTextPrimary
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -1290,7 +1370,7 @@ private fun BatchMoveToFolderDialog(
                 availableFolders.forEach { folder ->
                     Surface(
                         shape = RoundedCornerShape(12.dp),
-                        color = Color(0xFFF1F5F9),
+                        color = LipiSoftBg,
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable {
@@ -1426,7 +1506,7 @@ fun RedesignedNotebookCard(
         color = LipiCardWhite,
         border = BorderStroke(
             width = if (isHoveredForSwap) 2.dp else 1.dp,
-            color = if (isHoveredForSwap) LipiSuccess else if (isCheckSelected) LipiPrimary else Color(0xFFE2E8F0)
+            color = if (isHoveredForSwap) LipiSuccess else if (isCheckSelected) LipiPrimary else LipiBorder
         )
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
@@ -1435,7 +1515,7 @@ fun RedesignedNotebookCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(if (isGridView) 1.25f else 3.5f)
-                    .background(Color(0xFFF1F5F9))
+                    .background(LipiSoftBg)
             ) {
                 // Main Cover / Template Preview
                 NoteCardPreview(note = note, modifier = Modifier.fillMaxSize())
@@ -1693,56 +1773,7 @@ private fun AllNotesRightPanel(
             .fillMaxSize()
             .padding(18.dp)
     ) {
-        // Section 1: AI Assistant Suggestions
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = LipiPrimary, modifier = Modifier.size(20.dp))
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = "AI Smart Assistant",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = LipiTextPrimary
-            )
-        }
-        Spacer(modifier = Modifier.height(12.dp))
-
-        val aiActions = listOf(
-            Triple("⚡ Generate Flashcards", "Create study deck from recent notes", LipiPrimary),
-            Triple("📄 Summarize Recent PDF", "Extract bullet takeaways", LipiSecondary),
-            Triple("🧠 Mindmap Synthesis", "Generate visual concept web", LipiAccent)
-        )
-
-        aiActions.forEach { (title, subtitle, color) ->
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 8.dp)
-                    .clip(RoundedCornerShape(16.dp))
-                    .clickable {
-                        if (recentNote != null) onSelectNote(recentNote)
-                    },
-                shape = RoundedCornerShape(16.dp),
-                color = color.copy(alpha = 0.08f),
-                border = BorderStroke(1.dp, color.copy(alpha = 0.2f))
-            ) {
-                Row(
-                    modifier = Modifier.padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(title, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = LipiTextPrimary)
-                        Text(subtitle, fontSize = 11.sp, color = LipiTextSecondary)
-                    }
-                    Icon(Icons.Default.ChevronRight, contentDescription = null, tint = color, modifier = Modifier.size(18.dp))
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-        HorizontalDivider(color = Color(0xFFE2E8F0))
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Section 2: Continue Yesterday's Notes
+        // Section 1: Continue Yesterday's Notes
         Text(
             text = "CONTINUE RECENT NOTE",
             style = MaterialTheme.typography.labelSmall,
@@ -1759,7 +1790,7 @@ private fun AllNotesRightPanel(
                     .clickable { onSelectNote(recentNote) },
                 shape = RoundedCornerShape(16.dp),
                 color = LipiBgLight,
-                border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+                border = BorderStroke(1.dp, LipiBorder)
             ) {
                 Row(
                     modifier = Modifier.padding(12.dp),
@@ -1784,7 +1815,7 @@ private fun AllNotesRightPanel(
         }
 
         Spacer(modifier = Modifier.height(16.dp))
-        HorizontalDivider(color = Color(0xFFE2E8F0))
+        HorizontalDivider(color = LipiBorder)
         Spacer(modifier = Modifier.height(16.dp))
 
         // Section 3: Upcoming Study Deadlines & Tasks
@@ -1838,7 +1869,7 @@ private fun AllNotesEmptyState(
             shape = RoundedCornerShape(24.dp),
             color = LipiCardWhite,
             shadowElevation = 4.dp,
-            border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
+            border = BorderStroke(1.dp, LipiBorder),
             modifier = Modifier
                 .widthIn(max = 420.dp)
                 .fillMaxWidth()
@@ -1969,7 +2000,7 @@ private fun MoveToFolderDialog(
                 availableFolders.forEach { folder ->
                     Surface(
                         shape = RoundedCornerShape(12.dp),
-                        color = Color(0xFFF1F5F9),
+                        color = LipiSoftBg,
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable {

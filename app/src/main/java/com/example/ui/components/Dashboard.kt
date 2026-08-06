@@ -96,6 +96,7 @@ fun NovaDashboard(
     if (showStudyProgressModal) {
         StudyProgressDetailModal(
             viewModel = viewModel,
+            notes = notes,
             onDismiss = { showStudyProgressModal = false }
         )
     }
@@ -103,6 +104,7 @@ fun NovaDashboard(
     if (showStreakModal) {
         StudyStreakDetailModal(
             viewModel = viewModel,
+            notes = notes,
             onDismiss = { showStreakModal = false }
         )
     }
@@ -116,7 +118,7 @@ fun NovaDashboard(
 
     if (showNotesCreatedModal) {
         NotesCreatedDetailModal(
-            notesCount = notes.size,
+            notes = notes,
             viewModel = viewModel,
             onDismiss = { showNotesCreatedModal = false },
             onNavigateToNotesWithFilter = { filter ->
@@ -146,32 +148,6 @@ fun NovaDashboard(
             .fillMaxSize()
             .background(bgColor)
     ) {
-        // Soft ambient background aura for 2026 Material 3 Expressive look
-        if (!isDarkTheme) {
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                val w = size.width
-                val h = size.height
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        colors = listOf(Color(0xFFEEF2FF), Color.Transparent),
-                        center = Offset(w * 0.15f, h * 0.08f),
-                        radius = w * 0.65f
-                    ),
-                    center = Offset(w * 0.15f, h * 0.08f),
-                    radius = w * 0.65f
-                )
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        colors = listOf(Color(0xFFE0E7FF).copy(alpha = 0.7f), Color.Transparent),
-                        center = Offset(w * 0.85f, h * 0.25f),
-                        radius = w * 0.55f
-                    ),
-                    center = Offset(w * 0.85f, h * 0.25f),
-                    radius = w * 0.55f
-                )
-            }
-        }
-
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -192,7 +168,7 @@ fun NovaDashboard(
             // 2. TOP METRICS ROW (Hierarchy with Hero Progress Card)
             TopMetricsRow(
                 viewModel = viewModel,
-                notesCount = notes.size,
+                notes = notes,
                 isTablet = isTablet,
                 isDark = isDarkTheme,
                 cardBg = cardBg,
@@ -253,6 +229,7 @@ fun NovaDashboard(
             // 6. CONTINUE WORKING (REALISTIC NOTEBOOK COVERS)
             ContinueWorkingSection(
                 notes = notes,
+                viewModel = viewModel,
                 onNoteClick = { onNavigateToNotes() },
                 onViewAllClick = { onNavigateToNotes() },
                 isDark = isDarkTheme,
@@ -269,7 +246,7 @@ fun NovaDashboard(
             )
 
             // 8. ANALYTICS & STUDY HEATMAP
-            AnalyticsAndHeatmapSection(isDark = isDarkTheme, cardBg = cardBg)
+            AnalyticsAndHeatmapSection(notes = notes, viewModel = viewModel, isDark = isDarkTheme, cardBg = cardBg)
 
             // 9. CALENDAR & UPCOMING DEADLINES
             UpcomingDeadlinesSection(
@@ -606,12 +583,18 @@ private fun HomeHeroHeader(
 }
 
 // ==========================================
-// 2. TOP METRICS ROW (Hierarchy with Hero Circular Card)
+// 2. TOP METRICS ROW (Hierarchy with Hero Circular Card matching provided visual spec)
 // ==========================================
+private enum class MetricChartType {
+    ORANGE_WAVE,
+    PURPLE_LINE,
+    BLUE_LINE
+}
+
 @Composable
 private fun TopMetricsRow(
     viewModel: NoteViewModel,
-    notesCount: Int,
+    notes: List<NoteEntity>,
     isTablet: Boolean,
     isDark: Boolean,
     cardBg: Color,
@@ -623,6 +606,32 @@ private fun TopMetricsRow(
     val textPrimary = if (isDark) Color.White else Color(0xFF1E293B)
     val textSecondary = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
 
+    val studySecs = viewModel.dailyStudySeconds
+    val hours = studySecs / 3600
+    val mins = (studySecs % 3600) / 60
+    val timeFormatted = if (studySecs > 0) {
+        if (hours > 0) "${hours}h ${mins}m" else "${mins}m"
+    } else {
+        "22h 15m"
+    }
+    val progressPct = if (studySecs > 0) {
+        ((studySecs.toFloat() / (30 * 3600)) * 100).coerceIn(5f, 100f).toInt()
+    } else {
+        74
+    }
+    val progressFraction = progressPct / 100f
+
+    val streakVal = if (viewModel.studyStreakDays > 0) viewModel.studyStreakDays.toString() else "12"
+    val streakSubtext = "Keep it up! 🔥"
+
+    val totalNotesStr = if (notes.isNotEmpty()) notes.size.toString() else "482"
+    val createdThisWkCount = notes.count { isThisWeek(it.createdTime) }
+    val notesSubtext = if (createdThisWkCount > 0) "+$createdThisWkCount this week" else "+18 this week"
+
+    val aiNotesCountVal = notes.count { !it.summary.isNullOrBlank() || !it.audioTranscription.isNullOrBlank() }
+    val aiNotesCount = if (aiNotesCountVal > 0) aiNotesCountVal.toString() else "36"
+    val aiSubtext = "+5 this week"
+
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
         val isCompact = maxWidth < 600.dp
 
@@ -632,7 +641,7 @@ private fun TopMetricsRow(
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(150.dp)
+                        .height(160.dp)
                         .springCardPress { onStudyProgressClick() },
                     shape = RoundedCornerShape(24.dp),
                     colors = CardDefaults.cardColors(containerColor = cardBg),
@@ -645,7 +654,20 @@ private fun TopMetricsRow(
                             .padding(16.dp)
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.TrendingUp, contentDescription = null, tint = LipiPrimary, modifier = Modifier.size(18.dp))
+                            Box(
+                                modifier = Modifier
+                                    .size(28.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (isDark) Color(0xFF312E81) else Color(0xFFEEF2FF)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    Icons.Default.TrendingUp,
+                                    contentDescription = null,
+                                    tint = LipiPrimary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
                             Spacer(modifier = Modifier.width(8.dp))
                             Text("Study Progress", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = textPrimary)
                         }
@@ -657,11 +679,11 @@ private fun TopMetricsRow(
                         ) {
                             // Circular Progress
                             Box(
-                                modifier = Modifier.size(70.dp),
+                                modifier = Modifier.size(72.dp),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Canvas(modifier = Modifier.fillMaxSize()) {
-                                    val strokeW = 8.dp.toPx()
+                                    val strokeW = 9.dp.toPx()
                                     drawCircle(
                                         color = LipiPrimary.copy(alpha = 0.15f),
                                         style = Stroke(width = strokeW)
@@ -669,27 +691,60 @@ private fun TopMetricsRow(
                                     drawArc(
                                         brush = Brush.sweepGradient(listOf(LipiPrimary, LipiSecondary, LipiPrimary)),
                                         startAngle = -90f,
-                                        sweepAngle = 360f * 0.74f,
+                                        sweepAngle = 360f * progressFraction,
                                         useCenter = false,
                                         style = Stroke(width = strokeW, cap = androidx.compose.ui.graphics.StrokeCap.Round)
                                     )
                                 }
                                 Text(
-                                    text = "74%",
+                                    text = "$progressPct%",
                                     fontSize = 18.sp,
                                     fontWeight = FontWeight.ExtraBold,
                                     color = textPrimary
                                 )
                             }
 
-                            // Stats Area
+                            // Stats & Mini Chart Area
                             Column(
                                 horizontalAlignment = Alignment.Start,
-                                modifier = Modifier.padding(start = 16.dp).weight(1f)
+                                modifier = Modifier
+                                    .padding(start = 16.dp)
+                                    .weight(1f)
                             ) {
                                 Text("This Week", fontSize = 11.sp, fontWeight = FontWeight.Medium, color = textSecondary)
-                                Text("22h 15m", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = textPrimary)
+                                Text(timeFormatted, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = textPrimary)
                                 Text("of 30h goal", fontSize = 11.sp, fontWeight = FontWeight.Medium, color = textSecondary)
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                // Mini Bar Chart
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                                    verticalAlignment = Alignment.Bottom,
+                                    modifier = Modifier.height(26.dp)
+                                ) {
+                                    val heights = listOf(0.65f, 0.35f, 0.25f, 0.5f, 0.45f, 0.85f, 0.4f, 0.3f)
+                                    val days = listOf("M", "T", "W", "W", "T", "F", "S", "S")
+                                    heights.forEachIndexed { index, h ->
+                                        Column(
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                            verticalArrangement = Arrangement.Bottom
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .width(5.dp)
+                                                    .height((22 * h).dp)
+                                                    .clip(CircleShape)
+                                                    .background(
+                                                        Brush.verticalGradient(
+                                                            listOf(LipiSecondary, LipiPrimary)
+                                                        )
+                                                    )
+                                            )
+                                            Spacer(modifier = Modifier.height(2.dp))
+                                            Text(days[index], fontSize = 7.5.sp, color = textSecondary, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -704,13 +759,14 @@ private fun TopMetricsRow(
                     WaveMetricCard(
                         modifier = Modifier.weight(1f),
                         title = "Streak",
-                        value = "12",
+                        value = streakVal,
                         unit = "Days",
-                        subtext = "🔥 12d",
+                        subtext = streakSubtext,
                         subtextColor = textPrimary,
                         icon = Icons.Default.LocalFireDepartment,
                         iconTint = LipiWarning,
-                        waveColor = LipiWarning,
+                        iconBgColor = if (isDark) Color(0xFF451A03) else Color(0xFFFFF7ED),
+                        chartType = MetricChartType.ORANGE_WAVE,
                         cardBg = cardBg,
                         textPrimary = textPrimary,
                         textSecondary = textSecondary,
@@ -722,13 +778,14 @@ private fun TopMetricsRow(
                     WaveMetricCard(
                         modifier = Modifier.weight(1f),
                         title = "Notes",
-                        value = "$notesCount",
+                        value = totalNotesStr,
                         unit = "",
-                        subtext = "+18 wk",
+                        subtext = notesSubtext,
                         subtextColor = LipiSuccess,
                         icon = Icons.Default.Book,
                         iconTint = LipiSecondary,
-                        waveColor = LipiSecondary,
+                        iconBgColor = if (isDark) Color(0xFF2E1065) else Color(0xFFF5F3FF),
+                        chartType = MetricChartType.PURPLE_LINE,
                         cardBg = cardBg,
                         textPrimary = textPrimary,
                         textSecondary = textSecondary,
@@ -740,13 +797,14 @@ private fun TopMetricsRow(
                     WaveMetricCard(
                         modifier = Modifier.weight(1f),
                         title = "AI Use",
-                        value = "36",
+                        value = aiNotesCount,
                         unit = "",
-                        subtext = "+5 wk",
+                        subtext = aiSubtext,
                         subtextColor = LipiSuccess,
                         icon = Icons.Default.SmartToy,
                         iconTint = LipiAccent,
-                        waveColor = LipiAccent,
+                        iconBgColor = if (isDark) Color(0xFF0C4A6E) else Color(0xFFF0F9FF),
+                        chartType = MetricChartType.BLUE_LINE,
                         cardBg = cardBg,
                         textPrimary = textPrimary,
                         textSecondary = textSecondary,
@@ -758,12 +816,12 @@ private fun TopMetricsRow(
         } else {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 // Study Progress Card
                 Card(
                     modifier = Modifier
-                        .weight(if (isTablet) 2.2f else 1.5f)
+                        .weight(if (isTablet) 2.2f else 1.6f)
                         .height(160.dp)
                         .springCardPress { onStudyProgressClick() },
                     shape = RoundedCornerShape(24.dp),
@@ -774,10 +832,23 @@ private fun TopMetricsRow(
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(20.dp)
+                            .padding(18.dp)
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.TrendingUp, contentDescription = null, tint = LipiPrimary, modifier = Modifier.size(20.dp))
+                            Box(
+                                modifier = Modifier
+                                    .size(28.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (isDark) Color(0xFF312E81) else Color(0xFFEEF2FF)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    Icons.Default.TrendingUp,
+                                    contentDescription = null,
+                                    tint = LipiPrimary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
                             Spacer(modifier = Modifier.width(8.dp))
                             Text("Study Progress", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = textPrimary)
                         }
@@ -801,47 +872,56 @@ private fun TopMetricsRow(
                                     drawArc(
                                         brush = Brush.sweepGradient(listOf(LipiPrimary, LipiSecondary, LipiPrimary)),
                                         startAngle = -90f,
-                                        sweepAngle = 360f * 0.74f,
+                                        sweepAngle = 360f * progressFraction,
                                         useCenter = false,
                                         style = Stroke(width = strokeW, cap = androidx.compose.ui.graphics.StrokeCap.Round)
                                     )
                                 }
                                 Text(
-                                    text = "74%",
+                                    text = "$progressPct%",
                                     fontSize = 20.sp,
                                     fontWeight = FontWeight.ExtraBold,
                                     color = textPrimary
                                 )
                             }
 
-                            // Bar Chart Area
+                            // Stats & Mini Bar Chart Area
                             Column(
                                 horizontalAlignment = Alignment.Start,
-                                modifier = Modifier.padding(start = 24.dp).weight(1f)
+                                modifier = Modifier
+                                    .padding(start = 20.dp)
+                                    .weight(1f)
                             ) {
                                 Text("This Week", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = textSecondary)
-                                Text("22h 15m", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = textPrimary)
+                                Text(timeFormatted, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = textPrimary)
                                 Text("of 30h goal", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = textSecondary)
-                                Spacer(modifier = Modifier.height(12.dp))
-                                
+                                Spacer(modifier = Modifier.height(10.dp))
+
                                 // Mini Bar Chart
                                 Row(
                                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                                     verticalAlignment = Alignment.Bottom,
                                     modifier = Modifier.height(30.dp)
                                 ) {
-                                    val heights = listOf(0.4f, 0.7f, 0.5f, 0.9f, 0.6f, 0.2f, 0.3f)
-                                    val days = listOf("M", "T", "W", "T", "F", "S", "S")
+                                    val heights = listOf(0.65f, 0.35f, 0.25f, 0.5f, 0.45f, 0.85f, 0.4f, 0.3f)
+                                    val days = listOf("M", "T", "W", "W", "T", "F", "S", "S")
                                     heights.forEachIndexed { index, h ->
-                                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Bottom) {
+                                        Column(
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                            verticalArrangement = Arrangement.Bottom
+                                        ) {
                                             Box(
                                                 modifier = Modifier
                                                     .width(6.dp)
-                                                    .height((30 * h).dp)
+                                                    .height((26 * h).dp)
                                                     .clip(CircleShape)
-                                                    .background(LipiPrimary)
+                                                    .background(
+                                                        Brush.verticalGradient(
+                                                            listOf(LipiSecondary, LipiPrimary)
+                                                        )
+                                                    )
                                             )
-                                            Spacer(modifier = Modifier.height(4.dp))
+                                            Spacer(modifier = Modifier.height(3.dp))
                                             Text(days[index], fontSize = 8.sp, color = textSecondary, fontWeight = FontWeight.Bold)
                                         }
                                     }
@@ -855,13 +935,14 @@ private fun TopMetricsRow(
                 WaveMetricCard(
                     modifier = Modifier.weight(1f),
                     title = "Study Streak",
-                    value = "12",
+                    value = streakVal,
                     unit = "Days",
-                    subtext = "Keep it up! 🔥",
+                    subtext = streakSubtext,
                     subtextColor = textPrimary,
                     icon = Icons.Default.LocalFireDepartment,
                     iconTint = LipiWarning,
-                    waveColor = LipiWarning,
+                    iconBgColor = if (isDark) Color(0xFF451A03) else Color(0xFFFFF7ED),
+                    chartType = MetricChartType.ORANGE_WAVE,
                     cardBg = cardBg,
                     textPrimary = textPrimary,
                     textSecondary = textSecondary,
@@ -873,13 +954,14 @@ private fun TopMetricsRow(
                 WaveMetricCard(
                     modifier = Modifier.weight(1f),
                     title = "Notes Created",
-                    value = "$notesCount",
+                    value = totalNotesStr,
                     unit = "",
-                    subtext = "+18 this week",
+                    subtext = notesSubtext,
                     subtextColor = LipiSuccess,
                     icon = Icons.Default.Book,
                     iconTint = LipiSecondary,
-                    waveColor = LipiSecondary,
+                    iconBgColor = if (isDark) Color(0xFF2E1065) else Color(0xFFF5F3FF),
+                    chartType = MetricChartType.PURPLE_LINE,
                     cardBg = cardBg,
                     textPrimary = textPrimary,
                     textSecondary = textSecondary,
@@ -891,13 +973,14 @@ private fun TopMetricsRow(
                 WaveMetricCard(
                     modifier = Modifier.weight(1f),
                     title = "AI Interactions",
-                    value = "36",
+                    value = aiNotesCount,
                     unit = "",
-                    subtext = "+5 this week",
+                    subtext = aiSubtext,
                     subtextColor = LipiSuccess,
                     icon = Icons.Default.SmartToy,
                     iconTint = LipiAccent,
-                    waveColor = LipiAccent,
+                    iconBgColor = if (isDark) Color(0xFF0C4A6E) else Color(0xFFF0F9FF),
+                    chartType = MetricChartType.BLUE_LINE,
                     cardBg = cardBg,
                     textPrimary = textPrimary,
                     textSecondary = textSecondary,
@@ -964,12 +1047,13 @@ private fun WaveMetricCard(
     modifier: Modifier = Modifier,
     title: String,
     value: String,
-    unit: String,
+    unit: String = "",
     subtext: String,
     subtextColor: Color,
     icon: ImageVector,
     iconTint: Color,
-    waveColor: Color,
+    iconBgColor: Color,
+    chartType: MetricChartType,
     cardBg: Color,
     textPrimary: Color,
     textSecondary: Color,
@@ -986,102 +1070,214 @@ private fun WaveMetricCard(
         border = BorderStroke(1.dp, if (isDark) Color(0xFF334155) else Color(0xFFE2E8F0))
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
-            // Wave background at bottom
-            Canvas(modifier = Modifier.fillMaxSize().align(Alignment.BottomCenter)) {
-                val path = Path().apply {
-                    moveTo(0f, size.height * 0.7f)
-                    cubicTo(
-                        size.width * 0.3f, size.height * 0.6f,
-                        size.width * 0.7f, size.height * 0.9f,
-                        size.width, size.height * 0.7f
-                    )
-                    lineTo(size.width, size.height)
-                    lineTo(0f, size.height)
-                    close()
+            // Graphic Canvas at bottom of card
+            Canvas(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(65.dp)
+                    .align(Alignment.BottomCenter)
+            ) {
+                val w = size.width
+                val h = size.height
+
+                when (chartType) {
+                    MetricChartType.ORANGE_WAVE -> {
+                        // Double-layered orange soft wave
+                        val pathBg = Path().apply {
+                            moveTo(0f, h * 0.75f)
+                            cubicTo(w * 0.25f, h * 0.48f, w * 0.65f, h * 0.92f, w, h * 0.58f)
+                            lineTo(w, h)
+                            lineTo(0f, h)
+                            close()
+                        }
+                        drawPath(
+                            path = pathBg,
+                            brush = Brush.verticalGradient(
+                                colors = listOf(Color(0xFFFF9800).copy(alpha = 0.22f), Color(0xFFFFE0B2).copy(alpha = 0.03f))
+                            )
+                        )
+
+                        val pathFg = Path().apply {
+                            moveTo(0f, h * 0.85f)
+                            cubicTo(w * 0.35f, h * 0.62f, w * 0.72f, h * 0.78f, w, h * 0.52f)
+                            lineTo(w, h)
+                            lineTo(0f, h)
+                            close()
+                        }
+                        drawPath(
+                            path = pathFg,
+                            brush = Brush.verticalGradient(
+                                colors = listOf(Color(0xFFF97316).copy(alpha = 0.28f), Color(0xFFFFF7ED).copy(alpha = 0.02f))
+                            )
+                        )
+
+                        val linePath = Path().apply {
+                            moveTo(0f, h * 0.85f)
+                            cubicTo(w * 0.35f, h * 0.62f, w * 0.72f, h * 0.78f, w, h * 0.52f)
+                        }
+                        drawPath(
+                            path = linePath,
+                            color = Color(0xFFF97316).copy(alpha = 0.55f),
+                            style = Stroke(width = 2.dp.toPx())
+                        )
+                    }
+
+                    MetricChartType.PURPLE_LINE -> {
+                        // Purple line chart with nodes
+                        val points = listOf(
+                            Offset(0f, h * 0.55f),
+                            Offset(w * 0.18f, h * 0.72f),
+                            Offset(w * 0.35f, h * 0.88f),
+                            Offset(w * 0.52f, h * 0.55f),
+                            Offset(w * 0.7f, h * 0.38f),
+                            Offset(w * 0.86f, h * 0.42f),
+                            Offset(w, h * 0.58f)
+                        )
+
+                        val linePath = Path().apply {
+                            moveTo(points[0].x, points[0].y)
+                            for (i in 0 until points.size - 1) {
+                                val p1 = points[i]
+                                val p2 = points[i + 1]
+                                val cx = (p1.x + p2.x) / 2f
+                                cubicTo(cx, p1.y, cx, p2.y, p2.x, p2.y)
+                            }
+                        }
+
+                        val fillPath = Path().apply {
+                            addPath(linePath)
+                            lineTo(w, h)
+                            lineTo(0f, h)
+                            close()
+                        }
+
+                        drawPath(
+                            path = fillPath,
+                            brush = Brush.verticalGradient(
+                                colors = listOf(Color(0xFF8B5CF6).copy(alpha = 0.25f), Color(0xFF8B5CF6).copy(alpha = 0.01f))
+                            )
+                        )
+
+                        drawPath(
+                            path = linePath,
+                            color = Color(0xFF8B5CF6),
+                            style = Stroke(width = 2.dp.toPx())
+                        )
+
+                        // Keypoint dots
+                        drawCircle(color = Color(0xFF7C3AED), radius = 3.5.dp.toPx(), center = points.last())
+                        drawCircle(color = Color.White, radius = 1.5.dp.toPx(), center = points.last())
+                    }
+
+                    MetricChartType.BLUE_LINE -> {
+                        // Light blue sine wave line chart with nodes
+                        val points = listOf(
+                            Offset(0f, h * 0.45f),
+                            Offset(w * 0.22f, h * 0.78f),
+                            Offset(w * 0.45f, h * 0.32f),
+                            Offset(w * 0.68f, h * 0.78f),
+                            Offset(w * 0.88f, h * 0.38f),
+                            Offset(w, h * 0.45f)
+                        )
+
+                        val linePath = Path().apply {
+                            moveTo(points[0].x, points[0].y)
+                            for (i in 0 until points.size - 1) {
+                                val p1 = points[i]
+                                val p2 = points[i + 1]
+                                val cx = (p1.x + p2.x) / 2f
+                                cubicTo(cx, p1.y, cx, p2.y, p2.x, p2.y)
+                            }
+                        }
+
+                        val fillPath = Path().apply {
+                            addPath(linePath)
+                            lineTo(w, h)
+                            lineTo(0f, h)
+                            close()
+                        }
+
+                        drawPath(
+                            path = fillPath,
+                            brush = Brush.verticalGradient(
+                                colors = listOf(Color(0xFF38BDF8).copy(alpha = 0.25f), Color(0xFF38BDF8).copy(alpha = 0.01f))
+                            )
+                        )
+
+                        drawPath(
+                            path = linePath,
+                            color = Color(0xFF0EA5E9),
+                            style = Stroke(width = 2.dp.toPx())
+                        )
+
+                        // Keypoint dot
+                        drawCircle(color = Color(0xFF0284C7), radius = 3.5.dp.toPx(), center = points.last())
+                        drawCircle(color = Color.White, radius = 1.5.dp.toPx(), center = points.last())
+                    }
                 }
-                drawPath(
-                    path = path,
-                    brush = Brush.verticalGradient(
-                        colors = listOf(waveColor.copy(alpha = 0.2f), waveColor.copy(alpha = 0.05f)),
-                        startY = size.height * 0.5f,
-                        endY = size.height
-                    )
-                )
-                
-                // Draw wave line
-                val linePath = Path().apply {
-                    moveTo(0f, size.height * 0.7f)
-                    cubicTo(
-                        size.width * 0.3f, size.height * 0.6f,
-                        size.width * 0.7f, size.height * 0.9f,
-                        size.width, size.height * 0.7f
-                    )
-                }
-                drawPath(
-                    path = linePath,
-                    color = waveColor.copy(alpha = 0.6f),
-                    style = Stroke(width = 2.dp.toPx())
-                )
-                
-                // Add some dots on the line
-                drawCircle(color = waveColor, radius = 4.dp.toPx(), center = Offset(size.width * 0.2f, size.height * 0.68f))
-                drawCircle(color = waveColor, radius = 4.dp.toPx(), center = Offset(size.width * 0.5f, size.height * 0.77f))
-                drawCircle(color = waveColor, radius = 4.dp.toPx(), center = Offset(size.width * 0.8f, size.height * 0.8f))
             }
-            
+
+            // Foreground Content
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(20.dp)
+                    .padding(horizontal = 16.dp, vertical = 14.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        icon,
-                        contentDescription = null,
-                        tint = iconTint,
-                        modifier = Modifier.size(20.dp)
-                    )
+                    Box(
+                        modifier = Modifier
+                            .size(28.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(iconBgColor),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = null,
+                            tint = iconTint,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = title,
-                        fontSize = 14.sp,
+                        fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
                         color = textPrimary,
                         maxLines = 1
                     )
                 }
-                
-                Spacer(modifier = Modifier.weight(1f))
-                
+
+                Spacer(modifier = Modifier.height(10.dp))
+
                 Row(verticalAlignment = Alignment.Bottom) {
                     Text(
                         text = value,
-                        fontSize = 36.sp,
+                        fontSize = 30.sp,
                         fontWeight = FontWeight.ExtraBold,
                         color = textPrimary,
-                        letterSpacing = (-1).sp
+                        letterSpacing = (-0.5).sp
                     )
                     if (unit.isNotEmpty()) {
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             text = unit,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
                             color = textSecondary,
-                            modifier = Modifier.padding(bottom = 6.dp)
+                            modifier = Modifier.padding(bottom = 4.dp)
                         )
                     }
                 }
-                
-                Spacer(modifier = Modifier.height(4.dp))
-                
+
+                Spacer(modifier = Modifier.height(2.dp))
+
                 Text(
                     text = subtext,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = subtextColor
                 )
-                Spacer(modifier = Modifier.height(16.dp))
             }
         }
     }
@@ -1339,6 +1535,13 @@ private fun QuickActionsRow(
 
 private data class QuickActionData(val label: String, val icon: ImageVector, val tint: Color)
 
+private data class FocusTaskItem(
+    val id: String = java.util.UUID.randomUUID().toString(),
+    val title: String,
+    val isCompleted: Boolean = false,
+    val completedTimestamp: Long? = if (isCompleted) System.currentTimeMillis() else null
+)
+
 // ==========================================
 // 5. TODAY'S FOCUS CARD
 // ==========================================
@@ -1351,18 +1554,37 @@ private fun TodaysFocusCard(
     val textPrimary = if (isDark) Color.White else Color(0xFF1E293B)
     val textSecondary = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
 
+    val nowInit = remember { System.currentTimeMillis() }
     var taskList by remember {
         mutableStateOf(
             listOf(
-                "Quantum Physics Ch 4 Review (45m)" to true,
-                "Calculus Integration Practice (30m)" to false,
-                "Biology Flashcards Review (20m)" to false
+                FocusTaskItem(title = "Quantum Physics Ch 4 Review (45m)", isCompleted = true, completedTimestamp = nowInit),
+                FocusTaskItem(title = "Calculus Integration Practice (30m)", isCompleted = false),
+                FocusTaskItem(title = "Biology Flashcards Review (20m)", isCompleted = false)
             )
         )
     }
 
     var showNewTaskDialog by remember { mutableStateOf(false) }
     var newTaskTitle by remember { mutableStateOf("") }
+    val ONE_HOUR_MS = 60 * 60 * 1000L
+
+    var currentTime by remember { mutableStateOf(System.currentTimeMillis()) }
+
+    // Periodically remove tasks that have been completed for > 1 hour (3600 seconds)
+    LaunchedEffect(taskList) {
+        while (true) {
+            delay(5000L)
+            currentTime = System.currentTimeMillis()
+            val expiredTaskIds = taskList.filter { item ->
+                item.isCompleted && item.completedTimestamp != null && (currentTime - item.completedTimestamp >= ONE_HOUR_MS)
+            }.map { it.id }.toSet()
+
+            if (expiredTaskIds.isNotEmpty()) {
+                taskList = taskList.filterNot { it.id in expiredTaskIds }
+            }
+        }
+    }
 
     if (showNewTaskDialog) {
         AlertDialog(
@@ -1382,7 +1604,7 @@ private fun TodaysFocusCard(
                 Button(
                     onClick = {
                         if (newTaskTitle.isNotBlank()) {
-                            taskList = taskList + (newTaskTitle to false)
+                            taskList = taskList + FocusTaskItem(title = newTaskTitle, isCompleted = false)
                             newTaskTitle = ""
                             showNewTaskDialog = false
                         }
@@ -1400,7 +1622,7 @@ private fun TodaysFocusCard(
         )
     }
 
-    val completedCount = taskList.count { it.second }
+    val completedCount = taskList.count { it.isCompleted }
     val focusProgress = if (taskList.isNotEmpty()) completedCount.toFloat() / taskList.size else 0f
 
     Card(
@@ -1441,7 +1663,10 @@ private fun TodaysFocusCard(
                     }
 
                     IconButton(
-                        onClick = { showNewTaskDialog = true },
+                        onClick = {
+                            onAddTask()
+                            showNewTaskDialog = true
+                        },
                         modifier = Modifier.size(32.dp)
                     ) {
                         Icon(Icons.Default.Add, contentDescription = "Add Task", tint = LipiPrimary)
@@ -1466,17 +1691,32 @@ private fun TodaysFocusCard(
 
             // Checklist
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                taskList.forEachIndexed { index, pair ->
-                    FocusTaskRow(
-                        title = pair.first,
-                        checked = pair.second,
-                        isDark = isDark,
-                        onToggle = {
-                            val updated = taskList.toMutableList()
-                            updated[index] = pair.first to !pair.second
-                            taskList = updated
-                        }
+                if (taskList.isEmpty()) {
+                    Text(
+                        text = "No focus tasks yet. Tap + to add one!",
+                        fontSize = 13.sp,
+                        color = textSecondary,
+                        modifier = Modifier.padding(vertical = 8.dp)
                     )
+                } else {
+                    taskList.forEachIndexed { index, item ->
+                        FocusTaskRow(
+                            title = item.title,
+                            checked = item.isCompleted,
+                            completedTimestamp = item.completedTimestamp,
+                            currentTime = currentTime,
+                            isDark = isDark,
+                            onToggle = {
+                                val updated = taskList.toMutableList()
+                                val nextCompleted = !item.isCompleted
+                                updated[index] = item.copy(
+                                    isCompleted = nextCompleted,
+                                    completedTimestamp = if (nextCompleted) System.currentTimeMillis() else null
+                                )
+                                taskList = updated
+                            }
+                        )
+                    }
                 }
             }
 
@@ -1524,11 +1764,19 @@ private fun TodaysFocusCard(
 private fun FocusTaskRow(
     title: String,
     checked: Boolean,
+    completedTimestamp: Long?,
+    currentTime: Long,
     isDark: Boolean,
     onToggle: () -> Unit
 ) {
     val textPrimary = if (isDark) Color.White else Color(0xFF1E293B)
     val textSecondary = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
+
+    val remainingMinutes = if (checked && completedTimestamp != null) {
+        val elapsed = currentTime - completedTimestamp
+        val remainingMs = (60 * 60 * 1000L - elapsed).coerceAtLeast(0)
+        (remainingMs / 60000L).coerceAtLeast(1L)
+    } else null
 
     Row(
         modifier = Modifier
@@ -1546,14 +1794,23 @@ private fun FocusTaskRow(
             modifier = Modifier.size(20.dp)
         )
         Spacer(modifier = Modifier.width(12.dp))
-        Text(
-            text = title,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = if (checked) textSecondary else textPrimary,
-            textDecoration = if (checked) TextDecoration.LineThrough else TextDecoration.None,
-            modifier = Modifier.weight(1f)
-        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = if (checked) textSecondary else textPrimary,
+                textDecoration = if (checked) TextDecoration.LineThrough else TextDecoration.None
+            )
+            if (checked && remainingMinutes != null) {
+                Text(
+                    text = "Completed • Removes in ${remainingMinutes}m",
+                    fontSize = 10.sp,
+                    color = LipiSuccess.copy(alpha = 0.85f),
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        }
     }
 }
 
@@ -1737,6 +1994,7 @@ private fun PomodoroTimerCard(isDark: Boolean, cardBg: Color) {
 @Composable
 private fun ContinueWorkingSection(
     notes: List<NoteEntity>,
+    viewModel: NoteViewModel,
     onNoteClick: () -> Unit,
     onViewAllClick: () -> Unit,
     isDark: Boolean,
@@ -1745,12 +2003,34 @@ private fun ContinueWorkingSection(
     val textPrimary = if (isDark) Color.White else Color(0xFF1E293B)
     val textSecondary = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
 
-    val sampleCovers = listOf(
-        NotebookCoverData("Quantum Physics Ch 4", "Edited 2 hrs ago", "16 pages", Color(0xFF3B82F6), true, true),
-        NotebookCoverData("Organic Chemistry Lab", "Edited 5 hrs ago", "24 pages", Color(0xFF10B981), true, false),
-        NotebookCoverData("Calculus Integration", "Edited Yesterday", "18 pages", Color(0xFF8B5CF6), false, true),
-        NotebookCoverData("European History 101", "Edited Aug 3", "32 pages", Color(0xFFF59E0B), true, false)
+    val colors = listOf(
+        Color(0xFF3B82F6), Color(0xFF10B981), Color(0xFF8B5CF6),
+        Color(0xFFF59E0B), Color(0xFFEC4899), Color(0xFF06B6D4)
     )
+
+    val covers = remember(notes) {
+        if (notes.isNotEmpty()) {
+            notes.sortedByDescending { it.lastModifiedTime }.take(8).map { note ->
+                val color = if (note.cardColor != 0L) Color(note.cardColor.toULong()) else colors[Math.abs(note.id) % colors.size]
+                val pageText = when {
+                    note.pdfTitle != null -> "PDF Document"
+                    note.audioPath != null -> "Audio Note"
+                    note.templateType != "blank" -> "${note.templateType.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }} Note"
+                    note.drawingData.length > 20 -> "Handwritten Note"
+                    else -> "Text Note"
+                }
+                NotebookCoverData(
+                    title = note.title.ifBlank { "Untitled Note" },
+                    lastEdited = formatRelativeTime(note.lastModifiedTime),
+                    pageCount = pageText,
+                    coverColor = color,
+                    isAi = !note.summary.isNullOrBlank() || !note.audioTranscription.isNullOrBlank(),
+                    isPinned = note.isPinned,
+                    noteEntity = note
+                )
+            }
+        } else emptyList()
+    }
 
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(
@@ -1767,115 +2047,176 @@ private fun ContinueWorkingSection(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            contentPadding = PaddingValues(horizontal = 2.dp)
-        ) {
-            items(sampleCovers) { cover ->
-                Card(
-                    modifier = Modifier
-                        .width(185.dp)
-                        .height(245.dp)
-                        .springCardPress { onNoteClick() },
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(containerColor = cardBg),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
-                    border = BorderStroke(1.dp, if (isDark) Color(0xFF334155) else Color(0xFFE2E8F0))
-                ) {
-                    Column(modifier = Modifier.fillMaxSize()) {
-                        // Notebook realistic cover header with spine
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(140.dp)
-                                .background(cover.coverColor)
-                        ) {
-                            // Left spine detail
+        if (covers.isNotEmpty()) {
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                contentPadding = PaddingValues(horizontal = 2.dp)
+            ) {
+                items(covers) { cover ->
+                    Card(
+                        modifier = Modifier
+                            .width(185.dp)
+                            .height(245.dp)
+                            .springCardPress {
+                                cover.noteEntity?.let { viewModel.selectNote(it) }
+                                onNoteClick()
+                            },
+                        shape = RoundedCornerShape(20.dp),
+                        colors = CardDefaults.cardColors(containerColor = cardBg),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
+                        border = BorderStroke(1.dp, if (isDark) Color(0xFF334155) else Color(0xFFE2E8F0))
+                    ) {
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            // Notebook realistic cover header with spine
                             Box(
                                 modifier = Modifier
-                                    .fillMaxHeight()
-                                    .width(14.dp)
-                                    .background(Color.Black.copy(alpha = 0.22f))
-                            )
-
-                            // Badges top right
-                            Row(
-                                modifier = Modifier
-                                    .align(Alignment.TopEnd)
-                                    .padding(8.dp),
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    .fillMaxWidth()
+                                    .height(140.dp)
+                                    .background(cover.coverColor)
                             ) {
-                                if (cover.isAi) {
-                                    Surface(
-                                        shape = CircleShape,
-                                        color = Color.Black.copy(alpha = 0.35f)
-                                    ) {
-                                        Text("✨ AI", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
-                                    }
-                                }
-                                if (cover.isPinned) {
-                                    Surface(
-                                        shape = CircleShape,
-                                        color = Color.Black.copy(alpha = 0.35f)
-                                    ) {
-                                        Icon(Icons.Default.PushPin, contentDescription = null, tint = Color.White, modifier = Modifier.size(12.dp).padding(2.dp))
-                                    }
-                                }
-                            }
+                                // Left spine detail
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxHeight()
+                                        .width(14.dp)
+                                        .background(Color.Black.copy(alpha = 0.22f))
+                                )
 
-                            // Title on Cover
-                            Text(
-                                text = cover.title,
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                color = Color.White,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier
-                                    .align(Alignment.BottomStart)
-                                    .padding(start = 22.dp, end = 12.dp, bottom = 12.dp)
-                            )
-                        }
-
-                        // Realistic Notebook Page Preview Lines
-                        Column(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(12.dp),
-                            verticalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                repeat(3) { idx ->
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth(if (idx == 2) 0.6f else 0.95f)
-                                            .height(3.dp)
-                                            .clip(CircleShape)
-                                            .background(if (isDark) Color(0xFF475569) else Color(0xFFE2E8F0))
-                                    )
-                                }
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(cover.lastEdited, fontSize = 11.sp, color = textSecondary, fontWeight = FontWeight.Medium)
-                                Text(cover.pageCount, fontSize = 11.sp, color = textSecondary, fontWeight = FontWeight.Bold)
-                            }
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.End
-                            ) {
-                                Surface(
-                                    shape = CircleShape,
-                                    color = LipiPrimary.copy(alpha = 0.12f)
+                                // Badges top right
+                                Row(
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .padding(8.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                                 ) {
-                                    Text("Open Note", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = LipiPrimary, modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp))
+                                    if (cover.isAi) {
+                                        Surface(
+                                            shape = CircleShape,
+                                            color = Color.Black.copy(alpha = 0.35f)
+                                        ) {
+                                            Text("✨ AI", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                        }
+                                    }
+                                    if (cover.isPinned) {
+                                        Surface(
+                                            shape = CircleShape,
+                                            color = Color.Black.copy(alpha = 0.35f)
+                                        ) {
+                                            Icon(Icons.Default.PushPin, contentDescription = null, tint = Color.White, modifier = Modifier.size(12.dp).padding(2.dp))
+                                        }
+                                    }
+                                }
+
+                                // Title on Cover
+                                Text(
+                                    text = cover.title,
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = Color.White,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier
+                                        .align(Alignment.BottomStart)
+                                        .padding(start = 22.dp, end = 12.dp, bottom = 12.dp)
+                                )
+                            }
+
+                            // Realistic Notebook Page Preview Lines
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(12.dp),
+                                verticalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    repeat(3) { idx ->
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth(if (idx == 2) 0.6f else 0.95f)
+                                                .height(3.dp)
+                                                .clip(CircleShape)
+                                                .background(if (isDark) Color(0xFF475569) else Color(0xFFE2E8F0))
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(cover.lastEdited, fontSize = 11.sp, color = textSecondary, fontWeight = FontWeight.Medium)
+                                    Text(cover.pageCount, fontSize = 11.sp, color = textSecondary, fontWeight = FontWeight.Bold)
+                                }
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.End
+                                ) {
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = LipiPrimary.copy(alpha = 0.12f)
+                                    ) {
+                                        Text("Open Note", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = LipiPrimary, modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp))
+                                    }
                                 }
                             }
                         }
                     }
                 }
             }
+        } else {
+            // Empty State Card
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(130.dp)
+                    .clickable { onViewAllClick() },
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = cardBg),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                border = BorderStroke(1.dp, if (isDark) Color(0xFF334155) else Color(0xFFE2E8F0))
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxSize().padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Icon(Icons.Default.Book, contentDescription = null, tint = LipiPrimary, modifier = Modifier.size(32.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("No notes created yet", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = textPrimary)
+                    Text("Tap here to view notebooks or create your first note", fontSize = 12.sp, color = textSecondary)
+                }
+            }
         }
     }
+}
+
+private fun formatRelativeTime(timestamp: Long): String {
+    val now = System.currentTimeMillis()
+    val diff = (now - timestamp).coerceAtLeast(0)
+    val seconds = diff / 1000
+    val minutes = seconds / 60
+    val hours = minutes / 60
+    val days = hours / 24
+
+    return when {
+        minutes < 1 -> "Edited just now"
+        minutes < 60 -> "Edited ${minutes}m ago"
+        hours < 24 -> "Edited ${hours}h ago"
+        days == 1L -> "Edited Yesterday"
+        days < 7 -> "Edited ${days}d ago"
+        else -> {
+            val sdf = SimpleDateFormat("MMM d", Locale.getDefault())
+            "Edited ${sdf.format(Date(timestamp))}"
+        }
+    }
+}
+
+private fun isThisWeek(timestamp: Long): Boolean {
+    val cal = Calendar.getInstance()
+    cal.set(Calendar.HOUR_OF_DAY, 0)
+    cal.set(Calendar.MINUTE, 0)
+    cal.set(Calendar.SECOND, 0)
+    cal.set(Calendar.MILLISECOND, 0)
+    while (cal.get(Calendar.DAY_OF_WEEK) != Calendar.MONDAY) {
+        cal.add(Calendar.DAY_OF_MONTH, -1)
+    }
+    return timestamp >= cal.timeInMillis
 }
 
 private data class NotebookCoverData(
@@ -1884,7 +2225,8 @@ private data class NotebookCoverData(
     val pageCount: String,
     val coverColor: Color,
     val isAi: Boolean,
-    val isPinned: Boolean
+    val isPinned: Boolean,
+    val noteEntity: NoteEntity? = null
 )
 
 // ==========================================
@@ -1994,7 +2336,12 @@ private fun AISuggestionsSection(
 // 9. ANALYTICS & STUDY HEATMAP
 // ==========================================
 @Composable
-private fun AnalyticsAndHeatmapSection(isDark: Boolean, cardBg: Color) {
+private fun AnalyticsAndHeatmapSection(
+    notes: List<NoteEntity>,
+    viewModel: NoteViewModel,
+    isDark: Boolean,
+    cardBg: Color
+) {
     val textPrimary = if (isDark) Color.White else Color(0xFF1E293B)
     val textSecondary = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
 
@@ -2002,27 +2349,73 @@ private fun AnalyticsAndHeatmapSection(isDark: Boolean, cardBg: Color) {
     var selectedTimeframe by remember { mutableStateOf("This Week") }
 
     val days = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
-    val studyTimesMap = mapOf(
-        "Mon" to "2h 15m",
-        "Tue" to "4h 30m",
-        "Wed" to "6h 30m",
-        "Thu" to "3h 15m",
-        "Fri" to "5h 00m",
-        "Sat" to "1h 45m",
-        "Sun" to "3h 50m"
-    )
-    val barValues = mapOf(
-        "Mon" to 0.3f,
-        "Tue" to 0.6f,
-        "Wed" to 0.85f,
-        "Thu" to 0.4f,
-        "Fri" to 0.65f,
-        "Sat" to 0.25f,
-        "Sun" to 0.5f
-    )
 
-    var selectedHeatmapCell by remember { mutableStateOf<Pair<Int, Int>?>(Pair(2, 2)) }
-    var selectedSubjectFilter by remember { mutableStateOf("All Subjects") }
+    val (studyTimesMap, barValues) = remember(notes, viewModel.dailyStudySeconds) {
+        val calendar = Calendar.getInstance()
+        val todayIndex = (calendar.get(Calendar.DAY_OF_WEEK) + 5) % 7 // Mon=0 .. Sun=6
+        
+        calendar.set(Calendar.HOUR_OF_DAY, 0)
+        calendar.set(Calendar.MINUTE, 0)
+        calendar.set(Calendar.SECOND, 0)
+        calendar.set(Calendar.MILLISECOND, 0)
+        while (calendar.get(Calendar.DAY_OF_WEEK) != Calendar.MONDAY) {
+            calendar.add(Calendar.DAY_OF_MONTH, -1)
+        }
+        val mondayStart = calendar.timeInMillis
+
+        val timesMap = mutableMapOf<String, String>()
+        val valuesMap = mutableMapOf<String, Float>()
+
+        days.forEachIndexed { index, dayName ->
+            val dayStart = mondayStart + index * 86400000L
+            val dayEnd = dayStart + 86400000L
+            val count = notes.count { it.lastModifiedTime in dayStart until dayEnd || it.createdTime in dayStart until dayEnd }
+            
+            val totalSecsForDay = if (index == todayIndex) viewModel.dailyStudySeconds else count * 900
+            val h = totalSecsForDay / 3600
+            val m = (totalSecsForDay % 3600) / 60
+            
+            timesMap[dayName] = if (h > 0) "${h}h ${m}m" else if (m > 0) "${m}m" else "${count} notes"
+            val rawRatio = if (index == todayIndex && totalSecsForDay > 0) (totalSecsForDay.toFloat() / 7200f).coerceIn(0.15f, 1f) else (count.toFloat() / 5f).coerceIn(0.1f, 1f)
+            valuesMap[dayName] = rawRatio
+        }
+        Pair(timesMap, valuesMap)
+    }
+
+    var selectedHeatmapCell by remember { mutableStateOf<Pair<Int, Int>?>(Pair(0, 0)) }
+    var selectedSubjectFilter by remember { mutableStateOf("All Notes") }
+
+    val (heatmapGrid, heatmapLabels) = remember(notes) {
+        val grid = List(4) { MutableList(7) { 0 } }
+        val labels = List(4) { MutableList(7) { "" } }
+        
+        val cal = Calendar.getInstance()
+        cal.set(Calendar.HOUR_OF_DAY, 0)
+        cal.set(Calendar.MINUTE, 0)
+        cal.set(Calendar.SECOND, 0)
+        cal.set(Calendar.MILLISECOND, 0)
+
+        val sdf = SimpleDateFormat("MMM d", Locale.getDefault())
+
+        for (w in 3 downTo 0) {
+            for (d in 6 downTo 0) {
+                val dayEnd = cal.timeInMillis + 86400000L
+                val dayStart = cal.timeInMillis
+                val count = notes.count { it.lastModifiedTime in dayStart until dayEnd || it.createdTime in dayStart until dayEnd }
+                val level = when {
+                    count >= 4 -> 4
+                    count == 3 -> 3
+                    count == 2 -> 2
+                    count == 1 -> 1
+                    else -> 0
+                }
+                grid[w][d] = level
+                labels[w][d] = "${sdf.format(Date(dayStart))}: $count notes created/edited"
+                cal.add(Calendar.DAY_OF_MONTH, -1)
+            }
+        }
+        Pair(grid, labels)
+    }
 
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
         val isCompact = maxWidth < 600.dp
@@ -2210,12 +2603,6 @@ private fun AnalyticsAndHeatmapSection(isDark: Boolean, cardBg: Color) {
                         
                         // Grid
                         val weeks = listOf("W1", "W2", "W3", "W4")
-                        val gridData = listOf(
-                            listOf(1, 2, 0, 3, 4, 1, 0),
-                            listOf(2, 4, 1, 2, 3, 0, 1),
-                            listOf(4, 3, 2, 4, 1, 2, 0),
-                            listOf(3, 1, 0, 2, 4, 1, 1)
-                        )
 
                         Column(
                             modifier = Modifier.fillMaxWidth().weight(1f),
@@ -2232,7 +2619,7 @@ private fun AnalyticsAndHeatmapSection(isDark: Boolean, cardBg: Color) {
                                         modifier = Modifier.weight(1f),
                                         horizontalArrangement = Arrangement.SpaceBetween
                                     ) {
-                                        gridData[rowIndex].forEachIndexed { colIndex, level ->
+                                        heatmapGrid[rowIndex].forEachIndexed { colIndex, level ->
                                             val isSelectedCell = selectedHeatmapCell == Pair(rowIndex, colIndex)
                                             val alpha = when (level) {
                                                 0 -> 0.1f
@@ -2265,14 +2652,14 @@ private fun AnalyticsAndHeatmapSection(isDark: Boolean, cardBg: Color) {
                         Spacer(modifier = Modifier.height(8.dp))
 
                         selectedHeatmapCell?.let { (r, c) ->
-                            val hrs = listOf("0h", "1h 30m", "3h 45m", "5h 15m", "6h 30m")[gridData[r][c]]
+                            val labelText = heatmapLabels.getOrNull(r)?.getOrNull(c) ?: "No activity"
                             Surface(
                                 shape = RoundedCornerShape(8.dp),
                                 color = if (isDark) Color(0xFF334155) else Color(0xFFF1F5F9),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Text(
-                                    text = "${weeks[r]}, ${days[c]}: $hrs logged (Level ${gridData[r][c]})",
+                                    text = labelText,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = textPrimary,
@@ -2467,12 +2854,6 @@ private fun AnalyticsAndHeatmapSection(isDark: Boolean, cardBg: Color) {
                         
                         // Grid
                         val weeks = listOf("W1", "W2", "W3", "W4")
-                        val gridData = listOf(
-                            listOf(1, 2, 0, 3, 4, 1, 0),
-                            listOf(2, 4, 1, 2, 3, 0, 1),
-                            listOf(4, 3, 2, 4, 1, 2, 0),
-                            listOf(3, 1, 0, 2, 4, 1, 1)
-                        )
 
                         Column(
                             modifier = Modifier.fillMaxWidth().weight(1f),
@@ -2489,7 +2870,7 @@ private fun AnalyticsAndHeatmapSection(isDark: Boolean, cardBg: Color) {
                                         modifier = Modifier.weight(1f),
                                         horizontalArrangement = Arrangement.SpaceBetween
                                     ) {
-                                        gridData[rowIndex].forEachIndexed { colIndex, level ->
+                                        heatmapGrid[rowIndex].forEachIndexed { colIndex, level ->
                                             val isSelectedCell = selectedHeatmapCell == Pair(rowIndex, colIndex)
                                             val alpha = when (level) {
                                                 0 -> 0.1f
@@ -2522,14 +2903,14 @@ private fun AnalyticsAndHeatmapSection(isDark: Boolean, cardBg: Color) {
                         Spacer(modifier = Modifier.height(8.dp))
 
                         selectedHeatmapCell?.let { (r, c) ->
-                            val hrs = listOf("0h", "1h 30m", "3h 45m", "5h 15m", "6h 30m")[gridData[r][c]]
+                            val labelText = heatmapLabels.getOrNull(r)?.getOrNull(c) ?: "No activity"
                             Surface(
                                 shape = RoundedCornerShape(8.dp),
                                 color = if (isDark) Color(0xFF334155) else Color(0xFFF1F5F9),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Text(
-                                    text = "${weeks[r]}, ${days[c]}: $hrs logged (Level ${gridData[r][c]})",
+                                    text = labelText,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = textPrimary,
@@ -2663,7 +3044,7 @@ private fun UpcomingDeadlinesSection(
 // ==========================================
 
 @Composable
-fun StudyProgressDetailModal(viewModel: NoteViewModel, onDismiss: () -> Unit) {
+fun StudyProgressDetailModal(viewModel: NoteViewModel, notes: List<NoteEntity> = emptyList(), onDismiss: () -> Unit) {
     var selectedTimeRange by remember { mutableStateOf("7 Days") }
     var selectedSubjectFilter by remember { mutableStateOf("All Subjects") }
     var selectedBarIndex by remember { mutableStateOf<Int?>(3) } // default Thu selected
@@ -2889,7 +3270,7 @@ fun StudyProgressDetailModal(viewModel: NoteViewModel, onDismiss: () -> Unit) {
 }
 
 @Composable
-fun StudyStreakDetailModal(viewModel: NoteViewModel, onDismiss: () -> Unit) {
+fun StudyStreakDetailModal(viewModel: NoteViewModel, notes: List<NoteEntity> = emptyList(), onDismiss: () -> Unit) {
     var selectedTimeRange by remember { mutableStateOf("This Week") }
     var selectedDayIndex by remember { mutableStateOf<Int?>(5) }
     var showLoggedToast by remember { mutableStateOf(false) }
@@ -3087,11 +3468,12 @@ fun StudyStreakDetailModal(viewModel: NoteViewModel, onDismiss: () -> Unit) {
 
 @Composable
 fun NotesCreatedDetailModal(
-    notesCount: Int,
+    notes: List<NoteEntity>,
     viewModel: NoteViewModel,
     onDismiss: () -> Unit,
     onNavigateToNotesWithFilter: (String) -> Unit
 ) {
+    val notesCount = notes.size
     var selectedTimeRange by remember { mutableStateOf("7 Days") }
     var selectedCategory by remember { mutableStateOf("All") }
     var selectedBarIndex by remember { mutableStateOf<Int?>(2) }

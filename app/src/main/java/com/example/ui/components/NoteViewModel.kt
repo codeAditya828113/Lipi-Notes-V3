@@ -2634,6 +2634,50 @@ Here is your complete guide to all features and capabilities available in the ap
         }
     }
 
+    // Creating a fresh note with full design settings
+    fun createNewNoteWithDesign(
+        title: String,
+        templateType: String,
+        coverType: String = "3d_academic",
+        pageColor: Long = 0xFFFFFFFF,
+        coverTitle: String = "",
+        coverSubtitle: String = "",
+        coverAuthor: String = "",
+        coverExtra: String = "",
+        folder: String = "General"
+    ) {
+        viewModelScope.launch {
+            val folderTag = if (folder.isNotBlank()) "dir:$folder, $folder" else ""
+            val freshNote = NoteEntity(
+                title = if (title.isBlank()) "My Notebook" else title,
+                templateType = templateType,
+                coverType = coverType,
+                pageColor = pageColor,
+                coverTitle = if (coverTitle.isBlank()) (if (title.isBlank()) "My Notebook" else title) else coverTitle,
+                coverSubtitle = coverSubtitle,
+                coverAuthor = coverAuthor,
+                coverExtra = coverExtra,
+                tags = folderTag,
+                pdfTitle = if (templateType == "pdf") "Study_Lecture_Notes.pdf" else null,
+                lastModifiedTime = System.currentTimeMillis()
+            )
+            val newId = repository.insertNote(freshNote)
+            val insertedNote = freshNote.copy(id = newId.toInt())
+            
+            if (templateType == "pdf") {
+                val pdfFile = File(application.filesDir, "note_${insertedNote.id}.pdf")
+                PdfHelper.createSamplePdf(pdfFile)
+            }
+            
+            selectNote(insertedNote)
+            logSyncEvent("Created Notebook '${insertedNote.title}' with template [$templateType] and cover [$coverType].")
+
+            if (autoBackupEnabled) {
+                syncWithGoogleDrive()
+            }
+        }
+    }
+
     // Creating a fresh blank note
     fun createNewNote(title: String, templateType: String, tags: String = "") {
         viewModelScope.launch {

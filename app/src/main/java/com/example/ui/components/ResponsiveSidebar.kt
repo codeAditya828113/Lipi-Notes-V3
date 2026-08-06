@@ -46,6 +46,8 @@ fun ResponsiveSidebar(
 ) {
     var isSettingsExpanded by remember { mutableStateOf(false) }
     var isAiToolsExpanded by remember { mutableStateOf(true) }
+    var isNestedDirectoriesExpanded by remember { mutableStateOf(true) }
+    var isColoredTagsExpanded by remember { mutableStateOf(true) }
 
     // Directory & Tag Management Dialog state
     var directoryToEdit by remember { mutableStateOf<DirectoryItem?>(null) }
@@ -66,12 +68,9 @@ fun ResponsiveSidebar(
             .fillMaxHeight()
             .width(280.dp)
             .testTag("responsive_sidebar"),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
-        tonalElevation = 2.dp,
-        border = BorderStroke(
-            width = 1.dp,
-            color = Color.White.copy(alpha = 0.6f)
-        )
+        color = MaterialTheme.colorScheme.surface,
+        shadowElevation = 4.dp,
+        tonalElevation = 0.dp
     ) {
         Column(
             modifier = Modifier
@@ -182,7 +181,7 @@ fun ResponsiveSidebar(
                             Text(
                                 text = if (isSignedIn && accountEmail.isNotBlank()) accountEmail else "Tap to Sign In",
                                 fontSize = 10.sp,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -467,16 +466,35 @@ fun ResponsiveSidebar(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(start = 4.dp, bottom = 6.dp),
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { isNestedDirectoriesExpanded = !isNestedDirectoriesExpanded }
+                            .padding(start = 4.dp, end = 4.dp, top = 4.dp, bottom = 6.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = "NESTED DIRECTORIES",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.outline
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            val rotation by animateFloatAsState(
+                                targetValue = if (isNestedDirectoriesExpanded) 180f else 0f,
+                                label = "DirExpandRotation"
+                            )
+                            Icon(
+                                imageVector = Icons.Default.ArrowDropDown,
+                                contentDescription = if (isNestedDirectoriesExpanded) "Collapse Nested Directories" else "Expand Nested Directories",
+                                tint = MaterialTheme.colorScheme.outline,
+                                modifier = Modifier
+                                    .size(18.dp)
+                                    .rotate(rotation)
+                            )
+                            Text(
+                                text = "NESTED DIRECTORIES",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.outline
+                            )
+                        }
                         IconButton(
                             onClick = {
                                 defaultParentForNewDir = null
@@ -495,58 +513,60 @@ fun ResponsiveSidebar(
                 }
 
                 // Render Root level directories and their nested subdirectories
-                val rootDirectories = viewModel.customDirectories.filter { it.parentId == null }
-                rootDirectories.forEach { rootDir ->
-                    item(key = "dir_${rootDir.id}") {
-                        CustomDirectorySidebarRow(
-                            directory = rootDir,
-                            parentDirectoryName = null,
-                            notes = notes,
-                            isSelected = activeTab == "notes" && (selectedFilter == "dir:${rootDir.id}" || selectedFilter == rootDir.name),
-                            onSelect = {
-                                onTabChange("notes")
-                                onFilterChange("dir:${rootDir.id}")
-                                viewModel.selectNote(null)
-                            },
-                            onAddNote = {
-                                viewModel.addNoteToDirectory(rootDir)
-                                onTabChange("notes")
-                            },
-                            onAddSubdirectory = {
-                                defaultParentForNewDir = rootDir.id
-                                isCreatingDirectory = true
-                            },
-                            onEdit = {
-                                directoryToEdit = rootDir
-                            }
-                        )
-                    }
-
-                    val childDirectories = viewModel.customDirectories.filter { it.parentId == rootDir.id }
-                    childDirectories.forEach { childDir ->
-                        item(key = "dir_${childDir.id}") {
+                if (isNestedDirectoriesExpanded) {
+                    val rootDirectories = viewModel.customDirectories.filter { it.parentId == null }
+                    rootDirectories.forEach { rootDir ->
+                        item(key = "dir_${rootDir.id}") {
                             CustomDirectorySidebarRow(
-                                directory = childDir,
-                                parentDirectoryName = rootDir.name,
+                                directory = rootDir,
+                                parentDirectoryName = null,
                                 notes = notes,
-                                isSelected = activeTab == "notes" && (selectedFilter == "dir:${childDir.id}" || selectedFilter == childDir.name),
+                                isSelected = activeTab == "notes" && (selectedFilter == "dir:${rootDir.id}" || selectedFilter == rootDir.name),
                                 onSelect = {
                                     onTabChange("notes")
-                                    onFilterChange("dir:${childDir.id}")
+                                    onFilterChange("dir:${rootDir.id}")
                                     viewModel.selectNote(null)
                                 },
                                 onAddNote = {
-                                    viewModel.addNoteToDirectory(childDir)
+                                    viewModel.addNoteToDirectory(rootDir)
                                     onTabChange("notes")
                                 },
                                 onAddSubdirectory = {
-                                    defaultParentForNewDir = childDir.id
+                                    defaultParentForNewDir = rootDir.id
                                     isCreatingDirectory = true
                                 },
                                 onEdit = {
-                                    directoryToEdit = childDir
+                                    directoryToEdit = rootDir
                                 }
                             )
+                        }
+
+                        val childDirectories = viewModel.customDirectories.filter { it.parentId == rootDir.id }
+                        childDirectories.forEach { childDir ->
+                            item(key = "dir_${childDir.id}") {
+                                CustomDirectorySidebarRow(
+                                    directory = childDir,
+                                    parentDirectoryName = rootDir.name,
+                                    notes = notes,
+                                    isSelected = activeTab == "notes" && (selectedFilter == "dir:${childDir.id}" || selectedFilter == childDir.name),
+                                    onSelect = {
+                                        onTabChange("notes")
+                                        onFilterChange("dir:${childDir.id}")
+                                        viewModel.selectNote(null)
+                                    },
+                                    onAddNote = {
+                                        viewModel.addNoteToDirectory(childDir)
+                                        onTabChange("notes")
+                                    },
+                                    onAddSubdirectory = {
+                                        defaultParentForNewDir = childDir.id
+                                        isCreatingDirectory = true
+                                    },
+                                    onEdit = {
+                                        directoryToEdit = childDir
+                                    }
+                                )
+                            }
                         }
                     }
                 }
@@ -556,16 +576,35 @@ fun ResponsiveSidebar(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(start = 4.dp, bottom = 6.dp),
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { isColoredTagsExpanded = !isColoredTagsExpanded }
+                            .padding(start = 4.dp, end = 4.dp, top = 4.dp, bottom = 6.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = "COLORED TAGS",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.outline
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            val rotation by animateFloatAsState(
+                                targetValue = if (isColoredTagsExpanded) 180f else 0f,
+                                label = "TagExpandRotation"
+                            )
+                            Icon(
+                                imageVector = Icons.Default.ArrowDropDown,
+                                contentDescription = if (isColoredTagsExpanded) "Collapse Colored Tags" else "Expand Colored Tags",
+                                tint = MaterialTheme.colorScheme.outline,
+                                modifier = Modifier
+                                    .size(18.dp)
+                                    .rotate(rotation)
+                            )
+                            Text(
+                                text = "COLORED TAGS",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.outline
+                            )
+                        }
                         IconButton(
                             onClick = { isCreatingTag = true },
                             modifier = Modifier.size(22.dp)
@@ -580,25 +619,27 @@ fun ResponsiveSidebar(
                     }
                 }
 
-                viewModel.customTags.forEach { tag ->
-                    item(key = "tag_${tag.id}") {
-                        CustomTagSidebarRow(
-                            tag = tag,
-                            notes = notes,
-                            isSelected = activeTab == "notes" && selectedFilter == "tag:${tag.name}",
-                            onSelect = {
-                                onTabChange("notes")
-                                onFilterChange("tag:${tag.name}")
-                                viewModel.selectNote(null)
-                            },
-                            onAddNote = {
-                                viewModel.addNoteWithTag(tag)
-                                onTabChange("notes")
-                            },
-                            onEdit = {
-                                tagToEdit = tag
-                            }
-                        )
+                if (isColoredTagsExpanded) {
+                    viewModel.customTags.forEach { tag ->
+                        item(key = "tag_${tag.id}") {
+                            CustomTagSidebarRow(
+                                tag = tag,
+                                notes = notes,
+                                isSelected = activeTab == "notes" && selectedFilter == "tag:${tag.name}",
+                                onSelect = {
+                                    onTabChange("notes")
+                                    onFilterChange("tag:${tag.name}")
+                                    viewModel.selectNote(null)
+                                },
+                                onAddNote = {
+                                    viewModel.addNoteWithTag(tag)
+                                    onTabChange("notes")
+                                },
+                                onEdit = {
+                                    tagToEdit = tag
+                                }
+                            )
+                        }
                     }
                 }
 
@@ -651,9 +692,9 @@ fun ResponsiveSidebar(
                     .fillMaxWidth()
                     .padding(top = 10.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant
                 ),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                 shape = RoundedCornerShape(14.dp)
             ) {
                 Column(modifier = Modifier.padding(10.dp)) {
