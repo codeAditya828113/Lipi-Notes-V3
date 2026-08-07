@@ -4538,13 +4538,15 @@ if (showLayersDialog) {
             }
     ) {
         if (!viewModel.isFullscreen) {
-            // TIER 2: Two-Tier horizontal toolbar
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.surface)
-                .border(width = 1.dp, color = Color(0xFFE2E8F0))
-        ) {
+            // TIER 2: Two-Tier floating horizontal toolbar (Material 3 Expressive 24dp rounded)
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 12.dp, top = 8.dp, end = 12.dp, bottom = 4.dp)
+                    .shadow(6.dp, RoundedCornerShape(24.dp))
+                    .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(24.dp))
+                    .border(width = 1.dp, color = Color(0xFFE2E8F0), shape = RoundedCornerShape(24.dp))
+            ) {
             // Row 1: Core Navigation and Utility Bar (optimized with horizontal scroll for smartphone compatibility)
             Row(
                 modifier = Modifier
@@ -5451,7 +5453,6 @@ if (showLayersDialog) {
                     }
                 }
             }
-            }
         }
         }
 
@@ -6136,6 +6137,7 @@ if (showLayersDialog) {
             )
         }
     }
+}
 }
 
 @Composable
