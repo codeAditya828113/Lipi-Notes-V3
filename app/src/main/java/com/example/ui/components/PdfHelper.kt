@@ -413,7 +413,7 @@ object PdfHelper {
                 for (stroke in coverStrokes) {
                     if (stroke.points.size > 1 && stroke.toolType != "eraser") {
                         strokePaint.color = stroke.color
-                        strokePaint.strokeWidth = stroke.width
+                        strokePaint.strokeWidth = stroke.width * 0.25f
                         val path = android.graphics.Path()
                         stroke.points.forEachIndexed { idx, pt ->
                             if (idx == 0) {
@@ -500,7 +500,7 @@ object PdfHelper {
                 for (stroke in pageStrokes) {
                     if (stroke.points.size > 1 && stroke.toolType != "eraser") {
                         strokePaint.color = stroke.color
-                        strokePaint.strokeWidth = stroke.width
+                        strokePaint.strokeWidth = stroke.width * 0.25f
                         val path = android.graphics.Path()
                         stroke.points.forEachIndexed { idx, pt ->
                             if (idx == 0) {

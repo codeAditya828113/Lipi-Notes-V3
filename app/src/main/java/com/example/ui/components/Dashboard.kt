@@ -28,6 +28,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -607,30 +609,29 @@ private fun TopMetricsRow(
     val textSecondary = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
 
     val studySecs = viewModel.dailyStudySeconds
-    val hours = studySecs / 3600
-    val mins = (studySecs % 3600) / 60
-    val timeFormatted = if (studySecs > 0) {
-        if (hours > 0) "${hours}h ${mins}m" else "${mins}m"
+    val totalStudySecs = viewModel.dailyStudySeconds
+    val hours = totalStudySecs / 3600
+    val mins = (totalStudySecs % 3600) / 60
+    val timeFormatted = if (hours > 0) "${hours}h ${mins}m" else "${mins}m"
+    val goalSecs = 30 * 3600 // Example 30 hour goal
+    val progressPct = if (totalStudySecs > 0) {
+        ((totalStudySecs.toFloat() / goalSecs) * 100).toInt().coerceAtMost(100)
     } else {
-        "22h 15m"
-    }
-    val progressPct = if (studySecs > 0) {
-        ((studySecs.toFloat() / (30 * 3600)) * 100).coerceIn(5f, 100f).toInt()
-    } else {
-        74
+        0
     }
     val progressFraction = progressPct / 100f
 
-    val streakVal = if (viewModel.studyStreakDays > 0) viewModel.studyStreakDays.toString() else "12"
+    val streakVal = viewModel.studyStreakDays.toString()
     val streakSubtext = "Keep it up! 🔥"
 
-    val totalNotesStr = if (notes.isNotEmpty()) notes.size.toString() else "482"
+    val totalNotesStr = notes.size.toString()
     val createdThisWkCount = notes.count { isThisWeek(it.createdTime) }
-    val notesSubtext = if (createdThisWkCount > 0) "+$createdThisWkCount this week" else "+18 this week"
+    val notesSubtext = "+$createdThisWkCount this week"
 
     val aiNotesCountVal = notes.count { !it.summary.isNullOrBlank() || !it.audioTranscription.isNullOrBlank() }
-    val aiNotesCount = if (aiNotesCountVal > 0) aiNotesCountVal.toString() else "36"
-    val aiSubtext = "+5 this week"
+    val aiNotesCount = aiNotesCountVal.toString()
+    val aiThisWkCount = notes.count { (!it.summary.isNullOrBlank() || !it.audioTranscription.isNullOrBlank()) && isThisWeek(it.createdTime) }
+    val aiSubtext = "+$aiThisWkCount this week"
 
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
         val isCompact = maxWidth < 600.dp
@@ -638,118 +639,13 @@ private fun TopMetricsRow(
         if (isCompact) {
             Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 // Study Progress Card (Full width on compact)
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(160.dp)
-                        .springCardPress { onStudyProgressClick() },
-                    shape = RoundedCornerShape(24.dp),
-                    colors = CardDefaults.cardColors(containerColor = cardBg),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-                    border = BorderStroke(1.dp, if (isDark) Color(0xFF334155) else Color(0xFFE2E8F0))
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(16.dp)
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                modifier = Modifier
-                                    .size(28.dp)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(if (isDark) Color(0xFF312E81) else Color(0xFFEEF2FF)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    Icons.Default.TrendingUp,
-                                    contentDescription = null,
-                                    tint = LipiPrimary,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Study Progress", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = textPrimary)
-                        }
-                        Spacer(modifier = Modifier.weight(1f))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // Circular Progress
-                            Box(
-                                modifier = Modifier.size(72.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Canvas(modifier = Modifier.fillMaxSize()) {
-                                    val strokeW = 9.dp.toPx()
-                                    drawCircle(
-                                        color = LipiPrimary.copy(alpha = 0.15f),
-                                        style = Stroke(width = strokeW)
-                                    )
-                                    drawArc(
-                                        brush = Brush.sweepGradient(listOf(LipiPrimary, LipiSecondary, LipiPrimary)),
-                                        startAngle = -90f,
-                                        sweepAngle = 360f * progressFraction,
-                                        useCenter = false,
-                                        style = Stroke(width = strokeW, cap = androidx.compose.ui.graphics.StrokeCap.Round)
-                                    )
-                                }
-                                Text(
-                                    text = "$progressPct%",
-                                    fontSize = 18.sp,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    color = textPrimary
-                                )
-                            }
-
-                            // Stats & Mini Chart Area
-                            Column(
-                                horizontalAlignment = Alignment.Start,
-                                modifier = Modifier
-                                    .padding(start = 16.dp)
-                                    .weight(1f)
-                            ) {
-                                Text("This Week", fontSize = 11.sp, fontWeight = FontWeight.Medium, color = textSecondary)
-                                Text(timeFormatted, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = textPrimary)
-                                Text("of 30h goal", fontSize = 11.sp, fontWeight = FontWeight.Medium, color = textSecondary)
-                                Spacer(modifier = Modifier.height(8.dp))
-
-                                // Mini Bar Chart
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(5.dp),
-                                    verticalAlignment = Alignment.Bottom,
-                                    modifier = Modifier.height(26.dp)
-                                ) {
-                                    val heights = listOf(0.65f, 0.35f, 0.25f, 0.5f, 0.45f, 0.85f, 0.4f, 0.3f)
-                                    val days = listOf("M", "T", "W", "W", "T", "F", "S", "S")
-                                    heights.forEachIndexed { index, h ->
-                                        Column(
-                                            horizontalAlignment = Alignment.CenterHorizontally,
-                                            verticalArrangement = Arrangement.Bottom
-                                        ) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .width(5.dp)
-                                                    .height((22 * h).dp)
-                                                    .clip(CircleShape)
-                                                    .background(
-                                                        Brush.verticalGradient(
-                                                            listOf(LipiSecondary, LipiPrimary)
-                                                        )
-                                                    )
-                                            )
-                                            Spacer(modifier = Modifier.height(2.dp))
-                                            Text(days[index], fontSize = 7.5.sp, color = textSecondary, fontWeight = FontWeight.Bold)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
+                StudyProgressCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    isDark = isDark,
+                    progressPct = progressPct,
+                    timeFormatted = timeFormatted,
+                    onStudyProgressClick = onStudyProgressClick
+                )
                 // 3 Metrics cards in a row
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -819,118 +715,13 @@ private fun TopMetricsRow(
                 horizontalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 // Study Progress Card
-                Card(
-                    modifier = Modifier
-                        .weight(if (isTablet) 2.2f else 1.6f)
-                        .height(160.dp)
-                        .springCardPress { onStudyProgressClick() },
-                    shape = RoundedCornerShape(24.dp),
-                    colors = CardDefaults.cardColors(containerColor = cardBg),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-                    border = BorderStroke(1.dp, if (isDark) Color(0xFF334155) else Color(0xFFE2E8F0))
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(18.dp)
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                modifier = Modifier
-                                    .size(28.dp)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(if (isDark) Color(0xFF312E81) else Color(0xFFEEF2FF)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    Icons.Default.TrendingUp,
-                                    contentDescription = null,
-                                    tint = LipiPrimary,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Study Progress", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = textPrimary)
-                        }
-                        Spacer(modifier = Modifier.weight(1f))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.Bottom
-                        ) {
-                            // Circular Progress
-                            Box(
-                                modifier = Modifier.size(80.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Canvas(modifier = Modifier.fillMaxSize()) {
-                                    val strokeW = 10.dp.toPx()
-                                    drawCircle(
-                                        color = LipiPrimary.copy(alpha = 0.15f),
-                                        style = Stroke(width = strokeW)
-                                    )
-                                    drawArc(
-                                        brush = Brush.sweepGradient(listOf(LipiPrimary, LipiSecondary, LipiPrimary)),
-                                        startAngle = -90f,
-                                        sweepAngle = 360f * progressFraction,
-                                        useCenter = false,
-                                        style = Stroke(width = strokeW, cap = androidx.compose.ui.graphics.StrokeCap.Round)
-                                    )
-                                }
-                                Text(
-                                    text = "$progressPct%",
-                                    fontSize = 20.sp,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    color = textPrimary
-                                )
-                            }
-
-                            // Stats & Mini Bar Chart Area
-                            Column(
-                                horizontalAlignment = Alignment.Start,
-                                modifier = Modifier
-                                    .padding(start = 20.dp)
-                                    .weight(1f)
-                            ) {
-                                Text("This Week", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = textSecondary)
-                                Text(timeFormatted, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = textPrimary)
-                                Text("of 30h goal", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = textSecondary)
-                                Spacer(modifier = Modifier.height(10.dp))
-
-                                // Mini Bar Chart
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                    verticalAlignment = Alignment.Bottom,
-                                    modifier = Modifier.height(30.dp)
-                                ) {
-                                    val heights = listOf(0.65f, 0.35f, 0.25f, 0.5f, 0.45f, 0.85f, 0.4f, 0.3f)
-                                    val days = listOf("M", "T", "W", "W", "T", "F", "S", "S")
-                                    heights.forEachIndexed { index, h ->
-                                        Column(
-                                            horizontalAlignment = Alignment.CenterHorizontally,
-                                            verticalArrangement = Arrangement.Bottom
-                                        ) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .width(6.dp)
-                                                    .height((26 * h).dp)
-                                                    .clip(CircleShape)
-                                                    .background(
-                                                        Brush.verticalGradient(
-                                                            listOf(LipiSecondary, LipiPrimary)
-                                                        )
-                                                    )
-                                            )
-                                            Spacer(modifier = Modifier.height(3.dp))
-                                            Text(days[index], fontSize = 8.sp, color = textSecondary, fontWeight = FontWeight.Bold)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
+                StudyProgressCard(
+                    modifier = Modifier.weight(if (isTablet) 2.2f else 1.6f),
+                    isDark = isDark,
+                    progressPct = progressPct,
+                    timeFormatted = timeFormatted,
+                    onStudyProgressClick = onStudyProgressClick
+                )
                 // Study Streak Card
                 WaveMetricCard(
                     modifier = Modifier.weight(1f),
@@ -1254,7 +1045,7 @@ private fun WaveMetricCard(
                     Text(
                         text = value,
                         fontSize = 30.sp,
-                        fontWeight = FontWeight.ExtraBold,
+                        fontWeight = FontWeight.Bold,
                         color = textPrimary,
                         letterSpacing = (-0.5).sp
                     )
@@ -1346,7 +1137,7 @@ private fun HeroAISearchBar(
                     Text(
                         text = "Ask Lipi AI...",
                         fontSize = 22.sp,
-                        fontWeight = FontWeight.ExtraBold,
+                        fontWeight = FontWeight.Bold,
                         color = textPrimary,
                         letterSpacing = (-0.3).sp
                     )
@@ -1921,7 +1712,7 @@ private fun PomodoroTimerCard(isDark: Boolean, cardBg: Color) {
                     Text(
                         text = formattedTime,
                         fontSize = 28.sp,
-                        fontWeight = FontWeight.ExtraBold,
+                        fontWeight = FontWeight.Bold,
                         color = textPrimary
                     )
                     Text(
@@ -2111,7 +1902,7 @@ private fun ContinueWorkingSection(
                                 Text(
                                     text = cover.title,
                                     fontSize = 16.sp,
-                                    fontWeight = FontWeight.ExtraBold,
+                                    fontWeight = FontWeight.Bold,
                                     color = Color.White,
                                     maxLines = 2,
                                     overflow = TextOverflow.Ellipsis,
@@ -3050,33 +2841,51 @@ fun StudyProgressDetailModal(viewModel: NoteViewModel, notes: List<NoteEntity> =
     var selectedBarIndex by remember { mutableStateOf<Int?>(3) } // default Thu selected
     var targetHours by remember { mutableFloatStateOf(30f) }
 
-    val daysData7D = remember {
+    val daysData7D = remember(viewModel.dailyStudySeconds) {
+        val todayStart = java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.HOUR_OF_DAY, 0)
+            set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }
+        val daysList = mutableListOf<Pair<String, Float>>()
+        val sdf = java.text.SimpleDateFormat("EEE", java.util.Locale.getDefault())
+        for (i in 6 downTo 0) {
+            val dayStart = todayStart.timeInMillis - (i * 24 * 60 * 60 * 1000L)
+            val dayName = sdf.format(java.util.Date(dayStart))
+            if (i == 0) {
+                daysList.add(dayName to (viewModel.dailyStudySeconds / 3600f))
+            } else {
+                daysList.add(dayName to 0f)
+            }
+        }
+        daysList
+    }
+
+    val weeksData30D = remember(viewModel.dailyStudySeconds) {
         listOf(
-            "Mon" to 4.2f,
-            "Tue" to 5.5f,
-            "Wed" to 3.8f,
-            "Thu" to 6.2f,
-            "Fri" to 4.8f,
-            "Sat" to 5.0f,
-            "Sun" to 2.5f
+            "Wk 1" to 0f,
+            "Wk 2" to 0f,
+            "Wk 3" to 0f,
+            "Wk 4" to (viewModel.dailyStudySeconds / 3600f)
         )
     }
 
-    val weeksData30D = remember {
-        listOf(
-            "Wk 1" to 24.5f,
-            "Wk 2" to 28.0f,
-            "Wk 3" to 31.2f,
-            "Wk 4" to 22.1f
-        )
-    }
-
-    val monthsData1Y = remember {
-        listOf(
-            "Jan" to 95f, "Feb" to 110f, "Mar" to 125f, "Apr" to 105f,
-            "May" to 130f, "Jun" to 115f, "Jul" to 140f, "Aug" to 120f,
-            "Sep" to 118f, "Oct" to 132f, "Nov" to 128f, "Dec" to 135f
-        )
+    val monthsData1Y = remember(viewModel.dailyStudySeconds) {
+        val calendar = java.util.Calendar.getInstance()
+        val currentMonth = calendar.get(java.util.Calendar.MONTH)
+        val monthsList = mutableListOf<Pair<String, Float>>()
+        val sdf = java.text.SimpleDateFormat("MMM", java.util.Locale.getDefault())
+        for (i in 0..11) {
+            calendar.set(java.util.Calendar.MONTH, i)
+            val monthName = sdf.format(calendar.time)
+            if (i == currentMonth) {
+                monthsList.add(monthName to (viewModel.dailyStudySeconds / 3600f))
+            } else {
+                monthsList.add(monthName to 0f)
+            }
+        }
+        monthsList
     }
 
     val chartData = when (selectedTimeRange) {
@@ -3275,16 +3084,23 @@ fun StudyStreakDetailModal(viewModel: NoteViewModel, notes: List<NoteEntity> = e
     var selectedDayIndex by remember { mutableStateOf<Int?>(5) }
     var showLoggedToast by remember { mutableStateOf(false) }
 
-    val days7D = remember {
-        listOf(
-            "Mon" to true,
-            "Tue" to true,
-            "Wed" to true,
-            "Thu" to true,
-            "Fri" to true,
-            "Sat" to true,
-            "Sun" to false
-        )
+    val days7D = remember(viewModel.studyStreakDays) {
+        val streak = viewModel.studyStreakDays
+        val todayStart = java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.HOUR_OF_DAY, 0)
+            set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }
+        val daysList = mutableListOf<Pair<String, Boolean>>()
+        val sdf = java.text.SimpleDateFormat("EEE", java.util.Locale.getDefault())
+        for (i in 6 downTo 0) {
+            val dayStart = todayStart.timeInMillis - (i * 24 * 60 * 60 * 1000L)
+            val dayName = sdf.format(java.util.Date(dayStart))
+            val isActive = i < streak
+            daysList.add(dayName to isActive)
+        }
+        daysList
     }
 
     AlertDialog(
@@ -3315,7 +3131,7 @@ fun StudyStreakDetailModal(viewModel: NoteViewModel, notes: List<NoteEntity> = e
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Default.LocalFireDepartment, contentDescription = null, tint = LipiWarning, modifier = Modifier.size(28.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("🔥 ${viewModel.studyStreakDays} DAYS STREAK", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, color = LipiWarning)
+                            Text("🔥 ${viewModel.studyStreakDays} DAYS STREAK", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = LipiWarning)
                         }
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
@@ -3478,8 +3294,22 @@ fun NotesCreatedDetailModal(
     var selectedCategory by remember { mutableStateOf("All") }
     var selectedBarIndex by remember { mutableStateOf<Int?>(2) }
 
-    val daysData = remember {
-        listOf("Mon" to 3, "Tue" to 5, "Wed" to 8, "Thu" to 4, "Fri" to 6, "Sat" to 2, "Sun" to 1)
+    val daysData = remember(notes) {
+        val todayStart = java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.HOUR_OF_DAY, 0)
+            set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }
+        val daysList = mutableListOf<Pair<String, Int>>()
+        val sdf = java.text.SimpleDateFormat("EEE", java.util.Locale.getDefault())
+        for (i in 6 downTo 0) {
+            val dayStart = todayStart.timeInMillis - (i * 24 * 60 * 60 * 1000L)
+            val dayEnd = dayStart + 24 * 60 * 60 * 1000L
+            val count = notes.count { it.createdTime in dayStart until dayEnd }
+            daysList.add(sdf.format(java.util.Date(dayStart)) to count)
+        }
+        daysList
     }
 
     AlertDialog(
@@ -3840,12 +3670,38 @@ fun QuickActionInteractiveModal(
         confirmButton = {
             Button(
                 onClick = {
+                    val title = if (textInput.isNotBlank()) textInput else actionName
+                    val template = when(actionName) {
+                        "Import PDF" -> "pdf"
+                        "Mind Map" -> "grid"
+                        "Handwritten Note" -> "blank"
+                        else -> "ruled"
+                    }
+                    val cover = when(actionName) {
+                        "Flashcards" -> "subject_computer"
+                        "Mind Map" -> "3d_tech"
+                        "Voice Note" -> "3d_creative"
+                        else -> "3d_academic"
+                    }
+                    
+                    viewModel.createNewNoteWithDesign(
+                        title = title,
+                        templateType = template,
+                        coverType = cover,
+                        pageColor = 0xFFFFFFFF,
+                        coverTitle = title,
+                        coverSubtitle = "Quick Action",
+                        coverAuthor = "Me",
+                        coverExtra = actionName,
+                        folder = "Quick Actions"
+                    )
+                    
                     onNavigateToNotesWithFilter(actionName)
                     onDismiss()
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = LipiPrimary)
             ) {
-                Text("Open Tool")
+                Text(if (actionName == "New Notebook") "Create" else "Save & Open")
             }
         },
         dismissButton = {
@@ -3963,4 +3819,181 @@ fun CustomizeGoalsModal(
             }
         }
     )
+}
+
+@Composable
+fun StudyProgressCard(
+    modifier: Modifier = Modifier,
+    isDark: Boolean,
+    progressPct: Int,
+    timeFormatted: String,
+    onStudyProgressClick: () -> Unit
+) {
+    val cardBg = if (isDark) Color(0xFF1E293B) else Color.White
+    val textPrimary = if (isDark) Color.White else Color(0xFF0F172A)
+    val textSecondary = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
+    val LipiPrimary = Color(0xFF5A4FCF)
+    val LipiSecondary = Color(0xFF8B5CF6)
+    val progressFraction = progressPct / 100f
+
+    Card(
+        modifier = modifier
+            .height(180.dp)
+            .springCardPress { onStudyProgressClick() },
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = cardBg),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        border = BorderStroke(1.dp, if (isDark) Color(0xFF334155) else Color(0xFFE2E8F0))
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(20.dp)
+        ) {
+            // Header
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Default.TrendingUp,
+                    contentDescription = null,
+                    tint = LipiPrimary,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Study Progress", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = textPrimary)
+            }
+            
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            Row(
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Circular Progress
+                Box(
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        modifier = Modifier.size(115.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        // Blurred shadow for arc
+                        Canvas(modifier = Modifier.fillMaxSize().blur(12.dp, edgeTreatment = BlurredEdgeTreatment.Unbounded)) {
+                            val strokeW = 12.dp.toPx()
+                            drawArc(
+                                brush = Brush.sweepGradient(listOf(LipiSecondary, LipiPrimary, LipiSecondary)),
+                                startAngle = -90f,
+                                sweepAngle = 360f * progressFraction,
+                                useCenter = false,
+                                style = Stroke(width = strokeW, cap = androidx.compose.ui.graphics.StrokeCap.Round),
+                                alpha = 0.7f
+                            )
+                        }
+                        
+                        Canvas(modifier = Modifier.fillMaxSize()) {
+                            val strokeW = 12.dp.toPx()
+                            drawCircle(
+                                color = LipiPrimary.copy(alpha = 0.1f),
+                                style = Stroke(width = strokeW)
+                            )
+                            drawArc(
+                                brush = Brush.sweepGradient(listOf(LipiSecondary, LipiPrimary, LipiSecondary)),
+                                startAngle = -90f,
+                                sweepAngle = 360f * progressFraction,
+                                useCenter = false,
+                                style = Stroke(width = strokeW, cap = androidx.compose.ui.graphics.StrokeCap.Round)
+                            )
+                        }
+                        Text(
+                            text = "$progressPct%",
+                            fontSize = 28.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = textPrimary
+                        )
+                    }
+                }
+                
+                // Divider
+                Divider(
+                    color = textSecondary.copy(alpha = 0.2f),
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .width(1.dp)
+                        .padding(vertical = 4.dp)
+                )
+                
+                // Right Stats Area
+                Column(
+                    modifier = Modifier
+                        .weight(1.2f)
+                        .padding(start = 24.dp)
+                        .fillMaxHeight(),
+                    verticalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column {
+                        Text("This Week", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = textPrimary.copy(alpha = 0.8f))
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(timeFormatted, fontSize = 28.sp, fontWeight = FontWeight.ExtraBold, color = textPrimary)
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text("of 30h goal", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = textSecondary)
+                    }
+                    
+                    // Mini Bar Chart
+                    Row(
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.Bottom,
+                        modifier = Modifier.fillMaxWidth().padding(end = 12.dp, bottom = 4.dp)
+                    ) {
+                        val heights = listOf(0.65f, 0.35f, 0.25f, 0.5f, 0.85f, 0.4f, 0.3f)
+                        val days = listOf("M", "T", "W", "T", "F", "S", "S")
+                        
+                        heights.forEachIndexed { index, h ->
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Bottom
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .width(10.dp)
+                                        .height(44.dp),
+                                    contentAlignment = Alignment.BottomCenter
+                                ) {
+                                    // Background Track
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .clip(CircleShape)
+                                            .background(LipiPrimary.copy(alpha = 0.15f))
+                                    )
+                                    // Glow behind fill
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .fillMaxHeight(h)
+                                            .blur(6.dp, edgeTreatment = BlurredEdgeTreatment.Unbounded)
+                                            .background(LipiPrimary)
+                                    )
+                                    // Fill
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .fillMaxHeight(h)
+                                            .clip(CircleShape)
+                                            .background(
+                                                Brush.verticalGradient(
+                                                    colors = listOf(LipiSecondary, Color(0xFF4C1D95))
+                                                )
+                                            )
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(days[index], fontSize = 10.sp, color = textSecondary, fontWeight = FontWeight.Medium)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

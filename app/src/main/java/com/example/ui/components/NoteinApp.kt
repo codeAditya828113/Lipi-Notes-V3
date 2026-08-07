@@ -1,5 +1,6 @@
 package com.example.ui.components
 
+
 import androidx.compose.animation.*
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.Spring
@@ -108,6 +109,17 @@ import java.util.Date
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+
+private fun formatStorageSize(bytes: Long): String {
+    return when {
+        bytes <= 0 -> "0 B"
+        bytes < 1024 -> "$bytes B"
+        bytes < 1024 * 1024 -> String.format(java.util.Locale.US, "%.1f KB", bytes / 1024f)
+        else -> String.format(java.util.Locale.US, "%.2f MB", bytes / (1024f * 1024f))
+    }
+}
+
 @Composable
 fun NoteinApp(
     viewModel: NoteViewModel,
@@ -1815,7 +1827,7 @@ fun NoteListHeader(
         Spacer(modifier = Modifier.height(24.dp))
          Box(modifier = Modifier.fillMaxWidth()) {
             val baseFilters = listOf("All", "PDF", "Note", "Folder")
-            val customFilters = viewModel?.customDirectories?.filter { it.parentId == null }?.map { it.name } ?: emptyList()
+            val customFilters = viewModel?.customDirectories?.map { it.name } ?: emptyList()
             val allFilters = baseFilters + customFilters
 
             Row(
@@ -6884,6 +6896,39 @@ fun SyncDashboard(viewModel: NoteViewModel) {
         androidx.compose.runtime.mutableStateOf(viewModel.listLocalBackupFiles())
     }
 
+    val textBytes = androidx.compose.runtime.remember(notes) {
+        notes.sumOf { (it.title.length + it.content.length + it.coverTitle.length + it.coverSubtitle.length + it.tags.length).toLong() * 2L }
+    }
+    val drawingBytes = androidx.compose.runtime.remember(notes) {
+        notes.sumOf { it.drawingData.length.toLong() }
+    }
+    val voiceBytes = androidx.compose.runtime.remember(notes) {
+        notes.sumOf { note ->
+            var b = note.audioTranscription.orEmpty().length.toLong() * 2L
+            if (!note.audioPath.isNullOrBlank()) {
+                try {
+                    val f = java.io.File(note.audioPath!!)
+                    if (f.exists()) b += f.length()
+                } catch (_: Exception) {}
+            }
+            b
+        }
+    }
+    val pdfBytes = androidx.compose.runtime.remember(notes, context) {
+        notes.sumOf { note ->
+            var b = note.pdfTitle.orEmpty().length.toLong() * 100L
+            try {
+                val fPdf = java.io.File(context.filesDir, "note_${note.id}.pdf")
+                if (fPdf.exists()) b += fPdf.length()
+                val fDocx = java.io.File(context.filesDir, "note_${note.id}.docx")
+                if (fDocx.exists()) b += fDocx.length()
+            } catch (_: Exception) {}
+            b
+        }
+    }
+    val totalStorageBytes = textBytes + drawingBytes + voiceBytes + pdfBytes
+
+
     val infiniteTransition = rememberInfiniteTransition(label = "syncSpin")
     val spinAngle by infiniteTransition.animateFloat(
         initialValue = 0f,
@@ -7187,6 +7232,10 @@ fun SyncDashboard(viewModel: NoteViewModel) {
 
                         StorageAnalyticsSectionCard(
                             notes = notes,
+                            textBytes = textBytes,
+                            drawingBytes = drawingBytes,
+                            voiceBytes = voiceBytes,
+                            pdfBytes = pdfBytes,
                             cardBg = cardBg,
                             textPrimary = textPrimary,
                             textSecondary = textSecondary,
@@ -7206,6 +7255,13 @@ fun SyncDashboard(viewModel: NoteViewModel) {
                         BackupStatusSectionCard(
                             lastSyncTime = viewModel.lastSyncTime,
                             isSyncing = viewModel.isSyncing,
+                            notesCount = notes.size,
+                            localBackupCount = localBackupList.size,
+                            totalStorageBytes = totalStorageBytes,
+                            autoBackupEnabled = viewModel.autoBackupEnabled,
+                            isSignedIn = isSignedIn,
+                            savedProvider = savedProvider,
+                            encryptBackup = encryptBackup,
                             cardBg = cardBg,
                             textPrimary = textPrimary,
                             textSecondary = textSecondary,
@@ -7238,6 +7294,7 @@ fun SyncDashboard(viewModel: NoteViewModel) {
                         )
 
                         BackupHistorySectionCard(
+                            logs = logs,
                             lastSyncTime = viewModel.lastSyncTime,
                             cardBg = cardBg,
                             textPrimary = textPrimary,
@@ -7296,16 +7353,23 @@ fun SyncDashboard(viewModel: NoteViewModel) {
                 )
 
                 BackupStatusSectionCard(
-                    lastSyncTime = viewModel.lastSyncTime,
-                    isSyncing = viewModel.isSyncing,
-                    cardBg = cardBg,
-                    textPrimary = textPrimary,
-                    textSecondary = textSecondary,
-                    surfaceBorder = surfaceBorder,
-                    primaryColor = primaryColor,
-                    secondaryColor = secondaryColor,
-                    successColor = successColor
-                )
+                            lastSyncTime = viewModel.lastSyncTime,
+                            isSyncing = viewModel.isSyncing,
+                            notesCount = notes.size,
+                            localBackupCount = localBackupList.size,
+                            totalStorageBytes = totalStorageBytes,
+                            autoBackupEnabled = viewModel.autoBackupEnabled,
+                            isSignedIn = isSignedIn,
+                            savedProvider = savedProvider,
+                            encryptBackup = encryptBackup,
+                            cardBg = cardBg,
+                            textPrimary = textPrimary,
+                            textSecondary = textSecondary,
+                            surfaceBorder = surfaceBorder,
+                            primaryColor = primaryColor,
+                            secondaryColor = secondaryColor,
+                            successColor = successColor
+                        )
 
                 BackupProvidersSectionCard(
                     savedProvider = savedProvider,
@@ -7350,6 +7414,10 @@ fun SyncDashboard(viewModel: NoteViewModel) {
 
                 StorageAnalyticsSectionCard(
                     notes = notes,
+                    textBytes = textBytes,
+                    drawingBytes = drawingBytes,
+                    voiceBytes = voiceBytes,
+                    pdfBytes = pdfBytes,
                     cardBg = cardBg,
                     textPrimary = textPrimary,
                     textSecondary = textSecondary,
@@ -7361,6 +7429,7 @@ fun SyncDashboard(viewModel: NoteViewModel) {
                 )
 
                 BackupHistorySectionCard(
+                    logs = logs,
                     lastSyncTime = viewModel.lastSyncTime,
                     cardBg = cardBg,
                     textPrimary = textPrimary,
@@ -7883,6 +7952,13 @@ private fun AccountSectionCard(
 private fun BackupStatusSectionCard(
     lastSyncTime: String,
     isSyncing: Boolean,
+    notesCount: Int,
+    localBackupCount: Int,
+    totalStorageBytes: Long,
+    autoBackupEnabled: Boolean,
+    isSignedIn: Boolean,
+    savedProvider: String,
+    encryptBackup: Boolean,
     cardBg: Color,
     textPrimary: Color,
     textSecondary: Color,
@@ -7902,13 +7978,14 @@ private fun BackupStatusSectionCard(
             Text("Backup & Sync Health Overview", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = textPrimary)
             Spacer(modifier = Modifier.height(16.dp))
 
+            val formattedSize = formatStorageSize(totalStorageBytes)
             val metrics = listOf(
-                Triple("Last Backup", if (lastSyncTime.isNotBlank()) lastSyncTime else "Today, 4:15 PM", Icons.Default.History),
-                Triple("Next Scheduled", "Tomorrow, 4:00 AM", Icons.Default.Event),
-                Triple("Total Backups", "128 Backups", Icons.Default.FolderZip),
-                Triple("Cloud Storage Used", "2.4 MB for Lipi", Icons.Default.CloudQueue),
-                Triple("Sync Status", if (isSyncing) "Syncing active..." else "Real-time Active", Icons.Default.Sync),
-                Triple("Encryption Status", "AES-256 Encrypted 🔒", Icons.Default.Lock)
+                Triple("Last Backup", if (lastSyncTime.isNotBlank()) lastSyncTime else "Local Saved (Realtime)", Icons.Default.History),
+                Triple("Schedule Mode", if (autoBackupEnabled) "Auto-Sync Active" else "Manual Sync Only", Icons.Default.Event),
+                Triple("Total Backups", "$notesCount Notes ($localBackupCount Files)", Icons.Default.FolderZip),
+                Triple("Vault Storage Used", "$formattedSize Active", Icons.Default.CloudQueue),
+                Triple("Sync Status", if (isSyncing) "Syncing active..." else if (isSignedIn) "Connected ($savedProvider)" else "Local Vault Active", Icons.Default.Sync),
+                Triple("Encryption Status", if (encryptBackup) "AES-256 Encrypted 🔒" else "Standard JSON Format", Icons.Default.Lock)
             )
 
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -8248,6 +8325,10 @@ private data class BackupOptionItemData(
 @Composable
 private fun StorageAnalyticsSectionCard(
     notes: List<NoteEntity>,
+    textBytes: Long,
+    drawingBytes: Long,
+    voiceBytes: Long,
+    pdfBytes: Long,
     cardBg: Color,
     textPrimary: Color,
     textSecondary: Color,
@@ -8268,10 +8349,16 @@ private fun StorageAnalyticsSectionCard(
             Text("Storage Analytics & Breakdown", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = textPrimary)
             Spacer(modifier = Modifier.height(16.dp))
 
-            val notebookCount = if (notes.isNotEmpty()) notes.size else 482
-            val pdfCount = if (notes.isNotEmpty()) notes.count { !it.pdfTitle.isNullOrBlank() || it.templateType == "pdf" } else 84
-            val voiceCount = if (notes.isNotEmpty()) notes.count { !it.audioTranscription.isNullOrBlank() } else 36
-            val drawingCount = if (notes.isNotEmpty()) notes.count { !it.drawingData.isNullOrBlank() } else 142
+            val notebookCount = notes.count { it.templateType != "pdf" && it.templateType != "docx" }
+            val pdfCount = notes.count { !it.pdfTitle.isNullOrBlank() || it.templateType == "pdf" || it.templateType == "docx" }
+            val voiceCount = notes.count { !it.audioTranscription.isNullOrBlank() || !it.audioPath.isNullOrBlank() }
+            val drawingCount = notes.count { !it.drawingData.isNullOrBlank() && it.drawingData != "[]" }
+
+            val grandTotal = maxOf(1L, textBytes + drawingBytes + voiceBytes + pdfBytes)
+            val wText = (textBytes.toFloat() / grandTotal.toFloat()).coerceAtLeast(0.05f)
+            val wPdf = (pdfBytes.toFloat() / grandTotal.toFloat()).coerceAtLeast(0.05f)
+            val wVoice = (voiceBytes.toFloat() / grandTotal.toFloat()).coerceAtLeast(0.05f)
+            val wDrawing = (drawingBytes.toFloat() / grandTotal.toFloat()).coerceAtLeast(0.05f)
 
             // Visual stacked distribution bar
             Column {
@@ -8282,12 +8369,11 @@ private fun StorageAnalyticsSectionCard(
                         .clip(CircleShape)
                         .background(textSecondary.copy(alpha = 0.15f))
                 ) {
-                    Box(modifier = Modifier.weight(0.45f).fillMaxHeight().background(primaryColor))
-                    Box(modifier = Modifier.weight(0.25f).fillMaxHeight().background(secondaryColor))
-                    Box(modifier = Modifier.weight(0.18f).fillMaxHeight().background(accentColor))
-                    Box(modifier = Modifier.weight(0.12f).fillMaxHeight().background(successColor))
+                    Box(modifier = Modifier.weight(wText).fillMaxHeight().background(primaryColor))
+                    Box(modifier = Modifier.weight(wPdf).fillMaxHeight().background(secondaryColor))
+                    Box(modifier = Modifier.weight(wVoice).fillMaxHeight().background(accentColor))
+                    Box(modifier = Modifier.weight(wDrawing).fillMaxHeight().background(successColor))
                 }
-
                 Spacer(modifier = Modifier.height(14.dp))
 
                 // Breakdown Legend Items Grid
@@ -8295,10 +8381,10 @@ private fun StorageAnalyticsSectionCard(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    AnalyticsLegendItem("Notebooks ($notebookCount)", "1.2 MB", primaryColor, textPrimary, textSecondary)
-                    AnalyticsLegendItem("PDFs ($pdfCount)", "680 KB", secondaryColor, textPrimary, textSecondary)
-                    AnalyticsLegendItem("Voice ($voiceCount)", "340 KB", accentColor, textPrimary, textSecondary)
-                    AnalyticsLegendItem("Drawings ($drawingCount)", "180 KB", successColor, textPrimary, textSecondary)
+                    AnalyticsLegendItem("Notebooks ($notebookCount)", formatStorageSize(textBytes), primaryColor, textPrimary, textSecondary)
+                    AnalyticsLegendItem("PDFs ($pdfCount)", formatStorageSize(pdfBytes), secondaryColor, textPrimary, textSecondary)
+                    AnalyticsLegendItem("Voice ($voiceCount)", formatStorageSize(voiceBytes), accentColor, textPrimary, textSecondary)
+                    AnalyticsLegendItem("Drawings ($drawingCount)", formatStorageSize(drawingBytes), successColor, textPrimary, textSecondary)
                 }
             }
         }
@@ -8334,6 +8420,7 @@ private fun AnalyticsLegendItem(
 // ==========================================
 @Composable
 private fun BackupHistorySectionCard(
+    logs: List<String>,
     lastSyncTime: String,
     cardBg: Color,
     textPrimary: Color,
@@ -8361,17 +8448,33 @@ private fun BackupHistorySectionCard(
                     shape = RoundedCornerShape(50.dp),
                     color = primaryColor.copy(alpha = 0.12f)
                 ) {
-                    Text("Recent 3 Events", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = primaryColor, modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp))
+                    Text("Realtime Logs", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = primaryColor, modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp))
                 }
             }
-
             Spacer(modifier = Modifier.height(16.dp))
 
-            val timelineItems = listOf(
-                TimelineItemData("Backup completed", if (lastSyncTime.isNotBlank()) lastSyncTime else "Today • 4:15 PM", "Cloud • 2.4 MB", successColor, Icons.Default.CheckCircle),
-                TimelineItemData("Auto Backup", "Yesterday • 10:30 PM", "Wi-Fi • 2.3 MB", successColor, Icons.Default.CheckCircle),
-                TimelineItemData("Backup Warning", "July 28 • 08:15 AM", "Retry Available • Local", warningColor, Icons.Default.Warning)
-            )
+            val timelineItems = if (logs.isNotEmpty()) {
+                logs.take(4).map { logStr ->
+                    val parts = logStr.split("]", limit = 2)
+                    val time = if (parts.size > 1) parts[0].removePrefix("[").trim() else "Just now"
+                    val msg = if (parts.size > 1) parts[1].trim() else logStr
+                    val isError = msg.contains("Error", ignoreCase = true) || msg.contains("Warning", ignoreCase = true) || msg.contains("Failed", ignoreCase = true)
+                    val isSuccess = msg.contains("Restored", ignoreCase = true) || msg.contains("Exported", ignoreCase = true) || msg.contains("complete", ignoreCase = true) || msg.contains("Successfully", ignoreCase = true) || msg.contains("Saved", ignoreCase = true) || msg.contains("complete", ignoreCase = true)
+                    
+                    TimelineItemData(
+                        title = msg,
+                        timestamp = time,
+                        badgeText = if (isError) "Warning" else if (isSuccess) "Success" else "Info",
+                        iconColor = if (isError) warningColor else if (isSuccess) successColor else primaryColor,
+                        icon = if (isError) Icons.Default.Warning else if (isSuccess) Icons.Default.CheckCircle else Icons.Default.Sync
+                    )
+                }
+            } else {
+                listOf(
+                    TimelineItemData("Realtime Database Engine Active", "Active", "Local Vault", successColor, Icons.Default.CheckCircle),
+                    TimelineItemData("Cloud Sync Ready", if (lastSyncTime.isNotBlank()) lastSyncTime else "Standby", "Cloud", primaryColor, Icons.Default.CloudQueue)
+                )
+            }
 
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 timelineItems.forEach { item ->
@@ -8387,7 +8490,7 @@ private fun BackupHistorySectionCard(
                         }
                         Spacer(modifier = Modifier.width(12.dp))
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(item.title, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = textPrimary)
+                            Text(item.title, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = textPrimary, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                             Text(item.timestamp, fontSize = 11.sp, color = textSecondary)
                         }
                         Surface(
@@ -8395,7 +8498,7 @@ private fun BackupHistorySectionCard(
                             color = cardBg,
                             border = BorderStroke(1.dp, surfaceBorder)
                         ) {
-                            Text(item.badgeText, fontSize = 11.sp, fontWeight = FontWeight.Medium, color = textSecondary, modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp))
+                            Text(item.badgeText, fontSize = 11.sp, fontWeight = FontWeight.Medium, color = item.iconColor, modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp))
                         }
                     }
                 }

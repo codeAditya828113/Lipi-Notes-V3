@@ -20,6 +20,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.shadow
@@ -649,14 +650,18 @@ fun NotebookStudioDialog(
 
                                     // 3D Front Cover OR Paper Page View
                                     if (!isPreviewFlipped) {
-                                        RenderCover(
-                                            coverType = currentCoverType,
-                                            title = coverTitle,
-                                            subtitle = coverSubtitle,
-                                            author = coverAuthor,
-                                            extra = coverExtra,
-                                            modifier = Modifier.fillMaxSize()
-                                        )
+                                        if (isAiGenerating) {
+                                            AiCoverLoadingSkeleton(modifier = Modifier.fillMaxSize())
+                                        } else {
+                                            RenderCover(
+                                                coverType = currentCoverType,
+                                                title = coverTitle,
+                                                subtitle = coverSubtitle,
+                                                author = coverAuthor,
+                                                extra = coverExtra,
+                                                modifier = Modifier.fillMaxSize()
+                                            )
+                                        }
                                     } else {
                                         Box(
                                             modifier = Modifier
@@ -1755,4 +1760,49 @@ fun AdvancedTemplateDialog(
         onSave = onSave,
         onCreateNew = onCreateNew
     )
+}
+
+@Composable
+fun AiCoverLoadingSkeleton(modifier: Modifier = Modifier) {
+    val infiniteTransition = rememberInfiniteTransition(label = "skeleton")
+    val alpha by infiniteTransition.animateFloat(
+        initialValue = 0.3f,
+        targetValue = 0.7f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(800, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "alpha"
+    )
+
+    Box(
+        modifier = modifier
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(
+                        Color(0xFF94A3B8).copy(alpha = alpha),
+                        Color(0xFFCBD5E1).copy(alpha = alpha)
+                    )
+                )
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(
+                imageVector = Icons.Default.AutoAwesome,
+                contentDescription = "Generating",
+                tint = Color.White,
+                modifier = Modifier
+                    .size(48.dp)
+                    .alpha(alpha)
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = "Rendering AI Design...",
+                color = Color.White,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.alpha(alpha)
+            )
+        }
+    }
 }

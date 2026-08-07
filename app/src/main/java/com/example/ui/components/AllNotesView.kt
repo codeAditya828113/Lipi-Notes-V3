@@ -506,26 +506,7 @@ fun RedesignedAllNotesView(
                 }
             }
 
-            // Right Panel (Tablet / Wide screens)
-            if (isTablet) {
-                Surface(
-                    modifier = Modifier
-                        .width(320.dp)
-                        .fillMaxHeight()
-                        .padding(top = 16.dp, end = 20.dp, bottom = 16.dp),
-                    shape = RoundedCornerShape(24.dp),
-                    color = LipiCardWhite,
-                    tonalElevation = 2.dp,
-                    shadowElevation = 6.dp
-                ) {
-                    AllNotesRightPanel(
-                        notes = notes,
-                        viewModel = viewModel,
-                        onSelectNote = onSelectNote,
-                        onCreateNoteClick = onCreateNoteClick
-                    )
-                }
-            }
+
         }
 
         // Floating Drag Overlay / Ghost Card Preview
@@ -972,7 +953,7 @@ private fun AllNotesFilterChipsRow(
     var isShrunk by remember { mutableStateOf(false) }
 
     val baseFilters = listOf("All", "Recent", "Favorites", "Handwritten", "PDF", "Projects", "Templates", "Personal", "School")
-    val customDirs = viewModel.customDirectories.filter { it.parentId == null }.map { it.name }
+    val customDirs = viewModel.customDirectories.map { it.name }
     val allChipLabels = baseFilters + customDirs
 
     Row(
@@ -1347,7 +1328,7 @@ private fun BatchMoveToFolderDialog(
 
     val availableFolders = remember(viewModel.customDirectories) {
         val base = listOf("Projects", "School", "Personal", "Templates")
-        val custom = viewModel.customDirectories.filter { it.parentId == null }.map { it.name }
+        val custom = viewModel.customDirectories.map { it.name }
         (base + custom).distinct()
     }
 
@@ -1756,209 +1737,32 @@ fun RedesignedNotebookCard(
     }
 }
 
-/**
- * Right Panel displayed on wide tablet screens (AI Suggestions, Yesterday's Notes, Deadlines).
- */
+
+
 @Composable
-private fun AllNotesRightPanel(
-    notes: List<NoteEntity>,
-    viewModel: NoteViewModel,
-    onSelectNote: (NoteEntity) -> Unit,
-    onCreateNoteClick: () -> Unit
-) {
-    val recentNote = notes.maxByOrNull { it.lastModifiedTime }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(18.dp)
-    ) {
-        // Section 1: Continue Yesterday's Notes
-        Text(
-            text = "CONTINUE RECENT NOTE",
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.Bold,
-            color = LipiTextSecondary
-        )
-        Spacer(modifier = Modifier.height(10.dp))
-
-        if (recentNote != null) {
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(16.dp))
-                    .clickable { onSelectNote(recentNote) },
-                shape = RoundedCornerShape(16.dp),
-                color = LipiBgLight,
-                border = BorderStroke(1.dp, LipiBorder)
-            ) {
-                Row(
-                    modifier = Modifier.padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Surface(
-                        shape = RoundedCornerShape(10.dp),
-                        color = LipiPrimary,
-                        modifier = Modifier.size(40.dp)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(Icons.Default.EditNote, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
-                        }
-                    }
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(recentNote.title, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, color = LipiTextPrimary)
-                        Text("Resume writing", fontSize = 11.sp, color = LipiPrimary, fontWeight = FontWeight.SemiBold)
-                    }
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-        HorizontalDivider(color = LipiBorder)
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Section 3: Upcoming Study Deadlines & Tasks
-        Text(
-            text = "UPCOMING DEADLINES",
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.Bold,
-            color = LipiTextSecondary
-        )
-        Spacer(modifier = Modifier.height(10.dp))
-
-        val deadlines = listOf(
-            "Physics Lab Report" to "Tomorrow, 5 PM",
-            "Linear Algebra Quiz" to "Friday, 10 AM",
-            "Chemistry Flashcard Review" to "In 3 days"
-        )
-
-        deadlines.forEach { (task, due) ->
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Icon(Icons.Default.CheckCircleOutline, contentDescription = null, tint = LipiSecondary, modifier = Modifier.size(16.dp))
-                    Text(task, fontSize = 12.sp, fontWeight = FontWeight.Medium, color = LipiTextPrimary)
-                }
-                Text(due, fontSize = 11.sp, color = LipiWarning, fontWeight = FontWeight.SemiBold)
-            }
-        }
-    }
-}
-
-/**
- * Empty State when no notes match search/filters.
- */
-@Composable
-private fun AllNotesEmptyState(
-    onCreateNoteClick: () -> Unit,
-    onImportPdfClick: () -> Unit
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(32.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Surface(
-            shape = RoundedCornerShape(24.dp),
-            color = LipiCardWhite,
-            shadowElevation = 4.dp,
-            border = BorderStroke(1.dp, LipiBorder),
-            modifier = Modifier
-                .widthIn(max = 420.dp)
-                .fillMaxWidth()
-        ) {
-            Column(
-                modifier = Modifier.padding(32.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Surface(
-                    shape = CircleShape,
-                    color = LipiPrimary.copy(alpha = 0.12f),
-                    modifier = Modifier.size(72.dp)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = Icons.Default.EditNote,
-                            contentDescription = "No Notes",
-                            tint = LipiPrimary,
-                            modifier = Modifier.size(36.dp)
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(16.dp))
-                Text(
-                    text = "No Notebooks Found",
-                    color = LipiTextPrimary,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = "Start taking handwritten notes, import PDF study materials, or create a Cornell pad.",
-                    color = LipiTextSecondary,
-                    fontSize = 13.sp,
-                    textAlign = TextAlign.Center,
-                    lineHeight = 18.sp
-                )
-                Spacer(modifier = Modifier.height(20.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Button(
-                        onClick = onCreateNoteClick,
-                        shape = RoundedCornerShape(14.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = LipiPrimary)
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("New Notebook", fontWeight = FontWeight.Bold)
-                    }
-                    OutlinedButton(
-                        onClick = onImportPdfClick,
-                        shape = RoundedCornerShape(14.dp)
-                    ) {
-                        Icon(Icons.Default.PictureAsPdf, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Import PDF")
-                    }
-                }
-            }
-        }
-    }
-}
-
-/**
- * Move To Folder Dialog.
- */
-@Composable
-private fun MoveToFolderDialog(
-    note: NoteEntity,
-    viewModel: NoteViewModel,
+fun MoveToFolderDialog(
+    note: com.example.data.NoteEntity,
+    viewModel: com.example.ui.components.NoteViewModel,
     onDismissRequest: () -> Unit,
     onFolderSelected: (String) -> Unit
 ) {
-    var showCreateNewFolderDialog by remember { mutableStateOf(false) }
-    var newFolderName by remember { mutableStateOf("") }
+    var showCreateNewFolderDialog by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    var newFolderName by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf("") }
 
     if (showCreateNewFolderDialog) {
-        AlertDialog(
+        androidx.compose.material3.AlertDialog(
             onDismissRequest = { showCreateNewFolderDialog = false },
-            title = { Text("Create New Folder", fontWeight = FontWeight.Bold) },
+            title = { androidx.compose.material3.Text("Create New Folder", fontWeight = androidx.compose.ui.text.font.FontWeight.Bold) },
             text = {
-                OutlinedTextField(
+                androidx.compose.material3.OutlinedTextField(
                     value = newFolderName,
                     onValueChange = { newFolderName = it },
-                    label = { Text("Folder Name") },
+                    label = { androidx.compose.material3.Text("Folder Name") },
                     singleLine = true
                 )
             },
             confirmButton = {
-                Button(
+                androidx.compose.material3.Button(
                     onClick = {
                         if (newFolderName.isNotBlank()) {
                             viewModel.addDirectory(newFolderName)
@@ -1967,76 +1771,86 @@ private fun MoveToFolderDialog(
                             onDismissRequest()
                         }
                     }
-                ) { Text("Create & Move") }
+                ) { androidx.compose.material3.Text("Create & Move") }
             },
             dismissButton = {
-                TextButton(onClick = { showCreateNewFolderDialog = false }) { Text("Cancel") }
+                androidx.compose.material3.TextButton(onClick = { showCreateNewFolderDialog = false }) { androidx.compose.material3.Text("Cancel") }
             }
         )
     }
 
-    val availableFolders = remember(viewModel.customDirectories) {
+    val availableFolders = androidx.compose.runtime.remember(viewModel.customDirectories) {
         val base = listOf("Projects", "School", "Personal", "Templates")
-        val custom = viewModel.customDirectories.filter { it.parentId == null }.map { it.name }
+        val custom = viewModel.customDirectories.map { it.name }
         (base + custom).distinct()
     }
 
-    AlertDialog(
+    androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismissRequest,
         title = {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Icon(Icons.Default.DriveFileMove, contentDescription = null, tint = LipiPrimary)
-                Text("Move '${note.title}'", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) {
+                androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Default.DriveFileMove, contentDescription = null, tint = LipiPrimary)
+                androidx.compose.material3.Text("Move \"${note.title}\"", fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, fontSize = 18.sp)
             }
         },
         text = {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text("Select destination folder for this notebook:", fontSize = 13.sp, color = LipiTextSecondary)
-                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-
-                availableFolders.forEach { folder ->
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = LipiSoftBg,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
+            androidx.compose.foundation.layout.Column {
+                androidx.compose.material3.Text("Select a folder destination:", color = LipiTextSecondary)
+                androidx.compose.foundation.layout.Spacer(modifier = androidx.compose.ui.Modifier.height(16.dp))
+                
+                androidx.compose.foundation.lazy.LazyColumn(
+                    modifier = androidx.compose.ui.Modifier.heightIn(max = 240.dp),
+                    verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)
+                ) {
+                    items(availableFolders.size) { index ->
+                        val folder = availableFolders[index]
+                        androidx.compose.material3.Surface(
+                            onClick = {
                                 onFolderSelected(folder)
                                 onDismissRequest()
-                            }
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            },
+                            shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+                            color = if (note.tags.contains(folder, ignoreCase = true)) LipiPrimary.copy(alpha = 0.1f) else androidx.compose.ui.graphics.Color.Transparent
                         ) {
-                            Icon(Icons.Default.Folder, contentDescription = null, tint = LipiPrimary)
-                            Text(folder, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = LipiTextPrimary)
+                            androidx.compose.foundation.layout.Row(
+                                modifier = androidx.compose.ui.Modifier.fillMaxWidth().padding(12.dp),
+                                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween
+                            ) {
+                                androidx.compose.material3.Text(folder, fontWeight = if (note.tags.contains(folder, ignoreCase = true)) androidx.compose.ui.text.font.FontWeight.Bold else androidx.compose.ui.text.font.FontWeight.Normal)
+                                if (note.tags.contains(folder, ignoreCase = true)) {
+                                    androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Default.Check, contentDescription = "Current", tint = LipiPrimary, modifier = androidx.compose.ui.Modifier.size(20.dp))
+                                }
+                            }
                         }
                     }
                 }
-
-                Spacer(modifier = Modifier.height(4.dp))
-
-                OutlinedButton(
-                    onClick = { showCreateNewFolderDialog = true },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Icon(Icons.Default.CreateNewFolder, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Create New Folder", fontWeight = FontWeight.Bold)
-                }
             }
         },
-        confirmButton = {},
+        confirmButton = {
+            androidx.compose.material3.Button(onClick = { showCreateNewFolderDialog = true }) {
+                androidx.compose.material3.Text("New Folder")
+            }
+        },
         dismissButton = {
-            TextButton(onClick = onDismissRequest) {
-                Text("Cancel")
+            androidx.compose.material3.TextButton(onClick = onDismissRequest) {
+                androidx.compose.material3.Text("Cancel")
             }
         }
     )
+}
+
+@Composable
+fun AllNotesEmptyState(onCreateNoteClick: () -> Unit, onImportPdfClick: () -> Unit) {
+    androidx.compose.foundation.layout.Column(
+        modifier = androidx.compose.ui.Modifier.fillMaxWidth().padding(32.dp),
+        horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
+        verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center
+    ) {
+        androidx.compose.material3.Text("No notebooks found", style = androidx.compose.material3.MaterialTheme.typography.titleLarge)
+        androidx.compose.foundation.layout.Spacer(modifier = androidx.compose.ui.Modifier.height(16.dp))
+        androidx.compose.material3.Button(onClick = onCreateNoteClick) {
+            androidx.compose.material3.Text("Create Note")
+        }
+    }
 }
