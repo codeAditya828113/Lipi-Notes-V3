@@ -86,6 +86,7 @@ object DocxHelper {
                             val fileName = "image${index + 1}.png"
                             val rId = "rId${index + 2}"
                             imageEntries.add(Triple(fileName, rId, bytes))
+                            bitmap.recycle()
                         }
                     } catch (e: Exception) {
                         Log.e("DocxHelper", "Failed to process image ${img.uri} for DOCX", e)

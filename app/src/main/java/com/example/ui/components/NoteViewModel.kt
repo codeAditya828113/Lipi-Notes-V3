@@ -3683,7 +3683,11 @@ Here is your complete guide to all features and capabilities available in the ap
             }
 
             logSyncEvent("Uploading handwriting image to Gemini 3.5 Flash...")
-            val result = GeminiClient.analyzeHandwriting(bitmap)
+            val result = try {
+                GeminiClient.analyzeHandwriting(bitmap)
+            } finally {
+                bitmap.recycle()
+            }
 
             // Update Note Entity in Room with Gemini OCR results
             val updated = currentNote.copy(
@@ -4391,8 +4395,11 @@ Here is your complete guide to all features and capabilities available in the ap
     suspend fun convertScribbleToText(strokes: List<Stroke>): String = withContext(Dispatchers.Default) {
         if (strokes.isEmpty()) return@withContext ""
         val bitmap = scribbleStrokesToBitmap(strokes)
-        
-        val result = GeminiClient.analyzeHandwriting(bitmap)
+        val result = try {
+            GeminiClient.analyzeHandwriting(bitmap)
+        } finally {
+            bitmap.recycle()
+        }
         
         if (result.transcription.isNotBlank() && !result.tags.contains("Missing_Key")) {
             result.transcription

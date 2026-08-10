@@ -26,15 +26,18 @@ object PdfHelper {
         return try {
             val uri = Uri.parse(uriString)
             var bitmap: Bitmap? = null
+            val options = BitmapFactory.Options().apply {
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+            }
             if (uri.scheme == "content" || uri.scheme == "file") {
                 context.contentResolver.openInputStream(uri)?.use { stream ->
-                    bitmap = BitmapFactory.decodeStream(stream)
+                    bitmap = BitmapFactory.decodeStream(stream, null, options)
                 }
             }
             if (bitmap == null) {
                 val file = File(uriString)
                 if (file.exists()) {
-                    bitmap = BitmapFactory.decodeFile(file.absolutePath)
+                    bitmap = BitmapFactory.decodeFile(file.absolutePath, options)
                 }
             }
             if (bitmap == null) {
@@ -50,7 +53,9 @@ object PdfHelper {
                 }
             }
             if (bitmap != null && bitmap!!.config == Bitmap.Config.HARDWARE) {
-                bitmap = bitmap!!.copy(Bitmap.Config.ARGB_8888, false)
+                val copy = bitmap!!.copy(Bitmap.Config.ARGB_8888, false)
+                bitmap!!.recycle()
+                bitmap = copy
             }
             bitmap
         } catch (e: Exception) {
@@ -488,6 +493,7 @@ object PdfHelper {
                                     imageElem.y + imageElem.height
                                 )
                                 canvas.drawBitmap(bitmap, srcRect, dstRect, paint)
+                                bitmap.recycle()
                             }
                         } catch (e: Exception) {
                             Log.e("PdfHelper", "Error drawing image in PDF page $pageIndex", e)

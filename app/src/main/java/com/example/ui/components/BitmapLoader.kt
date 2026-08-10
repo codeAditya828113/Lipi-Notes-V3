@@ -54,7 +54,10 @@ fun rememberImageBitmaps(images: List<ImageElement>): Map<String, ImageBitmap> {
                             }
                         } else if (file.exists() || relativeFile.exists()) {
                             val targetFile = if (file.exists()) file else relativeFile
-                            val bmp = BitmapFactory.decodeFile(targetFile.absolutePath)
+                            val options = BitmapFactory.Options().apply {
+                                inPreferredConfig = android.graphics.Bitmap.Config.ARGB_8888
+                            }
+                            val bmp = BitmapFactory.decodeFile(targetFile.absolutePath, options)
                             if (bmp != null) {
                                 bitmaps[uri] = bmp.asImageBitmap()
                             }
