@@ -4,43 +4,48 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
     
-    <!-- Dark slate base disc in the icon core center (54, 54) -->
+    <!-- Stacked note pages -->
+    <!-- Back rotated note -->
     <path
-        android:fillColor="#1F2937"
-        android:pathData="M54,18 A36,36 0 1,0 54,90 A36,36 0 1,0 54,18 Z" />
+        android:fillColor="#E5EDFF"
+        android:pathData="M27,33 L67,23 L77,65 L37,75 Z" />
+    <!-- Middle rotated note -->
+    <path
+        android:fillColor="#F0F4FF"
+        android:pathData="M30,30 L72,25 L80,70 L38,75 Z" />
+    <!-- Front main white note sheet -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M33,26 h44 a6,6 0 0 1 6,6 v46 a6,6 0 0 1 -6,6 h-44 a6,6 0 0 1 -6,-6 v-46 a6,6 0 0 1 6,-6 Z" />
         
-    <!-- Notebook sheets overlay -->
+    <!-- Smooth Ribbon L Stroke (Vivid Purple to Blue) -->
+    <!-- Ribbon Stem & Loop -->
     <path
-        android:fillColor="#374151"
-        android:pathData="M34,32 h40 v44 h-40 z" />
+        android:fillColor="#6366F1"
+        android:pathData="M49,30 C56,36 52,50 43,58 C32,68 33,78 41,80 C50,82 62,75 68,69 C65,74 52,78 42,76 C35,74 35,66 45,54 Z" />
     <path
-        android:fillColor="#F9FAFB"
-        android:pathData="M36,34 h36 v40 h-36 z" />
-        
-    <!-- Ruled template blue lines -->
+        android:fillColor="#1D4ED8"
+        android:pathData="M49,30 C55,34 52,48 44,56 C37,64 34,72 41,76 C46,78 54,75 62,70 C56,73 47,75 42,74 C36,73 36,68 43,58 Z" />
     <path
-        android:fillColor="#93C5FD"
-        android:pathData="M42,42 h24 v2 h-24 z" />
-    <path
-        android:fillColor="#93C5FD"
-        android:pathData="M42,50 h24 v2 h-24 z" />
-    <path
-        android:fillColor="#93C5FD"
-        android:pathData="M42,58 h18 v2 h-18 z" />
+        android:fillColor="#8B5CF6"
+        android:pathData="M39,64 C35,70 36,77 43,76 C52,75 62,68 68,66 C62,69 52,73 44,72 C39,71 38,67 43,60 Z" />
 
-    <!-- Stylus pencil body (diagonal angle drawing) -->
+    <!-- Stylus Pen (white body with dark tip drawing the stroke) -->
     <path
-        android:fillColor="#FBBF24"
-        android:pathData="M72,34 L44,62 L42,68 L48,66 L76,38 Z" />
-    <!-- Graphite stylus tip -->
+        android:fillColor="#FFFFFF"
+        android:pathData="M66,42 L77,31 a3,3 0 0 1 4,4 L70,47 Z" />
     <path
-        android:fillColor="#4B5563"
-        android:pathData="M42,68 L44,65 L43,64 Z" />
-        
-    <!-- Cyan hand-ink streak glow -->
+        android:fillColor="#E2E8F0"
+        android:pathData="M68,44 L70,42 L72,44 L70,46 Z" />
     <path
-        android:strokeColor="#06B6D4"
-        android:strokeWidth="2.5"
-        android:strokeLineCap="round"
-        android:pathData="M46,65 Q54,68 62,56" />
+        android:fillColor="#1E1B4B"
+        android:pathData="M66,42 L70,47 L65,49 Z" />
+
+    <!-- Sparkle Stars -->
+    <path
+        android:fillColor="#6366F1"
+        android:pathData="M68,30 Q68,34 72,34 Q68,34 68,38 Q68,34 64,34 Q68,34 68,30 Z" />
+    <path
+        android:fillColor="#818CF8"
+        android:pathData="M62,38 Q62,40 64,40 Q62,40 62,42 Q62,40 60,40 Q62,40 62,38 Z" />
 </vector>

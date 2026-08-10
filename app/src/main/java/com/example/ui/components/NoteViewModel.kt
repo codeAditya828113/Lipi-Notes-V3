@@ -1,5 +1,12 @@
 package com.example.ui.components
 
+import com.example.handwriting.HandwritingRefiner
+import com.example.handwriting.HandwritingRecognizer
+import com.example.handwriting.PersonalHandwritingProfileManager
+import com.example.handwriting.SearchIndexer
+import com.example.handwriting.RefinementLevel
+import com.example.handwriting.RefinementResult
+import com.example.handwriting.SpacingMode
 import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -798,6 +805,238 @@ class NoteViewModel(
         private set
     var currentAudioAmplitude by mutableStateOf(0f)
         private set
+    var showAudioRecordingOverlay by mutableStateOf(false)
+        private set
+
+    var showDocumentScannerOverlay by mutableStateOf(false)
+        private set
+    var scannerLaunchSource by mutableStateOf("home")
+        private set
+    var activeNoteForScanner by mutableStateOf<NoteEntity?>(null)
+        private set
+
+    fun openAudioOverlay() {
+        showAudioRecordingOverlay = true
+    }
+
+    fun closeAudioOverlay() {
+        showAudioRecordingOverlay = false
+    }
+
+    fun openDocumentScanner(source: String = "home", targetNote: NoteEntity? = selectedNote) {
+        scannerLaunchSource = source
+        activeNoteForScanner = targetNote ?: selectedNote
+        showDocumentScannerOverlay = true
+    }
+
+    fun closeDocumentScanner() {
+        showDocumentScannerOverlay = false
+    }
+
+    // --- Lipi Smart Handwriting State & Actions ---
+    var showSmartHandwritingPanel by mutableStateOf(false)
+    var showHandwritingCompareDialog by mutableStateOf(false)
+    var showWriteInMyStyleDialog by mutableStateOf(false)
+    var isScribbleModeActive by mutableStateOf(false)
+    var autoRefineEnabled by mutableStateOf(true)
+    var handwritingRefinementLevel by mutableStateOf(RefinementLevel.BALANCED)
+    var handwritingLanguage by mutableStateOf("Auto-Detect")
+    var lastRefinementResult by mutableStateOf<RefinementResult?>(null)
+    var liveScribbleText by mutableStateOf("")
+
+    fun openSmartHandwritingPanel() {
+        showSmartHandwritingPanel = true
+    }
+
+    fun closeSmartHandwritingPanel() {
+        showSmartHandwritingPanel = false
+    }
+
+    fun openWriteInMyStyleDialog() {
+        showWriteInMyStyleDialog = true
+    }
+
+    fun closeWriteInMyStyleDialog() {
+        showWriteInMyStyleDialog = false
+    }
+
+    fun toggleScribbleMode() {
+        isScribbleModeActive = !isScribbleModeActive
+        if (isScribbleModeActive) {
+            logSyncEvent("Lipi Scribble mode activated.")
+        }
+    }
+
+    fun refineSelectedHandwriting() {
+        val targetStrokes = if (lassoSelectedStrokes.isNotEmpty()) lassoSelectedStrokes else currentStrokes
+        if (targetStrokes.isEmpty()) return
+
+        viewModelScope.launch(Dispatchers.Default) {
+            val profile = PersonalHandwritingProfileManager.getProfile(getApplication())
+            val result = HandwritingRefiner.refineStrokes(
+                strokes = targetStrokes,
+                level = handwritingRefinementLevel,
+                profile = profile
+            )
+            PersonalHandwritingProfileManager.learnFromStrokes(getApplication(), targetStrokes)
+
+            lastRefinementResult = result
+            showHandwritingCompareDialog = true
+        }
+    }
+
+    fun applyRefinement() {
+        val result = lastRefinementResult ?: return
+        val refined = result.refinedStrokes
+        if (refined.isEmpty()) return
+
+        saveToUndoStack()
+        if (lassoSelectedStrokes.isNotEmpty()) {
+            val selectedSet = lassoSelectedStrokes.toSet()
+            currentStrokes = currentStrokes.map { stroke ->
+                if (selectedSet.contains(stroke)) {
+                    refined.find { it.points.size == stroke.points.size } ?: stroke
+                } else stroke
+            }
+            lassoSelectedStrokes = refined
+        } else {
+            currentStrokes = refined
+        }
+
+        saveActiveCanvasStrokes()
+        showHandwritingCompareDialog = false
+        logSyncEvent("Applied Smart Refinement (${result.level.displayName} strength).")
+    }
+
+    fun restoreOriginalHandwriting() {
+        val result = lastRefinementResult ?: return
+        if (lassoSelectedStrokes.isNotEmpty()) {
+            lassoSelectedStrokes = result.originalStrokes
+        }
+        showHandwritingCompareDialog = false
+        logSyncEvent("Restored original handwriting.")
+    }
+
+    fun straightenSelectedHandwriting() {
+        val targetStrokes = if (lassoSelectedStrokes.isNotEmpty()) lassoSelectedStrokes else currentStrokes
+        if (targetStrokes.isEmpty()) return
+
+        saveToUndoStack()
+        val straightened = HandwritingRefiner.straightenStrokes(targetStrokes)
+        if (lassoSelectedStrokes.isNotEmpty()) {
+            currentStrokes = currentStrokes.filterNot { lassoSelectedStrokes.contains(it) } + straightened
+            lassoSelectedStrokes = straightened
+        } else {
+            currentStrokes = straightened
+        }
+        saveActiveCanvasStrokes()
+        logSyncEvent("Applied Smart Straighten to handwriting lines.")
+    }
+
+    fun adjustHandwritingSpacing(mode: SpacingMode) {
+        val targetStrokes = if (lassoSelectedStrokes.isNotEmpty()) lassoSelectedStrokes else currentStrokes
+        if (targetStrokes.isEmpty()) return
+
+        saveToUndoStack()
+        val adjusted = HandwritingRefiner.adjustSpacing(targetStrokes, mode)
+        if (lassoSelectedStrokes.isNotEmpty()) {
+            currentStrokes = currentStrokes.filterNot { lassoSelectedStrokes.contains(it) } + adjusted
+            lassoSelectedStrokes = adjusted
+        } else {
+            currentStrokes = adjusted
+        }
+        saveActiveCanvasStrokes()
+        logSyncEvent("Adjusted handwriting spacing (${mode.name}).")
+    }
+
+    fun convertHandwritingToText() {
+        val targetStrokes = if (lassoSelectedStrokes.isNotEmpty()) lassoSelectedStrokes else currentStrokes
+        if (targetStrokes.isEmpty()) return
+
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = HandwritingRecognizer.recognizeText(getApplication(), targetStrokes, handwritingLanguage)
+            val text = result.recognizedText
+            if (text.isNotBlank()) {
+                liveScribbleText = text
+                SearchIndexer.indexHandwritingText(this@NoteViewModel, text, selectedNote)
+
+                val currentNote = selectedNote
+                if (currentNote != null) {
+                    val newContent = if (currentNote.content.isBlank()) text else "${currentNote.content}\n$text"
+                    updateNote(currentNote.copy(content = newContent))
+                }
+                logSyncEvent("Converted handwriting to editable text: '$text'")
+            }
+        }
+    }
+
+    fun renderAndInsertWriteInMyStyle(text: String, colorInt: Int, strokeWidth: Float) {
+        val profile = PersonalHandwritingProfileManager.getProfile(getApplication())
+        val generatedStrokes = PersonalHandwritingProfileManager.renderTextAsHandwriting(
+            text = text,
+            profile = profile,
+            startX = 100f,
+            startY = 200f + ((currentStrokes.size * 12) % 350),
+            colorInt = colorInt,
+            baseWidth = strokeWidth,
+            page = pdfPage
+        )
+
+        if (generatedStrokes.isNotEmpty()) {
+            saveToUndoStack()
+            currentStrokes = currentStrokes + generatedStrokes
+            saveActiveCanvasStrokes()
+            closeWriteInMyStyleDialog()
+            logSyncEvent("Inserted '${text}' rendered in My Handwriting Style.")
+        }
+    }
+
+    fun runAiActionOnSelection(actionType: String) {
+        val targetStrokes = if (lassoSelectedStrokes.isNotEmpty()) lassoSelectedStrokes else currentStrokes
+        if (targetStrokes.isEmpty()) return
+
+        viewModelScope.launch(Dispatchers.IO) {
+            val recogResult = HandwritingRecognizer.recognizeText(getApplication(), targetStrokes, handwritingLanguage)
+            val text = recogResult.recognizedText.ifBlank { "Handwritten selection" }
+
+            val prompt = when (actionType) {
+                "Explain" -> "Explain the following handwritten notes clearly in simple terms: $text"
+                "Summarize" -> "Summarize the key points from these handwritten notes: $text"
+                "Quiz" -> "Create 3 multiple-choice study quiz questions based on: $text"
+                "Flashcards" -> "Generate 3 Q&A flashcards for studying: $text"
+                "MindMap" -> "Create an outline for a Mind Map visualizing: $text"
+                "Translate" -> "Translate these handwritten notes into English and Hindi: $text"
+                else -> "Analyze the following handwritten notes: $text"
+            }
+
+            try {
+                val aiResponse = GeminiClient.generateText(prompt)
+                val currentNote = selectedNote
+                if (currentNote != null) {
+                    val newSummary = if (currentNote.summary.isNullOrBlank()) {
+                        "✨ AI $actionType:\n$aiResponse"
+                    } else {
+                        "${currentNote.summary}\n\n✨ AI $actionType:\n$aiResponse"
+                    }
+                    updateNote(currentNote.copy(summary = newSummary))
+                }
+                logSyncEvent("Executed AI Action '$actionType' on handwritten selection.")
+            } catch (e: Exception) {
+                logSyncEvent("AI Action failed: ${e.message}")
+            }
+        }
+    }
+
+    fun updateNote(note: NoteEntity) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.insertNote(note)
+            withContext(Dispatchers.Main) {
+                if (selectedNote?.id == note.id) {
+                    selectedNote = note
+                }
+            }
+        }
+    }
 
     // Google Drive Sync & Conflict states
     var isSyncing by mutableStateOf(false)
@@ -3217,7 +3456,13 @@ Here is your complete guide to all features and capabilities available in the ap
                         stroke
                     }
 
-                    currentStrokes = currentStrokes + finalStroke
+                    val strokeToStore = if (autoRefineEnabled && (finalStroke.toolType == "pen" || finalStroke.toolType == "fountain_pen" || finalStroke.toolType == "pencil")) {
+                        HandwritingRefiner.refineSingleStroke(finalStroke, handwritingRefinementLevel.strengthFactor)
+                    } else {
+                        finalStroke
+                    }
+
+                    currentStrokes = currentStrokes + strokeToStore
                     saveActiveCanvasStrokes()
                 }
                 activeStroke = null
@@ -3452,6 +3697,7 @@ Here is your complete guide to all features and capabilities available in the ap
         val context = application.applicationContext
         liveSpeechText = ""
         currentAudioAmplitude = 0f
+        showAudioRecordingOverlay = true
 
         try {
             val cacheDir = context.cacheDir
@@ -3648,7 +3894,7 @@ Here is your complete guide to all features and capabilities available in the ap
         }
     }
 
-    private fun saveAudioTranscriptionResult(text: String) {
+    fun saveAudioTranscriptionResult(text: String) {
         val currentNote = selectedNote ?: return
         viewModelScope.launch(Dispatchers.IO) {
             val updated = currentNote.copy(
@@ -3659,6 +3905,81 @@ Here is your complete guide to all features and capabilities available in the ap
             repository.insertNote(updated)
             withContext(Dispatchers.Main) {
                 selectedNote = updated
+            }
+        }
+    }
+
+    fun appendTextToSelectedNote(additionalText: String) {
+        val currentNote = selectedNote ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            val newContent = if (currentNote.content.isBlank()) additionalText else "${currentNote.content}\n\n$additionalText"
+            val updated = currentNote.copy(
+                content = newContent,
+                lastModifiedTime = System.currentTimeMillis(),
+                isSynced = false
+            )
+            repository.insertNote(updated)
+            withContext(Dispatchers.Main) {
+                selectedNote = updated
+            }
+        }
+    }
+
+    fun saveScannedPdfToNotebook(
+        pdfFile: File,
+        pdfTitle: String,
+        targetNote: NoteEntity?,
+        ocrText: String? = null,
+        onComplete: (NoteEntity) -> Unit = {}
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val noteToUpdate = targetNote ?: selectedNote
+            if (noteToUpdate != null) {
+                val destination = File(application.filesDir, "note_${noteToUpdate.id}.pdf")
+                pdfFile.copyTo(destination, overwrite = true)
+
+                val updatedContent = if (!ocrText.isNullOrBlank()) {
+                    if (noteToUpdate.content.isBlank()) "[Scanned Document OCR]:\n$ocrText"
+                    else "${noteToUpdate.content}\n\n[Scanned Document OCR]:\n$ocrText"
+                } else noteToUpdate.content
+
+                val originalCount = PdfHelper.getPdfPageCount(destination)
+                val updated = noteToUpdate.copy(
+                    templateType = "pdf",
+                    pdfTitle = pdfTitle,
+                    content = updatedContent,
+                    lastModifiedTime = System.currentTimeMillis(),
+                    isSynced = false
+                )
+                repository.insertNote(updated)
+                withContext(Dispatchers.Main) {
+                    selectedNote = updated
+                    pdfPageCount = maxOf(1, originalCount)
+                    pdfPage = 1
+                    onComplete(updated)
+                }
+            } else {
+                val newNoteId = System.currentTimeMillis().toInt()
+                val destination = File(application.filesDir, "note_${newNoteId}.pdf")
+                pdfFile.copyTo(destination, overwrite = true)
+                val pageCount = PdfHelper.getPdfPageCount(destination)
+
+                val newNote = NoteEntity(
+                    id = newNoteId,
+                    title = pdfTitle.ifBlank { "Scanned Document" },
+                    content = if (!ocrText.isNullOrBlank()) "[Scanned Document OCR]:\n$ocrText" else "",
+                    templateType = "pdf",
+                    pdfTitle = pdfTitle,
+                    createdTime = System.currentTimeMillis(),
+                    lastModifiedTime = System.currentTimeMillis()
+                )
+                repository.insertNote(newNote)
+                withContext(Dispatchers.Main) {
+                    selectedNote = newNote
+                    pdfPageCount = maxOf(1, pageCount)
+                    pdfPage = 1
+                    onComplete(newNote)
+                }
             }
         }
     }

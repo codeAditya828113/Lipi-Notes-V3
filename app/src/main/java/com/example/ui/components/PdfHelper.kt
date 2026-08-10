@@ -667,4 +667,111 @@ object PdfHelper {
         canvas.drawText("PAGES:", 80f, yPos, labelPaint)
         canvas.drawText("$pageCount Pages", 180f, yPos, valuePaint)
     }
+
+    /**
+     * Creates a multi-page PDF from a list of scanned page Bitmaps.
+     */
+    fun createPdfFromBitmaps(outputFile: File, bitmaps: List<Bitmap>) {
+        val document = PdfDocument()
+        try {
+            for ((index, bitmap) in bitmaps.withIndex()) {
+                val pageInfo = PdfDocument.PageInfo.Builder(
+                    bitmap.width.coerceAtLeast(300),
+                    bitmap.height.coerceAtLeast(400),
+                    index + 1
+                ).create()
+
+                val page = document.startPage(pageInfo)
+                val canvas = page.canvas
+                val paint = Paint().apply { isFilterBitmap = true }
+                canvas.drawBitmap(bitmap, 0f, 0f, paint)
+                document.finishPage(page)
+            }
+            FileOutputStream(outputFile).use { out ->
+                document.writeTo(out)
+            }
+        } catch (e: Exception) {
+            Log.e("PdfHelper", "Error creating PDF from bitmaps", e)
+        } finally {
+            try { document.close() } catch (_: Exception) {}
+        }
+    }
+
+    /**
+     * Applies document scan enhancement filters: Auto, Grayscale, Black & White, Color, Original
+     */
+    fun applyScanFilter(bitmap: Bitmap, filterName: String): Bitmap {
+        if (filterName.equals("Original", ignoreCase = true)) return bitmap
+
+        val width = bitmap.width
+        val height = bitmap.height
+        val result = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(result)
+        val paint = Paint().apply { isAntiAlias = true; isFilterBitmap = true }
+
+        when (filterName.lowercase()) {
+            "grayscale" -> {
+                val cm = android.graphics.ColorMatrix()
+                cm.setSaturation(0f)
+                paint.colorFilter = android.graphics.ColorMatrixColorFilter(cm)
+                canvas.drawBitmap(bitmap, 0f, 0f, paint)
+            }
+            "black & white", "bw" -> {
+                // High contrast b&w filter matrix
+                val cm = android.graphics.ColorMatrix(floatArrayOf(
+                    1.5f, 1.5f, 1.5f, 0f, -160f,
+                    1.5f, 1.5f, 1.5f, 0f, -160f,
+                    1.5f, 1.5f, 1.5f, 0f, -160f,
+                    0f, 0f, 0f, 1f, 0f
+                ))
+                paint.colorFilter = android.graphics.ColorMatrixColorFilter(cm)
+                canvas.drawBitmap(bitmap, 0f, 0f, paint)
+            }
+            "color" -> {
+                val cm = android.graphics.ColorMatrix()
+                cm.setSaturation(1.4f)
+                paint.colorFilter = android.graphics.ColorMatrixColorFilter(cm)
+                canvas.drawBitmap(bitmap, 0f, 0f, paint)
+            }
+            "auto", "enhanced" -> {
+                // Auto document enhancement matrix: improves contrast, lightens paper background
+                val cm = android.graphics.ColorMatrix(floatArrayOf(
+                    1.25f, 0.1f, 0.1f, 0f, 10f,
+                    0.1f, 1.25f, 0.1f, 0f, 10f,
+                    0.1f, 0.1f, 1.25f, 0f, 10f,
+                    0f, 0f, 0f, 1f, 0f
+                ))
+                paint.colorFilter = android.graphics.ColorMatrixColorFilter(cm)
+                canvas.drawBitmap(bitmap, 0f, 0f, paint)
+            }
+            else -> {
+                canvas.drawBitmap(bitmap, 0f, 0f, paint)
+            }
+        }
+        return result
+    }
+
+    /**
+     * Crops bitmap according to normalized corner points [TL, TR, BR, BL] (0.0 .. 1.0)
+     */
+    fun cropBitmapPerspective(bitmap: Bitmap, corners: List<androidx.compose.ui.geometry.Offset>): Bitmap {
+        if (corners.size < 4) return bitmap
+        val width = bitmap.width.toFloat()
+        val height = bitmap.height.toFloat()
+
+        val minX = (corners.minOf { it.x } * width).coerceIn(0f, width - 10f)
+        val maxX = (corners.maxOf { it.x } * width).coerceIn(minX + 10f, width)
+        val minY = (corners.minOf { it.y } * height).coerceIn(0f, height - 10f)
+        val maxY = (corners.maxOf { it.y } * height).coerceIn(minY + 10f, height)
+
+        val cropW = (maxX - minX).toInt().coerceAtLeast(100)
+        val cropH = (maxY - minY).toInt().coerceAtLeast(100)
+
+        return try {
+            Bitmap.createBitmap(bitmap, minX.toInt(), minY.toInt(), cropW, cropH)
+        } catch (e: Exception) {
+            Log.e("PdfHelper", "Error cropping bitmap", e)
+            bitmap
+        }
+    }
 }

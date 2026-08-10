@@ -185,6 +185,7 @@ fun NovaDashboard(
                 onSearchSubmitted = { query ->
                     onNavigateToNotesWithFilter?.invoke(query) ?: onNavigateToNotes()
                 },
+                onScanClick = { viewModel.openDocumentScanner("home") },
                 isDark = isDarkTheme,
                 cardBg = cardBg
             )
@@ -192,7 +193,11 @@ fun NovaDashboard(
             // 4. QUICK ACTIONS BAR
             QuickActionsRow(
                 onActionClick = { action ->
-                    activeQuickActionModal = action
+                    if (action == "Scan Document") {
+                        viewModel.openDocumentScanner("home")
+                    } else {
+                        activeQuickActionModal = action
+                    }
                 },
                 isDark = isDarkTheme,
                 cardBg = cardBg
@@ -1080,6 +1085,7 @@ private fun WaveMetricCard(
 @Composable
 private fun HeroAISearchBar(
     onSearchSubmitted: (String) -> Unit,
+    onScanClick: () -> Unit = {},
     isDark: Boolean,
     cardBg: Color
 ) {
@@ -1188,8 +1194,8 @@ private fun HeroAISearchBar(
                     IconButton(onClick = { /* Voice Search */ }) {
                         Icon(Icons.Default.MicNone, contentDescription = "Voice", tint = LipiPrimary)
                     }
-                    IconButton(onClick = { /* OCR Scan */ }) {
-                        Icon(Icons.Default.QrCodeScanner, contentDescription = "Scan", tint = LipiPrimary)
+                    IconButton(onClick = { onScanClick() }) {
+                        Icon(Icons.Default.QrCodeScanner, contentDescription = "Scan Document", tint = LipiPrimary)
                     }
 
                     Spacer(modifier = Modifier.width(6.dp))
@@ -3621,13 +3627,23 @@ fun QuickActionInteractiveModal(
                         }
                     }
                     "Scan Document" -> {
-                        Text("Document OCR Scanner", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                        Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth().height(120.dp)) {
+                        Text("Document Scanner", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                        Surface(
+                            shape = RoundedCornerShape(16.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(120.dp)
+                                .clickable {
+                                    onDismiss()
+                                    viewModel.openDocumentScanner("home")
+                                }
+                        ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                     Icon(Icons.Default.DocumentScanner, contentDescription = null, tint = LipiPrimary, modifier = Modifier.size(36.dp))
                                     Spacer(modifier = Modifier.height(8.dp))
-                                    Text("Position document inside frame", fontSize = 12.sp)
+                                    Text("Tap to Launch Camera Scanner", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = LipiPrimary)
                                 }
                             }
                         }

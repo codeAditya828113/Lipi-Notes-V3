@@ -695,6 +695,18 @@ private fun AllNotesHeaderSection(
                     )
                 }
 
+                // Scan Document Button
+                IconButton(
+                    onClick = { viewModel.openDocumentScanner("all_notes") },
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(LipiCardWhite)
+                        .testTag("all_notes_scan_document_button")
+                ) {
+                    Icon(Icons.Default.DocumentScanner, contentDescription = "Scan Document", tint = LipiPrimary)
+                }
+
                 // Import PDF/Doc Button
                 IconButton(
                     onClick = onImportPdfClick,

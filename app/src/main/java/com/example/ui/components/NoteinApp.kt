@@ -1,5 +1,7 @@
 package com.example.ui.components
 
+import androidx.compose.ui.platform.LocalContext
+
 
 import androidx.compose.animation.*
 import androidx.compose.animation.core.spring
@@ -2767,12 +2769,7 @@ fun NoteEditorEmptyState(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier.padding(32.dp)
             ) {
-                Icon(
-                    imageVector = Icons.Default.Draw,
-                    contentDescription = "Stylus",
-                    modifier = Modifier.size(72.dp),
-                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
-                )
+                LipiLogoCard()
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(
                     text = "No Note Selected",
@@ -4698,6 +4695,36 @@ if (showLayersDialog) {
                         )
                     }
 
+                    // Scan Document [ 📷 Scanner ]
+                    IconButton(
+                        onClick = { viewModel.openDocumentScanner("notebook", viewModel.selectedNote) },
+                        modifier = Modifier
+                            .size(32.dp)
+                            .testTag("notebook_toolbar_scan_document_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.DocumentScanner,
+                            contentDescription = "Scan Document into Notebook",
+                            tint = Color(0xFF5B6DFF),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+
+                    // Smart Handwriting [ ✨ Smart Handwriting ]
+                    IconButton(
+                        onClick = { viewModel.openSmartHandwritingPanel() },
+                        modifier = Modifier
+                            .size(32.dp)
+                            .testTag("notebook_toolbar_smart_handwriting_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AutoAwesome,
+                            contentDescription = "Smart Handwriting Studio",
+                            tint = Color(0xFF8B5CF6),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+
                     // Crop / Lasso selection
                     IconButton(
                         onClick = { 
@@ -4777,8 +4804,10 @@ if (showLayersDialog) {
 
                     // Microphone / Audio Transcription
                     IconButton(
-                        onClick = { viewModel.toggleAudioRecording() },
-                        modifier = Modifier.size(32.dp)
+                        onClick = { viewModel.openAudioOverlay() },
+                        modifier = Modifier
+                            .size(32.dp)
+                            .testTag("action_bar_mic_button")
                     ) {
                         Icon(
                             imageVector = if (viewModel.isRecording) Icons.Default.MicOff else Icons.Default.Mic,
@@ -5626,6 +5655,109 @@ if (showLayersDialog) {
                                 )
                             }
 
+                            // Smart Refine
+                            IconButton(
+                                onClick = { viewModel.refineSelectedHandwriting() },
+                                modifier = Modifier.size(28.dp).testTag("lasso_refine_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.AutoAwesome,
+                                    contentDescription = "Refine handwriting",
+                                    tint = Color(0xFF8B5CF6),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+
+                            // Straighten
+                            IconButton(
+                                onClick = { viewModel.straightenSelectedHandwriting() },
+                                modifier = Modifier.size(28.dp).testTag("lasso_straighten_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Straighten,
+                                    contentDescription = "Straighten lines",
+                                    tint = Color(0xFF3B82F6),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+
+                            // Convert to Text
+                            IconButton(
+                                onClick = { viewModel.convertHandwritingToText() },
+                                modifier = Modifier.size(28.dp).testTag("lasso_convert_text_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.TextFields,
+                                    contentDescription = "Convert to Text",
+                                    tint = Color(0xFF10B981),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+
+                            // AI Actions Dropdown
+                            var showLassoAiMenu by remember { mutableStateOf(false) }
+                            Box {
+                                IconButton(
+                                    onClick = { showLassoAiMenu = true },
+                                    modifier = Modifier.size(28.dp).testTag("lasso_ai_actions_button")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Psychology,
+                                        contentDescription = "AI Actions",
+                                        tint = Color(0xFFEC4899),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+
+                                DropdownMenu(
+                                    expanded = showLassoAiMenu,
+                                    onDismissRequest = { showLassoAiMenu = false }
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("✨ Explain") },
+                                        onClick = {
+                                            viewModel.runAiActionOnSelection("Explain")
+                                            showLassoAiMenu = false
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("📚 Summarize") },
+                                        onClick = {
+                                            viewModel.runAiActionOnSelection("Summarize")
+                                            showLassoAiMenu = false
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("🧠 Generate Quiz") },
+                                        onClick = {
+                                            viewModel.runAiActionOnSelection("Quiz")
+                                            showLassoAiMenu = false
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("🗂 Generate Flashcards") },
+                                        onClick = {
+                                            viewModel.runAiActionOnSelection("Flashcards")
+                                            showLassoAiMenu = false
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("🗺 Create Mind Map") },
+                                        onClick = {
+                                            viewModel.runAiActionOnSelection("MindMap")
+                                            showLassoAiMenu = false
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("🌐 Translate") },
+                                        onClick = {
+                                            viewModel.runAiActionOnSelection("Translate")
+                                            showLassoAiMenu = false
+                                        }
+                                    )
+                                }
+                            }
+
                             Spacer(modifier = Modifier.width(4.dp))
 
                             // Delete selection
@@ -5975,14 +6107,14 @@ if (showLayersDialog) {
                             ) {
                                 if (!viewModel.isRecording) {
                                     Button(
-                                        onClick = { viewModel.startAudioRecording() },
+                                        onClick = { viewModel.openAudioOverlay() },
                                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                                         modifier = Modifier.weight(1f).height(36.dp),
                                         contentPadding = PaddingValues(0.dp)
                                     ) {
                                         Icon(Icons.Default.Mic, contentDescription = null, modifier = Modifier.size(16.dp))
                                         Spacer(modifier = Modifier.width(4.dp))
-                                        Text("Record", fontSize = 12.sp)
+                                        Text("Record with Waveform", fontSize = 12.sp)
                                     }
                                 } else {
                                     Button(
@@ -6135,6 +6267,58 @@ if (showLayersDialog) {
                 modifier = Modifier.fillMaxSize()
             )
         }
+    }
+
+    if (viewModel.showAudioRecordingOverlay) {
+        AudioRecordingOverlay(
+            viewModel = viewModel,
+            onDismiss = { viewModel.closeAudioOverlay() }
+        )
+    }
+
+    if (viewModel.showDocumentScannerOverlay) {
+        LipiDocumentScanner(
+            viewModel = viewModel,
+            onDismiss = { viewModel.closeDocumentScanner() }
+        )
+    }
+
+    if (viewModel.showSmartHandwritingPanel) {
+        SmartHandwritingPanel(
+            viewModel = viewModel,
+            onDismiss = { viewModel.closeSmartHandwritingPanel() }
+        )
+    }
+
+    if (viewModel.showHandwritingCompareDialog && viewModel.lastRefinementResult != null) {
+        val result = viewModel.lastRefinementResult!!
+        HandwritingCompareDialog(
+            originalStrokes = result.originalStrokes,
+            refinedStrokes = result.refinedStrokes,
+            onApply = { viewModel.applyRefinement() },
+            onRestoreOriginal = { viewModel.restoreOriginalHandwriting() },
+            onDismiss = { viewModel.showHandwritingCompareDialog = false }
+        )
+    }
+
+    if (viewModel.showWriteInMyStyleDialog) {
+        val profile = com.example.handwriting.PersonalHandwritingProfileManager.getProfile(LocalContext.current)
+        WriteInMyStyleDialog(
+            profile = profile,
+            onGenerate = { text, colorInt, width ->
+                viewModel.renderAndInsertWriteInMyStyle(text, colorInt, width)
+            },
+            onDismiss = { viewModel.closeWriteInMyStyleDialog() }
+        )
+    }
+
+    if (viewModel.isScribbleModeActive) {
+        ScribbleOverlayBar(
+            recognizedText = viewModel.liveScribbleText,
+            onCopyText = { },
+            onInsertAsText = { viewModel.convertHandwritingToText() },
+            onClose = { viewModel.toggleScribbleMode() }
+        )
     }
 }
 

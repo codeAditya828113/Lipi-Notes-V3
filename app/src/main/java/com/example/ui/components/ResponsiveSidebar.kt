@@ -85,31 +85,10 @@ fun ResponsiveSidebar(
                     .fillMaxWidth()
                     .padding(bottom = 16.dp)
             ) {
-                Icon(
-                    imageVector = Icons.Default.AutoAwesome,
-                    contentDescription = "Lipi Logo",
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier
-                        .size(28.dp)
-                        .padding(end = 6.dp)
+                LipiBrandHeader(
+                    iconSize = 36.dp,
+                    showTagline = true
                 )
-                Column {
-                    Text(
-                        text = "Lipi",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        letterSpacing = (-0.3).sp,
-                        fontFamily = FontFamily.SansSerif
-                    )
-                    Text(
-                        text = "by Aditya Kumar",
-                        fontSize = 10.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontWeight = FontWeight.SemiBold,
-                        fontFamily = FontFamily.SansSerif
-                    )
-                }
             }
 
             // 2. User Account Card (Custom Dynamic Session)
@@ -445,6 +424,17 @@ fun ResponsiveSidebar(
                             onTabChange("notes")
                             onFilterChange("PDFs")
                             viewModel.selectNote(null)
+                        }
+                    )
+                }
+                item {
+                    FolderItem(
+                        icon = Icons.Default.DocumentScanner,
+                        label = "Scan Document",
+                        count = 0,
+                        isSelected = false,
+                        onClick = {
+                            viewModel.openDocumentScanner("sidebar")
                         }
                     )
                 }

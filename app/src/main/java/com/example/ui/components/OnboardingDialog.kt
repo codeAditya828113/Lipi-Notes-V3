@@ -115,11 +115,9 @@ fun OnboardingDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "Welcome to Lipi Notes",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontWeight = FontWeight.SemiBold
+                    LipiBrandHeader(
+                        iconSize = 32.dp,
+                        showTagline = true
                     )
                     TextButton(onClick = onDismiss) {
                         Text("Skip", color = MaterialTheme.colorScheme.primary)
