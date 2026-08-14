@@ -171,6 +171,10 @@ fun RedesignedAllNotesView(
         val categoryFiltered = when {
             selectedFilter in listOf("Handwritten", "Note") -> baseFiltered.filter { it.templateType in listOf("blank", "ruled", "grid") }
             selectedFilter in listOf("PDFs", "PDF", "Imported PDFs & Docs") -> baseFiltered.filter { it.templateType == "pdf" || it.templateType == "docx" || !it.pdfTitle.isNullOrEmpty() || it.title.contains(".pdf", ignoreCase = true) || it.title.contains("PDF", ignoreCase = true) }
+            selectedFilter in listOf("Voice Note", "Voice Notes") -> baseFiltered.filter { it.tags.contains("voicenote", ignoreCase = true) || it.title.contains("Voice Note", ignoreCase = true) || !it.audioPath.isNullOrEmpty() || !it.audioTranscription.isNullOrEmpty() }
+            selectedFilter in listOf("AI Summary", "Summaries") -> baseFiltered.filter { it.tags.contains("aisummary", ignoreCase = true) || it.title.contains("Summary", ignoreCase = true) || !it.summary.isNullOrEmpty() }
+            selectedFilter in listOf("Flashcards", "Flashcard Deck") -> baseFiltered.filter { it.tags.contains("flashcards", ignoreCase = true) || it.title.contains("Flashcards", ignoreCase = true) || it.title.contains("Deck", ignoreCase = true) }
+            selectedFilter in listOf("Mind Map", "Mind Maps") -> baseFiltered.filter { it.tags.contains("mindmap", ignoreCase = true) || it.title.contains("Mind Map", ignoreCase = true) }
             selectedFilter in listOf("Templates", "Folder", "Structural Templates") -> baseFiltered.filter { it.templateType in listOf("cornell", "meeting") }
             selectedFilter in listOf("Favorites", "Recent", "Starred") -> {
                 if (selectedFilter == "Favorites" || selectedFilter == "Starred") baseFiltered.filter { starredNoteIds.contains(it.id) }

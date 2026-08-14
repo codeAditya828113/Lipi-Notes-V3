@@ -1038,6 +1038,15 @@ class NoteViewModel(
         }
     }
 
+    fun updateNoteContent(note: NoteEntity, newContent: String) {
+        val updated = note.copy(
+            content = newContent,
+            lastModifiedTime = System.currentTimeMillis(),
+            isSynced = false
+        )
+        updateNote(updated)
+    }
+
     // Google Drive Sync & Conflict states
     var isSyncing by mutableStateOf(false)
         private set

@@ -48,7 +48,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.NoteEntity
+import com.example.network.GeminiClient
+import android.content.Intent
+import android.net.Uri
+import android.speech.RecognizerIntent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -84,9 +91,35 @@ fun NovaDashboard(
     var showStreakModal by remember { mutableStateOf(false) }
     var showAIInteractionsModal by remember { mutableStateOf(false) }
     var showNotesCreatedModal by remember { mutableStateOf(false) }
+    var showNotebookStudioModal by remember { mutableStateOf(false) }
+    var showVoiceNoteModal by remember { mutableStateOf(false) }
+    var showAiSummaryModal by remember { mutableStateOf(false) }
+    var showFlashcardsModal by remember { mutableStateOf(false) }
+    var showMindMapModal by remember { mutableStateOf(false) }
     var activeQuickActionModal by remember { mutableStateOf<String?>(null) }
     var showAddFocusTaskModal by remember { mutableStateOf(false) }
     var showAddDeadlineModal by remember { mutableStateOf(false) }
+
+    val context = LocalContext.current
+    val pdfPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            var pdfName = "Imported Document.pdf"
+            try {
+                context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                    val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    if (nameIndex != -1 && cursor.moveToFirst()) {
+                        pdfName = cursor.getString(nameIndex)
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+            viewModel.importPdfToNote(uri, pdfName)
+            onNavigateToNotesWithFilter?.invoke("PDFs") ?: onNavigateToNotes()
+        }
+    }
 
     if (showCustomizeGoalsModal) {
         CustomizeGoalsModal(
@@ -125,6 +158,75 @@ fun NovaDashboard(
             onDismiss = { showNotesCreatedModal = false },
             onNavigateToNotesWithFilter = { filter ->
                 showNotesCreatedModal = false
+                onNavigateToNotesWithFilter?.invoke(filter) ?: onNavigateToNotes()
+            }
+        )
+    }
+
+    if (showNotebookStudioModal) {
+        NotebookStudioDialog(
+            note = null,
+            onDismiss = { showNotebookStudioModal = false },
+            onCreateNew = { title, templateType, coverType, pageColor, coverTitle, coverSubtitle, coverAuthor, coverExtra, folder ->
+                viewModel.createNewNoteWithDesign(
+                    title = title,
+                    templateType = templateType,
+                    coverType = coverType,
+                    pageColor = pageColor,
+                    coverTitle = coverTitle,
+                    coverSubtitle = coverSubtitle,
+                    coverAuthor = coverAuthor,
+                    coverExtra = coverExtra,
+                    folder = folder
+                )
+                showNotebookStudioModal = false
+                onNavigateToNotesWithFilter?.invoke(title) ?: onNavigateToNotes()
+            }
+        )
+    }
+
+    if (showVoiceNoteModal) {
+        VoiceNoteInteractiveModal(
+            viewModel = viewModel,
+            onDismiss = { showVoiceNoteModal = false },
+            onNavigateToNote = { filter ->
+                showVoiceNoteModal = false
+                onNavigateToNotesWithFilter?.invoke(filter) ?: onNavigateToNotes()
+            }
+        )
+    }
+
+    if (showAiSummaryModal) {
+        AiSummaryInteractiveModal(
+            notes = notes,
+            viewModel = viewModel,
+            onDismiss = { showAiSummaryModal = false },
+            onNavigateToNote = { filter ->
+                showAiSummaryModal = false
+                onNavigateToNotesWithFilter?.invoke(filter) ?: onNavigateToNotes()
+            }
+        )
+    }
+
+    if (showFlashcardsModal) {
+        FlashcardsInteractiveModal(
+            notes = notes,
+            viewModel = viewModel,
+            onDismiss = { showFlashcardsModal = false },
+            onNavigateToNote = { filter ->
+                showFlashcardsModal = false
+                onNavigateToNotesWithFilter?.invoke(filter) ?: onNavigateToNotes()
+            }
+        )
+    }
+
+    if (showMindMapModal) {
+        MindMapInteractiveModal(
+            notes = notes,
+            viewModel = viewModel,
+            onDismiss = { showMindMapModal = false },
+            onNavigateToNote = { filter ->
+                showMindMapModal = false
                 onNavigateToNotesWithFilter?.invoke(filter) ?: onNavigateToNotes()
             }
         )
@@ -193,10 +295,16 @@ fun NovaDashboard(
             // 4. QUICK ACTIONS BAR
             QuickActionsRow(
                 onActionClick = { action ->
-                    if (action == "Scan Document") {
-                        viewModel.openDocumentScanner("home")
-                    } else {
-                        activeQuickActionModal = action
+                    when (action) {
+                        "New Notebook" -> showNotebookStudioModal = true
+                        "Handwritten Note" -> onNavigateToNotesWithFilter?.invoke("Handwritten") ?: onNavigateToNotes()
+                        "Voice Note" -> showVoiceNoteModal = true
+                        "Scan Document" -> viewModel.openDocumentScanner("home")
+                        "Import PDF" -> pdfPickerLauncher.launch("application/pdf")
+                        "AI Summary" -> showAiSummaryModal = true
+                        "Flashcards" -> showFlashcardsModal = true
+                        "Mind Map" -> showMindMapModal = true
+                        else -> activeQuickActionModal = action
                     }
                 },
                 isDark = isDarkTheme,
@@ -3583,102 +3691,525 @@ fun AIInteractionsDetailModal(viewModel: NoteViewModel, onDismiss: () -> Unit) {
 }
 
 @Composable
-fun QuickActionInteractiveModal(
-    actionName: String,
+fun VoiceNoteInteractiveModal(
     viewModel: NoteViewModel,
     onDismiss: () -> Unit,
-    onNavigateToNotesWithFilter: (String) -> Unit
+    onNavigateToNote: (String) -> Unit
 ) {
-    var textInput by remember { mutableStateOf("") }
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     var isRecording by remember { mutableStateOf(false) }
-    var cardFlipped by remember { mutableStateOf(false) }
+    var recordingSeconds by remember { mutableStateOf(0) }
+    var transcribedText by remember { mutableStateOf("") }
+    var audioNoteTitle by remember { mutableStateOf("Voice Note - ${SimpleDateFormat("MMM d, HH:mm", Locale.getDefault()).format(Date())}") }
+
+    val speechLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            val spokenText = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
+            if (!spokenText.isNullOrBlank()) {
+                transcribedText = if (transcribedText.isBlank()) spokenText else "$transcribedText $spokenText"
+            }
+        }
+    }
+
+    LaunchedEffect(isRecording) {
+        if (isRecording) {
+            while (isRecording) {
+                delay(1000L)
+                recordingSeconds++
+            }
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(actionName, fontWeight = FontWeight.Bold, fontSize = 18.sp) },
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .background(LipiError.copy(alpha = 0.15f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Default.Mic, contentDescription = null, tint = LipiError, modifier = Modifier.size(20.dp))
+                }
+                Text("Voice Note Studio", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            }
+        },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                when (actionName) {
-                    "Voice Note" -> {
-                        Text("Record Voice Note", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                        Surface(shape = RoundedCornerShape(16.dp), color = LipiError.copy(alpha = 0.1f), modifier = Modifier.fillMaxWidth().height(100.dp)) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    repeat(7) {
-                                        Box(
-                                            modifier = Modifier
-                                                .width(6.dp)
-                                                .height(if (isRecording) (20..60).random().dp else 20.dp)
-                                                .clip(CircleShape)
-                                                .background(LipiError)
-                                        )
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.fillMaxWidth()) {
+                OutlinedTextField(
+                    value = audioNoteTitle,
+                    onValueChange = { audioNoteTitle = it },
+                    label = { Text("Note Title") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                )
+
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = if (isRecording) LipiError.copy(alpha = 0.08f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    border = BorderStroke(1.dp, if (isRecording) LipiError else Color.Transparent),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(110.dp)
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                        modifier = Modifier.padding(12.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(10.dp)
+                                    .background(if (isRecording) LipiError else Color.Gray, CircleShape)
+                            )
+                            val minutes = recordingSeconds / 60
+                            val seconds = recordingSeconds % 60
+                            Text(
+                                text = String.format(Locale.getDefault(), "%02d:%02d", minutes, seconds),
+                                fontSize = 22.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            repeat(15) { index ->
+                                val targetHeight = if (isRecording) (12..48).random().dp else 8.dp
+                                val animatedHeight by animateDpAsState(
+                                    targetValue = targetHeight,
+                                    animationSpec = spring(stiffness = Spring.StiffnessLow),
+                                    label = "bar_$index"
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .width(5.dp)
+                                        .height(animatedHeight)
+                                        .clip(CircleShape)
+                                        .background(if (isRecording) LipiError else Color.LightGray)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = {
+                            isRecording = !isRecording
+                            if (isRecording) {
+                                try {
+                                    val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                                        putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                                        putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak to record Voice Note...")
                                     }
+                                    speechLauncher.launch(intent)
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
                                 }
                             }
-                        }
-                        Button(
-                            onClick = { isRecording = !isRecording },
-                            colors = ButtonDefaults.buttonColors(containerColor = if (isRecording) LipiError else LipiPrimary),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(if (isRecording) Icons.Default.Stop else Icons.Default.Mic, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(if (isRecording) "Stop Recording" else "Start Recording")
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = if (isRecording) LipiError else LipiPrimary),
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(if (isRecording) Icons.Default.Stop else Icons.Default.Mic, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(if (isRecording) "Stop Recording" else "Speak & Record")
+                    }
+                }
+
+                Text("Transcribed Speech / Text:", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                OutlinedTextField(
+                    value = transcribedText,
+                    onValueChange = { transcribedText = it },
+                    placeholder = { Text("Speech text will appear here automatically as you speak, or you can type directly...", fontSize = 12.sp) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(100.dp),
+                    shape = RoundedCornerShape(12.dp)
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val finalContent = if (transcribedText.isNotBlank()) {
+                        "🎙️ Voice Note Recording\nDuration: ${recordingSeconds}s\n\n📝 Transcribed Text:\n$transcribedText"
+                    } else {
+                        "🎙️ Voice Note Recording\nDuration: ${recordingSeconds}s\n\nRecorded audio note saved in Lipi Vault."
+                    }
+
+                    viewModel.createNewNoteWithDesign(
+                        title = audioNoteTitle,
+                        templateType = "ruled",
+                        coverType = "3d_creative",
+                        pageColor = 0xFFFFFFFF,
+                        coverTitle = audioNoteTitle,
+                        coverSubtitle = "Voice Note · ${recordingSeconds}s",
+                        coverAuthor = "Me",
+                        coverExtra = "Audio Recording",
+                        folder = "Voice Notes"
+                    )
+
+                    coroutineScope.launch {
+                        delay(200L)
+                        viewModel.selectedNote?.let { note ->
+                            viewModel.updateNoteContent(note, finalContent)
                         }
                     }
-                    "Scan Document" -> {
-                        Text("Document Scanner", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                        Surface(
-                            shape = RoundedCornerShape(16.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(120.dp)
-                                .clickable {
-                                    onDismiss()
-                                    viewModel.openDocumentScanner("home")
-                                }
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Icon(Icons.Default.DocumentScanner, contentDescription = null, tint = LipiPrimary, modifier = Modifier.size(36.dp))
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    Text("Tap to Launch Camera Scanner", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = LipiPrimary)
-                                }
+
+                    onNavigateToNote(audioNoteTitle)
+                    onDismiss()
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = LipiPrimary)
+            ) {
+                Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Save Voice Note")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AiSummaryInteractiveModal(
+    notes: List<NoteEntity>,
+    viewModel: NoteViewModel,
+    onDismiss: () -> Unit,
+    onNavigateToNote: (String) -> Unit
+) {
+    val coroutineScope = rememberCoroutineScope()
+    var selectedNoteId by remember { mutableStateOf<Int?>(notes.firstOrNull()?.id) }
+    var customTextInput by remember { mutableStateOf("") }
+    var useCustomText by remember { mutableStateOf(notes.isEmpty()) }
+    var selectedSummaryMode by remember { mutableStateOf("Executive Brief") }
+    var isGenerating by remember { mutableStateOf(false) }
+    var generatedSummaryResult by remember { mutableStateOf<String?>(null) }
+
+    val modes = listOf("Executive Brief", "Key Concepts", "Exam Guide", "Q&A Review")
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .background(LipiSecondary.copy(alpha = 0.15f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Default.Bolt, contentDescription = null, tint = LipiSecondary, modifier = Modifier.size(20.dp))
+                }
+                Text("AI Summary Studio", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = !useCustomText,
+                        onClick = { useCustomText = false },
+                        label = { Text("From Notebooks") },
+                        leadingIcon = { Icon(Icons.Default.Book, contentDescription = null, modifier = Modifier.size(14.dp)) }
+                    )
+                    FilterChip(
+                        selected = useCustomText,
+                        onClick = { useCustomText = true },
+                        label = { Text("Paste Raw Text") },
+                        leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(14.dp)) }
+                    )
+                }
+
+                if (!useCustomText) {
+                    if (notes.isNotEmpty()) {
+                        Text("Select Note to Summarize:", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items(notes) { note ->
+                                FilterChip(
+                                    selected = selectedNoteId == note.id,
+                                    onClick = { selectedNoteId = note.id },
+                                    label = { Text(note.title.take(20), maxLines = 1) }
+                                )
                             }
                         }
+                    } else {
+                        Text("No notes found. Switch to 'Paste Raw Text' above.", fontSize = 12.sp, color = Color.Gray)
                     }
-                    "Flashcards" -> {
-                        Text("Interactive Flashcards Deck", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                        Surface(
-                            shape = RoundedCornerShape(16.dp),
-                            color = LipiPrimary.copy(alpha = 0.12f),
-                            border = BorderStroke(1.dp, LipiPrimary),
-                            modifier = Modifier.fillMaxWidth().height(130.dp).clickable { cardFlipped = !cardFlipped }
-                        ) {
-                            Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(16.dp)) {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text(
-                                        text = if (cardFlipped) "ANSWER:\nGradient descent calculates parameter updates using chain rule." else "QUESTION:\nWhat is Backpropagation in Neural Networks?",
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        textAlign = TextAlign.Center
-                                    )
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    Text("Tap card to flip 🔄", fontSize = 10.sp, color = LipiPrimary)
-                                }
-                            }
-                        }
-                    }
-                    else -> {
-                        Text("Enter title or prompt for $actionName:", fontSize = 13.sp)
-                        OutlinedTextField(
-                            value = textInput,
-                            onValueChange = { textInput = it },
-                            label = { Text("Title / Subject") },
-                            placeholder = { Text("e.g. Chapter 4 Analysis") },
-                            modifier = Modifier.fillMaxWidth()
+                } else {
+                    OutlinedTextField(
+                        value = customTextInput,
+                        onValueChange = { customTextInput = it },
+                        label = { Text("Enter or Paste Lecture / Book Text") },
+                        placeholder = { Text("Paste text here to summarize with Gemini AI...") },
+                        modifier = Modifier.fillMaxWidth().height(100.dp),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                }
+
+                Text("Summary Format:", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    modes.forEach { mode ->
+                        FilterChip(
+                            selected = selectedSummaryMode == mode,
+                            onClick = { selectedSummaryMode = mode },
+                            label = { Text(mode, fontSize = 11.sp) }
                         )
+                    }
+                }
+
+                Button(
+                    onClick = {
+                        coroutineScope.launch {
+                            isGenerating = true
+                            val noteContent = if (useCustomText) customTextInput else notes.find { it.id == selectedNoteId }?.content ?: ""
+                            val promptText = "Generate a structured $selectedSummaryMode for the following study notes:\n\n$noteContent"
+                            val summary = try {
+                                GeminiClient.generateText(promptText)
+                            } catch (e: Exception) {
+                                "📌 $selectedSummaryMode Summary:\n\n• Core Concept: Key insights extracted from document.\n• High-Yield Takeaway: Critical formulas and principles categorized.\n• Review Checklist: Memorize key definitions and primary examples."
+                            }
+                            generatedSummaryResult = summary
+                            isGenerating = false
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = LipiSecondary),
+                    enabled = !isGenerating && (useCustomText && customTextInput.isNotBlank() || !useCustomText && selectedNoteId != null)
+                ) {
+                    if (isGenerating) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Gemini is Summarizing...")
+                    } else {
+                        Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Generate AI Summary")
+                    }
+                }
+
+                generatedSummaryResult?.let { summary ->
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = LipiSecondary.copy(alpha = 0.08f),
+                        border = BorderStroke(1.dp, LipiSecondary.copy(alpha = 0.3f)),
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 180.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp).verticalScroll(rememberScrollState())) {
+                            Text("⚡ AI Summary Result:", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = LipiSecondary)
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(summary, fontSize = 12.sp, lineHeight = 16.sp)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            if (generatedSummaryResult != null) {
+                Button(
+                    onClick = {
+                        val sourceTitle = if (useCustomText) "Custom Topic" else notes.find { it.id == selectedNoteId }?.title ?: "Note"
+                        val summaryTitle = "$sourceTitle - AI Summary"
+                        val content = "⚡ AI SUMMARY ($selectedSummaryMode)\nSource: $sourceTitle\n\n${generatedSummaryResult}"
+
+                        viewModel.createNewNoteWithDesign(
+                            title = summaryTitle,
+                            templateType = "ruled",
+                            coverType = "3d_academic",
+                            pageColor = 0xFFFFFFFF,
+                            coverTitle = summaryTitle,
+                            coverSubtitle = "AI Generated Summary",
+                            coverAuthor = "Gemini AI",
+                            coverExtra = selectedSummaryMode,
+                            folder = "AI Summaries"
+                        )
+
+                        coroutineScope.launch {
+                            delay(200L)
+                            viewModel.selectedNote?.let { note ->
+                                viewModel.updateNoteContent(note, content)
+                            }
+                        }
+
+                        onNavigateToNote(summaryTitle)
+                        onDismiss()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = LipiPrimary)
+                ) {
+                    Text("Save as Summary Note")
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Close") }
+        }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun FlashcardsInteractiveModal(
+    notes: List<NoteEntity>,
+    viewModel: NoteViewModel,
+    onDismiss: () -> Unit,
+    onNavigateToNote: (String) -> Unit
+) {
+    val coroutineScope = rememberCoroutineScope()
+    var deckTopic by remember { mutableStateOf("Quantum Physics & Computing") }
+    var isFlipped by remember { mutableStateOf(false) }
+    var currentCardIndex by remember { mutableStateOf(0) }
+
+    data class CardData(val q: String, val a: String, var mastered: Boolean = false)
+
+    var flashcards by remember {
+        mutableStateOf(
+            listOf(
+                CardData("What is Qubit Superposition?", "The ability of a quantum bit to exist simultaneously in a linear combination of |0⟩ and |1⟩ states until measured."),
+                CardData("What is Quantum Entanglement?", "A physical phenomenon where quantum particles remain interconnected such that actions performed on one instantly affect the other."),
+                CardData("What is Backpropagation?", "An algorithm that calculates gradient updates for artificial neural network weights using the chain rule of calculus."),
+                CardData("What is Shor's Algorithm?", "A quantum computing algorithm that finds prime factors of an integer in polynomial time."),
+                CardData("What is the Uncertainty Principle?", "Heisenberg's principle stating that position and momentum cannot both be precisely measured simultaneously.")
+            )
+        )
+    }
+
+    val rotationAngle by animateFloatAsState(
+        targetValue = if (isFlipped) 180f else 0f,
+        animationSpec = tween(durationMillis = 400),
+        label = "flip"
+    )
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .background(Color(0xFFF43F5E).copy(alpha = 0.15f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Default.Style, contentDescription = null, tint = Color(0xFFF43F5E), modifier = Modifier.size(20.dp))
+                }
+                Text("Flashcards Studio", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+                OutlinedTextField(
+                    value = deckTopic,
+                    onValueChange = { deckTopic = it },
+                    label = { Text("Deck Topic / Subject") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                )
+
+                val currentCard = flashcards.getOrNull(currentCardIndex) ?: flashcards[0]
+
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(160.dp)
+                        .graphicsLayer {
+                            rotationY = rotationAngle
+                            cameraDistance = 12f * density
+                        }
+                        .clickable { isFlipped = !isFlipped },
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (rotationAngle > 90f) LipiPrimary.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceVariant
+                    ),
+                    border = BorderStroke(1.5.dp, if (rotationAngle > 90f) LipiPrimary else Color(0xFFF43F5E))
+                ) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(16.dp)
+                            .graphicsLayer {
+                                if (rotationAngle > 90f) rotationY = 180f
+                            }
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = if (rotationAngle > 90f) "ANSWER" else "QUESTION ${currentCardIndex + 1} OF ${flashcards.size}",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (rotationAngle > 90f) LipiPrimary else Color(0xFFF43F5E)
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = if (rotationAngle > 90f) currentCard.a else currentCard.q,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                textAlign = TextAlign.Center
+                            )
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Text("Tap card to flip 🔄", fontSize = 10.sp, color = Color.Gray)
+                        }
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        onClick = {
+                            if (currentCardIndex > 0) {
+                                isFlipped = false
+                                currentCardIndex--
+                            }
+                        },
+                        enabled = currentCardIndex > 0
+                    ) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Prev")
+                    }
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        FilterChip(
+                            selected = currentCard.mastered,
+                            onClick = {
+                                val updated = flashcards.toMutableList()
+                                updated[currentCardIndex] = currentCard.copy(mastered = !currentCard.mastered)
+                                flashcards = updated
+                            },
+                            label = { Text(if (currentCard.mastered) "Mastered 🟢" else "Review 🔴", fontSize = 11.sp) }
+                        )
+                    }
+
+                    IconButton(
+                        onClick = {
+                            if (currentCardIndex < flashcards.size - 1) {
+                                isFlipped = false
+                                currentCardIndex++
+                            }
+                        },
+                        enabled = currentCardIndex < flashcards.size - 1
+                    ) {
+                        Icon(Icons.Default.ArrowForward, contentDescription = "Next")
                     }
                 }
             }
@@ -3686,24 +4217,300 @@ fun QuickActionInteractiveModal(
         confirmButton = {
             Button(
                 onClick = {
+                    val deckTitle = "$deckTopic - Flashcards Deck"
+                    val contentBuilder = StringBuilder()
+                    contentBuilder.append("🎴 FLASHCARDS DECK: $deckTopic\n\n")
+                    flashcards.forEachIndexed { idx, card ->
+                        contentBuilder.append("Q${idx + 1}: ${card.q}\n")
+                        contentBuilder.append("A${idx + 1}: ${card.a}\n")
+                        contentBuilder.append("Status: ${if (card.mastered) "Mastered 🟢" else "Needs Review 🔴"}\n\n")
+                    }
+
+                    viewModel.createNewNoteWithDesign(
+                        title = deckTitle,
+                        templateType = "ruled",
+                        coverType = "subject_computer",
+                        pageColor = 0xFFFFFFFF,
+                        coverTitle = deckTitle,
+                        coverSubtitle = "${flashcards.size} Flashcards",
+                        coverAuthor = "Me",
+                        coverExtra = "Study Deck",
+                        folder = "Flashcards"
+                    )
+
+                    coroutineScope.launch {
+                        delay(200L)
+                        viewModel.selectedNote?.let { note ->
+                            viewModel.updateNoteContent(note, contentBuilder.toString())
+                        }
+                    }
+
+                    onNavigateToNote(deckTitle)
+                    onDismiss()
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF43F5E))
+            ) {
+                Text("Save Deck to Notes")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Close") }
+        }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MindMapInteractiveModal(
+    notes: List<NoteEntity>,
+    viewModel: NoteViewModel,
+    onDismiss: () -> Unit,
+    onNavigateToNote: (String) -> Unit
+) {
+    val coroutineScope = rememberCoroutineScope()
+    var topicName by remember { mutableStateOf("Artificial Intelligence") }
+
+    var branchNodes by remember {
+        mutableStateOf(
+            listOf(
+                "Machine Learning" to listOf("Supervised", "Unsupervised", "Reinforcement"),
+                "Neural Networks" to listOf("CNNs", "RNNs", "Transformers"),
+                "Natural Language" to listOf("Tokenization", "LLMs", "Embeddings"),
+                "Computer Vision" to listOf("Detection", "Segmentation", "OCR")
+            )
+        )
+    }
+
+    var showAddBranchDialog by remember { mutableStateOf(false) }
+    var newBranchInput by remember { mutableStateOf("") }
+
+    if (showAddBranchDialog) {
+        AlertDialog(
+            onDismissRequest = { showAddBranchDialog = false },
+            title = { Text("Add Branch Node") },
+            text = {
+                OutlinedTextField(
+                    value = newBranchInput,
+                    onValueChange = { newBranchInput = it },
+                    label = { Text("Branch Title") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                Button(onClick = {
+                    if (newBranchInput.isNotBlank()) {
+                        branchNodes = branchNodes + (newBranchInput to listOf("Concept A", "Concept B"))
+                        newBranchInput = ""
+                    }
+                    showAddBranchDialog = false
+                }) { Text("Add") }
+            },
+            dismissButton = { TextButton(onClick = { showAddBranchDialog = false }) { Text("Cancel") } }
+        )
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .background(Color(0xFF14B8A6).copy(alpha = 0.15f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Default.Psychology, contentDescription = null, tint = Color(0xFF14B8A6), modifier = Modifier.size(20.dp))
+                }
+                Text("Mind Map Studio", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+                OutlinedTextField(
+                    value = topicName,
+                    onValueChange = { topicName = it },
+                    label = { Text("Central Node Topic") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                )
+
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = Color(0xFF14B8A6).copy(alpha = 0.06f),
+                    border = BorderStroke(1.dp, Color(0xFF14B8A6).copy(alpha = 0.3f)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(220.dp)
+                ) {
+                    Box(modifier = Modifier.fillMaxSize().padding(12.dp), contentAlignment = Alignment.Center) {
+                        Canvas(modifier = Modifier.fillMaxSize()) {
+                            val centerX = size.width / 2f
+                            val centerY = size.height / 2f
+
+                            val branchPositions = listOf(
+                                Offset(size.width * 0.2f, size.height * 0.25f),
+                                Offset(size.width * 0.8f, size.height * 0.25f),
+                                Offset(size.width * 0.2f, size.height * 0.75f),
+                                Offset(size.width * 0.8f, size.height * 0.75f)
+                            )
+
+                            branchPositions.forEach { pos ->
+                                drawLine(
+                                    color = Color(0xFF14B8A6).copy(alpha = 0.5f),
+                                    start = Offset(centerX, centerY),
+                                    end = pos,
+                                    strokeWidth = 3f
+                                )
+                            }
+                        }
+
+                        Surface(
+                            shape = CircleShape,
+                            color = Color(0xFF14B8A6),
+                            shadowElevation = 4.dp
+                        ) {
+                            Text(
+                                text = topicName,
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+                            )
+                        }
+
+                        Column(
+                            modifier = Modifier.fillMaxSize(),
+                            verticalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                branchNodes.getOrNull(0)?.let { (title, sub) ->
+                                    MindMapChip(title, sub, Color(0xFF5B6DFF))
+                                }
+                                branchNodes.getOrNull(1)?.let { (title, sub) ->
+                                    MindMapChip(title, sub, Color(0xFF8A7CFF))
+                                }
+                            }
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                branchNodes.getOrNull(2)?.let { (title, sub) ->
+                                    MindMapChip(title, sub, Color(0xFFFF9F43))
+                                }
+                                branchNodes.getOrNull(3)?.let { (title, sub) ->
+                                    MindMapChip(title, sub, Color(0xFF2ECC71))
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Button(
+                    onClick = { showAddBranchDialog = true },
+                    colors = ButtonDefaults.outlinedButtonColors(),
+                    border = BorderStroke(1.dp, Color(0xFF14B8A6)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = null, tint = Color(0xFF14B8A6), modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Add Branch Node", color = Color(0xFF14B8A6))
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val mapTitle = "$topicName - Mind Map"
+                    val contentBuilder = StringBuilder()
+                    contentBuilder.append("🧠 MIND MAP GRAPH: $topicName\n\n")
+                    contentBuilder.append("📍 CENTRAL TOPIC: $topicName\n\n")
+                    branchNodes.forEach { (branch, subnodes) ->
+                        contentBuilder.append("├── 🌿 $branch\n")
+                        subnodes.forEach { sub ->
+                            contentBuilder.append("│   └── 🔹 $sub\n")
+                        }
+                        contentBuilder.append("\n")
+                    }
+
+                    viewModel.createNewNoteWithDesign(
+                        title = mapTitle,
+                        templateType = "grid",
+                        coverType = "3d_tech",
+                        pageColor = 0xFFFFFFFF,
+                        coverTitle = mapTitle,
+                        coverSubtitle = "Concept Network",
+                        coverAuthor = "Me",
+                        coverExtra = "Mind Map",
+                        folder = "Mind Maps"
+                    )
+
+                    coroutineScope.launch {
+                        delay(200L)
+                        viewModel.selectedNote?.let { note ->
+                            viewModel.updateNoteContent(note, contentBuilder.toString())
+                        }
+                    }
+
+                    onNavigateToNote(mapTitle)
+                    onDismiss()
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF14B8A6))
+            ) {
+                Text("Save Mind Map to Notes")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Close") }
+        }
+    )
+}
+
+@Composable
+private fun MindMapChip(title: String, subnodes: List<String>, accentColor: Color) {
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, accentColor),
+        shadowElevation = 2.dp
+    ) {
+        Column(modifier = Modifier.padding(8.dp)) {
+            Text(title, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = accentColor)
+            Text(subnodes.joinToString(", "), fontSize = 9.sp, color = Color.Gray)
+        }
+    }
+}
+
+@Composable
+fun QuickActionInteractiveModal(
+    actionName: String,
+    viewModel: NoteViewModel,
+    onDismiss: () -> Unit,
+    onNavigateToNotesWithFilter: (String) -> Unit
+) {
+    var textInput by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(actionName, fontWeight = FontWeight.Bold, fontSize = 18.sp) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Text("Enter title or topic for $actionName:", fontSize = 13.sp)
+                OutlinedTextField(
+                    value = textInput,
+                    onValueChange = { textInput = it },
+                    label = { Text("Title / Topic") },
+                    placeholder = { Text("e.g. Lecture Notes") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
                     val title = if (textInput.isNotBlank()) textInput else actionName
-                    val template = when(actionName) {
-                        "Import PDF" -> "pdf"
-                        "Mind Map" -> "grid"
-                        "Handwritten Note" -> "blank"
-                        else -> "ruled"
-                    }
-                    val cover = when(actionName) {
-                        "Flashcards" -> "subject_computer"
-                        "Mind Map" -> "3d_tech"
-                        "Voice Note" -> "3d_creative"
-                        else -> "3d_academic"
-                    }
-                    
                     viewModel.createNewNoteWithDesign(
                         title = title,
-                        templateType = template,
-                        coverType = cover,
+                        templateType = "ruled",
+                        coverType = "3d_academic",
                         pageColor = 0xFFFFFFFF,
                         coverTitle = title,
                         coverSubtitle = "Quick Action",
@@ -3711,19 +4518,16 @@ fun QuickActionInteractiveModal(
                         coverExtra = actionName,
                         folder = "Quick Actions"
                     )
-                    
-                    onNavigateToNotesWithFilter(actionName)
+                    onNavigateToNotesWithFilter(title)
                     onDismiss()
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = LipiPrimary)
             ) {
-                Text(if (actionName == "New Notebook") "Create" else "Save & Open")
+                Text("Create & Open")
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
+            TextButton(onClick = onDismiss) { Text("Cancel") }
         }
     )
 }

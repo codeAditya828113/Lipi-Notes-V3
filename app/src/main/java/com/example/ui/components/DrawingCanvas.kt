@@ -1051,37 +1051,18 @@ fun DrawingCanvas(
                                         view.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
                                     } catch (e: Exception) {}
                                 } else {
-                                    // Check for shape or stroke on long press
+                                    // Check ONLY for explicit geometric shape on long press (toolType == "shapes" or fillShape == true)
                                     val pageStrokes = strokes.filter { it.page == targetPage || (pdfPageCount <= 1 && it.page <= 1) }
                                     var targetShape: com.example.data.Stroke? = null
 
-                                    // Pass 1: Prioritize explicit shapes (toolType == "shapes" or fillShape == true)
                                     for (s in pageStrokes.reversed()) {
-                                        val box = SmartInkEngine.getBoundingBox(s)
-                                        val padding = 35f
-                                        if (targetNormX >= box.left - padding && targetNormX <= box.right + padding &&
-                                            targetNormY >= box.top - padding && targetNormY <= box.bottom + padding) {
-                                            if (s.toolType == "shapes" || s.fillShape) {
-                                                targetShape = s
-                                                break
-                                            }
-                                        }
-                                    }
-
-                                    // Pass 2: Check any stroke whose bounding box or points match touch location
-                                    if (targetShape == null) {
-                                        for (s in pageStrokes.reversed()) {
+                                        if (s.toolType == "shapes" || s.fillShape) {
                                             val box = SmartInkEngine.getBoundingBox(s)
                                             val padding = 35f
                                             if (targetNormX >= box.left - padding && targetNormX <= box.right + padding &&
                                                 targetNormY >= box.top - padding && targetNormY <= box.bottom + padding) {
-                                                val isNearPoint = s.points.any { pt ->
-                                                    kotlin.math.hypot(pt.x - targetNormX, pt.y - targetNormY) <= 45f
-                                                }
-                                                if (isNearPoint || s.toolType == "pen" || s.toolType == "highlighter") {
-                                                    targetShape = s
-                                                    break
-                                                }
+                                                targetShape = s
+                                                break
                                             }
                                         }
                                     }
