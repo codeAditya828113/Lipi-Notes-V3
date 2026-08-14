@@ -1461,12 +1461,13 @@ fun DrawingCanvas(
                                 val width = stroke.width
                                 
                                 // Cached path lookup for completed strokes to avoid re-constructing Path every frame
+                                val isShapeStroke = stroke.toolType == "shapes" || stroke.toolType == "ruler"
                                 val path = if (!isLassoed) {
                                     strokePathCache.getOrPut(stroke) {
-                                        buildSmoothPath(points, strokePage, fromNormalizedX, fromNormalizedY)
+                                        buildSmoothPath(points, strokePage, fromNormalizedX, fromNormalizedY, isShape = isShapeStroke)
                                     }
                                 } else {
-                                    buildSmoothPath(points, strokePage, fromNormalizedX, fromNormalizedY)
+                                    buildSmoothPath(points, strokePage, fromNormalizedX, fromNormalizedY, isShape = isShapeStroke)
                                 }
 
                                 if (stroke.fillShape && stroke.fillOpacity > 0f) {
@@ -1692,7 +1693,8 @@ fun DrawingCanvas(
                                 val color = androidx.compose.ui.graphics.Color(strokeColorInt).copy(alpha = baseAlpha * alphaMult)
                                 val width = stroke.width
                                 
-                                val path = buildSmoothPath(points, strokePage, fromNormalizedX, fromNormalizedY)
+                                val isShapeStroke = stroke.toolType == "shapes" || stroke.toolType == "ruler"
+                                val path = buildSmoothPath(points, strokePage, fromNormalizedX, fromNormalizedY, isShape = isShapeStroke)
 
                                 if (stroke.fillShape && stroke.fillOpacity > 0f) {
                                     drawPath(
@@ -2355,7 +2357,8 @@ fun buildSmoothPath(
     points: List<com.example.data.Point>,
     strokePage: Int,
     fromNormalizedX: (Float, Int) -> Float,
-    fromNormalizedY: (Float, Int) -> Float
+    fromNormalizedY: (Float, Int) -> Float,
+    isShape: Boolean = false
 ): androidx.compose.ui.graphics.Path {
     val path = androidx.compose.ui.graphics.Path()
     if (points.isEmpty()) return path
@@ -2371,9 +2374,11 @@ fun buildSmoothPath(
         return path
     }
 
-    if (n == 2) {
-        val p2 = points[1]
-        path.lineTo(fromNormalizedX(p2.x, strokePage), fromNormalizedY(p2.y, strokePage))
+    if (n == 2 || isShape) {
+        for (i in 1 until n) {
+            val pt = points[i]
+            path.lineTo(fromNormalizedX(pt.x, strokePage), fromNormalizedY(pt.y, strokePage))
+        }
         return path
     }
 

@@ -48,12 +48,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.NoteEntity
-import com.example.network.GeminiClient
 import android.content.Intent
 import android.net.Uri
 import android.speech.RecognizerIntent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -84,17 +84,15 @@ fun NovaDashboard(
     onMenuClick: () -> Unit,
     isTablet: Boolean,
     modifier: Modifier = Modifier,
-    onNavigateToNotesWithFilter: ((String) -> Unit)? = null
+    onNavigateToNotesWithFilter: ((String) -> Unit)? = null,
+    userViewModel: UserViewModel? = null
 ) {
     var showCustomizeGoalsModal by remember { mutableStateOf(false) }
     var showStudyProgressModal by remember { mutableStateOf(false) }
     var showStreakModal by remember { mutableStateOf(false) }
-    var showAIInteractionsModal by remember { mutableStateOf(false) }
     var showNotesCreatedModal by remember { mutableStateOf(false) }
     var showNotebookStudioModal by remember { mutableStateOf(false) }
     var showVoiceNoteModal by remember { mutableStateOf(false) }
-    var showAiSummaryModal by remember { mutableStateOf(false) }
-    var showFlashcardsModal by remember { mutableStateOf(false) }
     var showMindMapModal by remember { mutableStateOf(false) }
     var activeQuickActionModal by remember { mutableStateOf<String?>(null) }
     var showAddFocusTaskModal by remember { mutableStateOf(false) }
@@ -144,13 +142,6 @@ fun NovaDashboard(
         )
     }
 
-    if (showAIInteractionsModal) {
-        AIInteractionsDetailModal(
-            viewModel = viewModel,
-            onDismiss = { showAIInteractionsModal = false }
-        )
-    }
-
     if (showNotesCreatedModal) {
         NotesCreatedDetailModal(
             notes = notes,
@@ -191,30 +182,6 @@ fun NovaDashboard(
             onDismiss = { showVoiceNoteModal = false },
             onNavigateToNote = { filter ->
                 showVoiceNoteModal = false
-                onNavigateToNotesWithFilter?.invoke(filter) ?: onNavigateToNotes()
-            }
-        )
-    }
-
-    if (showAiSummaryModal) {
-        AiSummaryInteractiveModal(
-            notes = notes,
-            viewModel = viewModel,
-            onDismiss = { showAiSummaryModal = false },
-            onNavigateToNote = { filter ->
-                showAiSummaryModal = false
-                onNavigateToNotesWithFilter?.invoke(filter) ?: onNavigateToNotes()
-            }
-        )
-    }
-
-    if (showFlashcardsModal) {
-        FlashcardsInteractiveModal(
-            notes = notes,
-            viewModel = viewModel,
-            onDismiss = { showFlashcardsModal = false },
-            onNavigateToNote = { filter ->
-                showFlashcardsModal = false
                 onNavigateToNotesWithFilter?.invoke(filter) ?: onNavigateToNotes()
             }
         )
@@ -266,7 +233,9 @@ fun NovaDashboard(
                 onMenuClick = onMenuClick,
                 onNavigateToNotes = onNavigateToNotes,
                 onCustomizeGoals = { showCustomizeGoalsModal = true },
-                isDark = isDarkTheme
+                onStreakClick = { showStreakModal = true },
+                isDark = isDarkTheme,
+                userViewModel = userViewModel
             )
 
             // 2. TOP METRICS ROW (Hierarchy with Hero Progress Card)
@@ -279,11 +248,11 @@ fun NovaDashboard(
                 onStudyProgressClick = { showStudyProgressModal = true },
                 onStreakClick = { showStreakModal = true },
                 onNotesCreatedClick = { showNotesCreatedModal = true },
-                onAIInteractionsClick = { showAIInteractionsModal = true }
+                onVoiceNotesClick = { showVoiceNoteModal = true }
             )
 
-            // 3. MAIN FEATURE: LARGE GLOWING AI SEARCH BAR
-            HeroAISearchBar(
+            // 3. MAIN FEATURE: SEARCH BAR
+            HeroSearchBar(
                 onSearchSubmitted = { query ->
                     onNavigateToNotesWithFilter?.invoke(query) ?: onNavigateToNotes()
                 },
@@ -301,8 +270,34 @@ fun NovaDashboard(
                         "Voice Note" -> showVoiceNoteModal = true
                         "Scan Document" -> viewModel.openDocumentScanner("home")
                         "Import PDF" -> pdfPickerLauncher.launch("application/pdf")
-                        "AI Summary" -> showAiSummaryModal = true
-                        "Flashcards" -> showFlashcardsModal = true
+                        "Cornell Notes" -> {
+                            viewModel.createNewNoteWithDesign(
+                                title = "Cornell Notes",
+                                templateType = "cornell",
+                                coverType = "3d_academic",
+                                pageColor = 0xFFFFFFFF,
+                                coverTitle = "Cornell Notes",
+                                coverSubtitle = "Cue Column & Summary",
+                                coverAuthor = "Me",
+                                coverExtra = "Study",
+                                folder = "Lectures"
+                            )
+                            onNavigateToNotesWithFilter?.invoke("Cornell Notes") ?: onNavigateToNotes()
+                        }
+                        "Grid Canvas" -> {
+                            viewModel.createNewNoteWithDesign(
+                                title = "Grid Notebook",
+                                templateType = "grid",
+                                coverType = "subject_math",
+                                pageColor = 0xFFFFFFFF,
+                                coverTitle = "Grid Canvas",
+                                coverSubtitle = "Math & Sketches",
+                                coverAuthor = "Me",
+                                coverExtra = "Calculations",
+                                folder = "Math"
+                            )
+                            onNavigateToNotesWithFilter?.invoke("Grid Notebook") ?: onNavigateToNotes()
+                        }
                         "Mind Map" -> showMindMapModal = true
                         else -> activeQuickActionModal = action
                     }
@@ -351,8 +346,8 @@ fun NovaDashboard(
                 cardBg = cardBg
             )
 
-            // 7. AI SUGGESTIONS
-            AISuggestionsSection(
+            // 7. QUICK TEMPLATES & SHORTCUTS
+            QuickTemplatesSection(
                 onSuggestionClick = { prompt ->
                     onNavigateToNotesWithFilter?.invoke(prompt) ?: onNavigateToNotes()
                 },
@@ -385,7 +380,9 @@ private fun HomeHeroHeader(
     onMenuClick: () -> Unit,
     onNavigateToNotes: () -> Unit,
     onCustomizeGoals: () -> Unit,
-    isDark: Boolean
+    onStreakClick: () -> Unit = {},
+    isDark: Boolean,
+    userViewModel: UserViewModel? = null
 ) {
     val todayDate = remember {
         val sdf = SimpleDateFormat("EEEE, MMMM d, yyyy", Locale.getDefault())
@@ -401,10 +398,10 @@ private fun HomeHeroHeader(
         }
     }
 
-    val context = LocalContext.current
-    val isSignedIn = GoogleDriveBackupHelper.isSignedIn(context)
-    val accountName = if (isSignedIn) GoogleDriveBackupHelper.getSavedAccountName(context) else ""
-    val firstName = if (accountName.isNotBlank()) accountName.split(" ").firstOrNull() ?: "Aditya" else "Aditya"
+    val actualUserViewModel = userViewModel ?: androidx.lifecycle.viewmodel.compose.viewModel<UserViewModel>()
+    val userProfile by actualUserViewModel.userProfile.collectAsStateWithLifecycle()
+    val firstName = userProfile.firstName
+    val greetingText = if (firstName.isNotBlank()) "$greeting, $firstName 👋" else "$greeting 👋"
 
     val textPrimary = if (isDark) Color.White else Color(0xFF1E293B)
     val textSecondary = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
@@ -448,7 +445,7 @@ private fun HomeHeroHeader(
 
                                 Column {
                                     Text(
-                                        text = "$greeting, $firstName 👋",
+                                        text = greetingText,
                                         fontSize = 20.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = textPrimary,
@@ -500,7 +497,7 @@ private fun HomeHeroHeader(
 
                             Column {
                                 Text(
-                                    text = "$greeting, $firstName 👋",
+                                    text = greetingText,
                                     fontSize = if (isTablet) 30.sp else 24.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = textPrimary,
@@ -509,7 +506,7 @@ private fun HomeHeroHeader(
                                 )
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    text = "Ready to continue learning with Lipi AI?",
+                                    text = "Ready to create and organize your notes?",
                                     fontSize = 15.sp,
                                     color = textSecondary,
                                     fontWeight = FontWeight.Medium,
@@ -595,13 +592,14 @@ private fun HomeHeroHeader(
                             Surface(
                                 shape = CircleShape,
                                 color = LipiWarning.copy(alpha = 0.12f),
-                                border = BorderStroke(1.dp, LipiWarning.copy(alpha = 0.3f))
+                                border = BorderStroke(1.dp, LipiWarning.copy(alpha = 0.3f)),
+                                modifier = Modifier.clickable { onStreakClick() }
                             ) {
                                 Row(
                                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text("🔥 12 Day Streak", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = LipiWarning)
+                                    Text("🔥 ${viewModel.studyStreakDays} Day Streak", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = LipiWarning)
                                 }
                             }
                         }
@@ -658,7 +656,10 @@ private fun HomeHeroHeader(
                                 ) {
                                     Icon(Icons.Default.TrendingUp, contentDescription = null, tint = LipiSuccess, modifier = Modifier.size(14.dp))
                                     Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Weekly Progress: 78%", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = LipiSuccess)
+                                    val wkProg = if (viewModel.dailyGoalTargetMinutes > 0) {
+                                        ((viewModel.dailyStudySeconds.toFloat() / (viewModel.dailyGoalTargetMinutes * 60 * 7)) * 100).toInt().coerceIn(0, 100)
+                                    } else 0
+                                    Text("Weekly Progress: $wkProg%", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = LipiSuccess)
                                 }
                             }
 
@@ -666,13 +667,14 @@ private fun HomeHeroHeader(
                             Surface(
                                 shape = CircleShape,
                                 color = LipiWarning.copy(alpha = 0.12f),
-                                border = BorderStroke(1.dp, LipiWarning.copy(alpha = 0.3f))
+                                border = BorderStroke(1.dp, LipiWarning.copy(alpha = 0.3f)),
+                                modifier = Modifier.clickable { onStreakClick() }
                             ) {
                                 Row(
                                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text("🔥 12 Day Streak", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = LipiWarning)
+                                    Text("🔥 ${viewModel.studyStreakDays} Day Streak", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = LipiWarning)
                                 }
                             }
                         }
@@ -716,7 +718,7 @@ private fun TopMetricsRow(
     onStudyProgressClick: () -> Unit = {},
     onStreakClick: () -> Unit = {},
     onNotesCreatedClick: () -> Unit = {},
-    onAIInteractionsClick: () -> Unit = {}
+    onVoiceNotesClick: () -> Unit = {}
 ) {
     val textPrimary = if (isDark) Color.White else Color(0xFF1E293B)
     val textSecondary = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
@@ -741,10 +743,44 @@ private fun TopMetricsRow(
     val createdThisWkCount = notes.count { isThisWeek(it.createdTime) }
     val notesSubtext = "+$createdThisWkCount this week"
 
-    val aiNotesCountVal = notes.count { !it.summary.isNullOrBlank() || !it.audioTranscription.isNullOrBlank() }
-    val aiNotesCount = aiNotesCountVal.toString()
-    val aiThisWkCount = notes.count { (!it.summary.isNullOrBlank() || !it.audioTranscription.isNullOrBlank()) && isThisWeek(it.createdTime) }
-    val aiSubtext = "+$aiThisWkCount this week"
+    val voiceNotesCountVal = notes.count { !it.audioPath.isNullOrBlank() || !it.audioTranscription.isNullOrBlank() }
+    val voiceNotesCount = voiceNotesCountVal.toString()
+    val voiceThisWkCount = notes.count { (!it.audioPath.isNullOrBlank() || !it.audioTranscription.isNullOrBlank()) && isThisWeek(it.createdTime) }
+    val voiceSubtext = "+$voiceThisWkCount this week"
+
+    // Actual 7-day data readings for accurate graph plotting
+    val (streakGraphData, notesGraphData, audioGraphData) = remember(notes, viewModel.studyStreakDays) {
+        val todayCal = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        val streakPoints = mutableListOf<Float>()
+        val notesPoints = mutableListOf<Float>()
+        val audioPoints = mutableListOf<Float>()
+
+        val streak = viewModel.studyStreakDays
+        for (i in 6 downTo 0) {
+            val dayStart = todayCal.timeInMillis - (i * 24 * 60 * 60 * 1000L)
+            val dayEnd = dayStart + (24 * 60 * 60 * 1000L)
+
+            // Streak reading: 1f if within active streak days, 0f if inactive
+            val isActiveStreakDay = i < streak
+            streakPoints.add(if (isActiveStreakDay) 1f else 0f)
+
+            // Notes created on this day
+            val notesOnDay = notes.count { it.createdTime in dayStart until dayEnd }.toFloat()
+            notesPoints.add(notesOnDay)
+
+            // Audio notes created on this day
+            val audioOnDay = notes.count {
+                (!it.audioPath.isNullOrBlank() || !it.audioTranscription.isNullOrBlank()) && (it.createdTime in dayStart until dayEnd)
+            }.toFloat()
+            audioPoints.add(audioOnDay)
+        }
+        Triple(streakPoints, notesPoints, audioPoints)
+    }
 
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
         val isCompact = maxWidth < 600.dp
@@ -776,6 +812,7 @@ private fun TopMetricsRow(
                         iconTint = LipiWarning,
                         iconBgColor = if (isDark) Color(0xFF451A03) else Color(0xFFFFF7ED),
                         chartType = MetricChartType.ORANGE_WAVE,
+                        dataPoints = streakGraphData,
                         cardBg = cardBg,
                         textPrimary = textPrimary,
                         textSecondary = textSecondary,
@@ -795,6 +832,7 @@ private fun TopMetricsRow(
                         iconTint = LipiSecondary,
                         iconBgColor = if (isDark) Color(0xFF2E1065) else Color(0xFFF5F3FF),
                         chartType = MetricChartType.PURPLE_LINE,
+                        dataPoints = notesGraphData,
                         cardBg = cardBg,
                         textPrimary = textPrimary,
                         textSecondary = textSecondary,
@@ -802,23 +840,24 @@ private fun TopMetricsRow(
                         onClick = onNotesCreatedClick
                     )
 
-                    // AI Interactions Card
+                    // Voice Notes Card
                     WaveMetricCard(
                         modifier = Modifier.weight(1f),
-                        title = "AI Use",
-                        value = aiNotesCount,
+                        title = "Audio",
+                        value = voiceNotesCount,
                         unit = "",
-                        subtext = aiSubtext,
+                        subtext = voiceSubtext,
                         subtextColor = LipiSuccess,
-                        icon = Icons.Default.SmartToy,
+                        icon = Icons.Default.Mic,
                         iconTint = LipiAccent,
                         iconBgColor = if (isDark) Color(0xFF0C4A6E) else Color(0xFFF0F9FF),
                         chartType = MetricChartType.BLUE_LINE,
+                        dataPoints = audioGraphData,
                         cardBg = cardBg,
                         textPrimary = textPrimary,
                         textSecondary = textSecondary,
                         isDark = isDark,
-                        onClick = onAIInteractionsClick
+                        onClick = onVoiceNotesClick
                     )
                 }
             }
@@ -847,6 +886,7 @@ private fun TopMetricsRow(
                     iconTint = LipiWarning,
                     iconBgColor = if (isDark) Color(0xFF451A03) else Color(0xFFFFF7ED),
                     chartType = MetricChartType.ORANGE_WAVE,
+                    dataPoints = streakGraphData,
                     cardBg = cardBg,
                     textPrimary = textPrimary,
                     textSecondary = textSecondary,
@@ -866,6 +906,7 @@ private fun TopMetricsRow(
                     iconTint = LipiSecondary,
                     iconBgColor = if (isDark) Color(0xFF2E1065) else Color(0xFFF5F3FF),
                     chartType = MetricChartType.PURPLE_LINE,
+                    dataPoints = notesGraphData,
                     cardBg = cardBg,
                     textPrimary = textPrimary,
                     textSecondary = textSecondary,
@@ -873,23 +914,24 @@ private fun TopMetricsRow(
                     onClick = onNotesCreatedClick
                 )
 
-                // AI Interactions Card
+                // Voice Notes Card
                 WaveMetricCard(
                     modifier = Modifier.weight(1f),
-                    title = "AI Interactions",
-                    value = aiNotesCount,
+                    title = "Audio Memos",
+                    value = voiceNotesCount,
                     unit = "",
-                    subtext = aiSubtext,
+                    subtext = voiceSubtext,
                     subtextColor = LipiSuccess,
-                    icon = Icons.Default.SmartToy,
+                    icon = Icons.Default.Mic,
                     iconTint = LipiAccent,
                     iconBgColor = if (isDark) Color(0xFF0C4A6E) else Color(0xFFF0F9FF),
                     chartType = MetricChartType.BLUE_LINE,
+                    dataPoints = audioGraphData,
                     cardBg = cardBg,
                     textPrimary = textPrimary,
                     textSecondary = textSecondary,
                     isDark = isDark,
-                    onClick = onAIInteractionsClick
+                    onClick = onVoiceNotesClick
                 )
             }
         }
@@ -958,6 +1000,7 @@ private fun WaveMetricCard(
     iconTint: Color,
     iconBgColor: Color,
     chartType: MetricChartType,
+    dataPoints: List<Float> = emptyList(),
     cardBg: Color,
     textPrimary: Color,
     textSecondary: Color,
@@ -984,67 +1027,74 @@ private fun WaveMetricCard(
                 val w = size.width
                 val h = size.height
 
+                // Normalize points to fit between y = h * 0.85f (0 value) and y = h * 0.15f (max value)
+                val rawPoints = if (dataPoints.isNotEmpty()) dataPoints else listOf(0f, 0f, 0f, 0f, 0f, 0f, 0f)
+                val maxVal = rawPoints.maxOrNull()?.takeIf { it > 0f } ?: 1f
+                val count = rawPoints.size
+
+                val mappedPoints = rawPoints.mapIndexed { index, v ->
+                    val x = if (count > 1) (index.toFloat() / (count - 1)) * w else w * 0.5f
+                    val normalizedHeight = (v / maxVal).coerceIn(0f, 1f)
+                    // High value -> smaller Y (closer to top of canvas)
+                    val y = h * 0.85f - (normalizedHeight * (h * 0.65f))
+                    Offset(x, y)
+                }
+
                 when (chartType) {
                     MetricChartType.ORANGE_WAVE -> {
-                        // Double-layered orange soft wave
-                        val pathBg = Path().apply {
-                            moveTo(0f, h * 0.75f)
-                            cubicTo(w * 0.25f, h * 0.48f, w * 0.65f, h * 0.92f, w, h * 0.58f)
-                            lineTo(w, h)
-                            lineTo(0f, h)
-                            close()
+                        // Double-layered orange smooth wave matching actual streak activity
+                        val linePath = Path().apply {
+                            if (mappedPoints.isNotEmpty()) {
+                                moveTo(mappedPoints[0].x, mappedPoints[0].y)
+                                for (i in 0 until mappedPoints.size - 1) {
+                                    val p1 = mappedPoints[i]
+                                    val p2 = mappedPoints[i + 1]
+                                    val cx = (p1.x + p2.x) / 2f
+                                    cubicTo(cx, p1.y, cx, p2.y, p2.x, p2.y)
+                                }
+                            }
                         }
-                        drawPath(
-                            path = pathBg,
-                            brush = Brush.verticalGradient(
-                                colors = listOf(Color(0xFFFF9800).copy(alpha = 0.22f), Color(0xFFFFE0B2).copy(alpha = 0.03f))
-                            )
-                        )
 
-                        val pathFg = Path().apply {
-                            moveTo(0f, h * 0.85f)
-                            cubicTo(w * 0.35f, h * 0.62f, w * 0.72f, h * 0.78f, w, h * 0.52f)
+                        val fillPath = Path().apply {
+                            addPath(linePath)
                             lineTo(w, h)
                             lineTo(0f, h)
                             close()
                         }
+
                         drawPath(
-                            path = pathFg,
+                            path = fillPath,
                             brush = Brush.verticalGradient(
                                 colors = listOf(Color(0xFFF97316).copy(alpha = 0.28f), Color(0xFFFFF7ED).copy(alpha = 0.02f))
                             )
                         )
 
-                        val linePath = Path().apply {
-                            moveTo(0f, h * 0.85f)
-                            cubicTo(w * 0.35f, h * 0.62f, w * 0.72f, h * 0.78f, w, h * 0.52f)
-                        }
                         drawPath(
                             path = linePath,
-                            color = Color(0xFFF97316).copy(alpha = 0.55f),
-                            style = Stroke(width = 2.dp.toPx())
+                            color = Color(0xFFF97316).copy(alpha = 0.75f),
+                            style = Stroke(width = 2.5.dp.toPx())
                         )
+
+                        // Keypoint dots on recorded points
+                        mappedPoints.forEach { pt ->
+                            if (pt.y < h * 0.8f) {
+                                drawCircle(color = Color(0xFFF97316), radius = 3.dp.toPx(), center = pt)
+                                drawCircle(color = Color.White, radius = 1.5.dp.toPx(), center = pt)
+                            }
+                        }
                     }
 
                     MetricChartType.PURPLE_LINE -> {
-                        // Purple line chart with nodes
-                        val points = listOf(
-                            Offset(0f, h * 0.55f),
-                            Offset(w * 0.18f, h * 0.72f),
-                            Offset(w * 0.35f, h * 0.88f),
-                            Offset(w * 0.52f, h * 0.55f),
-                            Offset(w * 0.7f, h * 0.38f),
-                            Offset(w * 0.86f, h * 0.42f),
-                            Offset(w, h * 0.58f)
-                        )
-
+                        // Purple line chart with nodes matching actual notes creation
                         val linePath = Path().apply {
-                            moveTo(points[0].x, points[0].y)
-                            for (i in 0 until points.size - 1) {
-                                val p1 = points[i]
-                                val p2 = points[i + 1]
-                                val cx = (p1.x + p2.x) / 2f
-                                cubicTo(cx, p1.y, cx, p2.y, p2.x, p2.y)
+                            if (mappedPoints.isNotEmpty()) {
+                                moveTo(mappedPoints[0].x, mappedPoints[0].y)
+                                for (i in 0 until mappedPoints.size - 1) {
+                                    val p1 = mappedPoints[i]
+                                    val p2 = mappedPoints[i + 1]
+                                    val cx = (p1.x + p2.x) / 2f
+                                    cubicTo(cx, p1.y, cx, p2.y, p2.x, p2.y)
+                                }
                             }
                         }
 
@@ -1068,29 +1118,26 @@ private fun WaveMetricCard(
                             style = Stroke(width = 2.dp.toPx())
                         )
 
-                        // Keypoint dots
-                        drawCircle(color = Color(0xFF7C3AED), radius = 3.5.dp.toPx(), center = points.last())
-                        drawCircle(color = Color.White, radius = 1.5.dp.toPx(), center = points.last())
+                        // Keypoint dots on non-zero readings
+                        mappedPoints.forEach { pt ->
+                            if (pt.y < h * 0.8f) {
+                                drawCircle(color = Color(0xFF7C3AED), radius = 3.5.dp.toPx(), center = pt)
+                                drawCircle(color = Color.White, radius = 1.5.dp.toPx(), center = pt)
+                            }
+                        }
                     }
 
                     MetricChartType.BLUE_LINE -> {
-                        // Light blue sine wave line chart with nodes
-                        val points = listOf(
-                            Offset(0f, h * 0.45f),
-                            Offset(w * 0.22f, h * 0.78f),
-                            Offset(w * 0.45f, h * 0.32f),
-                            Offset(w * 0.68f, h * 0.78f),
-                            Offset(w * 0.88f, h * 0.38f),
-                            Offset(w, h * 0.45f)
-                        )
-
+                        // Light blue sine wave line chart with nodes matching actual audio memos
                         val linePath = Path().apply {
-                            moveTo(points[0].x, points[0].y)
-                            for (i in 0 until points.size - 1) {
-                                val p1 = points[i]
-                                val p2 = points[i + 1]
-                                val cx = (p1.x + p2.x) / 2f
-                                cubicTo(cx, p1.y, cx, p2.y, p2.x, p2.y)
+                            if (mappedPoints.isNotEmpty()) {
+                                moveTo(mappedPoints[0].x, mappedPoints[0].y)
+                                for (i in 0 until mappedPoints.size - 1) {
+                                    val p1 = mappedPoints[i]
+                                    val p2 = mappedPoints[i + 1]
+                                    val cx = (p1.x + p2.x) / 2f
+                                    cubicTo(cx, p1.y, cx, p2.y, p2.x, p2.y)
+                                }
                             }
                         }
 
@@ -1114,9 +1161,13 @@ private fun WaveMetricCard(
                             style = Stroke(width = 2.dp.toPx())
                         )
 
-                        // Keypoint dot
-                        drawCircle(color = Color(0xFF0284C7), radius = 3.5.dp.toPx(), center = points.last())
-                        drawCircle(color = Color.White, radius = 1.5.dp.toPx(), center = points.last())
+                        // Keypoint dots on non-zero readings
+                        mappedPoints.forEach { pt ->
+                            if (pt.y < h * 0.8f) {
+                                drawCircle(color = Color(0xFF0284C7), radius = 3.5.dp.toPx(), center = pt)
+                                drawCircle(color = Color.White, radius = 1.5.dp.toPx(), center = pt)
+                            }
+                        }
                     }
                 }
             }
@@ -1188,10 +1239,10 @@ private fun WaveMetricCard(
 }
 
 // ==========================================
-// 3. HERO FEATURE: LARGE GLOWING AI SEARCH BAR
+// 3. HERO FEATURE: SEARCH BAR
 // ==========================================
 @Composable
-private fun HeroAISearchBar(
+private fun HeroSearchBar(
     onSearchSubmitted: (String) -> Unit,
     onScanClick: () -> Unit = {},
     isDark: Boolean,
@@ -1201,32 +1252,14 @@ private fun HeroAISearchBar(
     val textPrimary = if (isDark) Color.White else Color(0xFF1E293B)
     val textSecondary = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
 
-    // Glowing aura animation
-    val infiniteTransition = rememberInfiniteTransition(label = "SearchGlow")
-    val glowAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.35f,
-        targetValue = 0.75f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(2200, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "glowAlpha"
-    )
-
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(26.dp),
         colors = CardDefaults.cardColors(containerColor = cardBg),
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
         border = BorderStroke(
-            width = 2.dp,
-            brush = Brush.horizontalGradient(
-                colors = listOf(
-                    LipiPrimary.copy(alpha = glowAlpha),
-                    LipiSecondary.copy(alpha = glowAlpha),
-                    LipiAccent.copy(alpha = glowAlpha)
-                )
-            )
+            width = 1.5.dp,
+            color = if (isDark) Color(0xFF334155) else LipiPrimary.copy(alpha = 0.3f)
         )
     ) {
         Column(
@@ -1244,19 +1277,19 @@ private fun HeroAISearchBar(
                         ),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = Color.White, modifier = Modifier.size(22.dp))
+                    Icon(Icons.Default.Search, contentDescription = null, tint = Color.White, modifier = Modifier.size(22.dp))
                 }
                 Spacer(modifier = Modifier.width(14.dp))
                 Column {
                     Text(
-                        text = "Ask Lipi AI...",
+                        text = "Search Notes & Notebooks",
                         fontSize = 22.sp,
                         fontWeight = FontWeight.Bold,
                         color = textPrimary,
                         letterSpacing = (-0.3).sp
                     )
                     Text(
-                        text = "Search handwriting, PDFs, voice notes, diagrams or ask any question",
+                        text = "Search handwriting, PDFs, voice notes, tags & notebooks",
                         fontSize = 13.sp,
                         color = textSecondary,
                         fontWeight = FontWeight.Medium
@@ -1266,7 +1299,7 @@ private fun HeroAISearchBar(
 
             Spacer(modifier = Modifier.height(18.dp))
 
-            // Glowing Search Box
+            // Search Box
             Surface(
                 shape = RoundedCornerShape(18.dp),
                 color = if (isDark) Color(0xFF0F172A) else Color(0xFFF8FAFC),
@@ -1285,7 +1318,7 @@ private fun HeroAISearchBar(
                         value = searchText,
                         onValueChange = { searchText = it },
                         placeholder = {
-                            Text("e.g. Find Newton's laws in my Physics notebook...", fontSize = 14.sp, color = textSecondary)
+                            Text("e.g. Newton's laws, Math formulas, Chemistry...", fontSize = 14.sp, color = textSecondary)
                         },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = Color.Transparent,
@@ -1314,9 +1347,9 @@ private fun HeroAISearchBar(
                         colors = ButtonDefaults.buttonColors(containerColor = LipiPrimary),
                         contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp)
                     ) {
-                        Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Ask AI", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text("Search", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     }
                 }
             }
@@ -1331,20 +1364,20 @@ private fun HeroAISearchBar(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Popular:", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = textSecondary)
+                Text("Quick Search:", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = textSecondary)
                 listOf(
-                    "✨ Summarize last lecture",
-                    "📐 Find Physics formulas",
-                    "🧬 Explain diagram",
-                    "📝 PDF to Quiz",
-                    "⚡ Create Flashcards"
+                    "📓 Physics Notes",
+                    "📄 PDFs & Documents",
+                    "🎙️ Voice Memos",
+                    "📅 Planner & Tasks",
+                    "📐 Math & Formulas"
                 ).forEach { prompt ->
                     Surface(
                         shape = CircleShape,
                         color = if (isDark) Color(0xFF334155) else Color(0xFFF1F5F9),
                         border = BorderStroke(1.dp, if (isDark) Color(0xFF475569) else Color(0xFFE2E8F0)),
                         modifier = Modifier.clickable {
-                            searchText = prompt.removePrefix("✨ ").removePrefix("📐 ").removePrefix("🧬 ").removePrefix("📝 ").removePrefix("⚡ ")
+                            searchText = prompt.removePrefix("📓 ").removePrefix("📄 ").removePrefix("🎙️ ").removePrefix("📅 ").removePrefix("📐 ")
                         }
                     ) {
                         Text(
@@ -1378,8 +1411,8 @@ private fun QuickActionsRow(
         QuickActionData("Voice Note", Icons.Default.MicNone, LipiError),
         QuickActionData("Scan Document", Icons.Default.Scanner, LipiWarning),
         QuickActionData("Import PDF", Icons.Default.PictureAsPdf, LipiAccent),
-        QuickActionData("AI Summary", Icons.Default.Bolt, LipiSecondary),
-        QuickActionData("Flashcards", Icons.Default.Style, Color(0xFFF43F5E)),
+        QuickActionData("Cornell Notes", Icons.Default.EditNote, LipiSecondary),
+        QuickActionData("Grid Canvas", Icons.Default.GridOn, Color(0xFFF43F5E)),
         QuickActionData("Mind Map", Icons.Default.Psychology, Color(0xFF14B8A6))
     )
 
@@ -2135,10 +2168,10 @@ private data class NotebookCoverData(
 )
 
 // ==========================================
-// 8. AI SUGGESTIONS SECTION
+// 8. QUICK TEMPLATES & SHORTCUTS SECTION
 // ==========================================
 @Composable
-private fun AISuggestionsSection(
+private fun QuickTemplatesSection(
     onSuggestionClick: (String) -> Unit,
     isDark: Boolean,
     cardBg: Color
@@ -2146,19 +2179,19 @@ private fun AISuggestionsSection(
     val textPrimary = if (isDark) Color.White else Color(0xFF1E293B)
     val textSecondary = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
 
-    val suggestions = listOf(
-        "✨ Continue yesterday's Quantum Physics notes",
-        "📄 Summarize latest PDF: Organic_Chemistry_Ch3.pdf",
-        "⚡ Generate 10 Flashcards for European History",
-        "🔍 Explain highlighted diagram in Neurobiology",
-        "🤖 Ask Lipi AI Tutor to review practice exam"
+    val templates = listOf(
+        "📝 Cornell Lecture Template",
+        "📐 Engineering Grid Canvas",
+        "🎙️ Record Audio Lecture",
+        "📋 Weekly Study Planner",
+        "🔬 Lab Experiment Template"
     )
 
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = LipiSecondary, modifier = Modifier.size(20.dp))
+            Icon(Icons.Default.DashboardCustomize, contentDescription = null, tint = LipiSecondary, modifier = Modifier.size(20.dp))
             Spacer(modifier = Modifier.width(8.dp))
-            Text("AI Smart Recommendations", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = textPrimary)
+            Text("Notebook Templates & Shortcuts", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = textPrimary)
         }
 
         Spacer(modifier = Modifier.height(12.dp))
@@ -2169,7 +2202,7 @@ private fun AISuggestionsSection(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    items(suggestions) { sug ->
+                    items(templates) { sug ->
                         Card(
                             modifier = Modifier
                                 .width(250.dp)
@@ -2203,7 +2236,7 @@ private fun AISuggestionsSection(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    suggestions.take(3).forEach { sug ->
+                    templates.take(3).forEach { sug ->
                         Card(
                             modifier = Modifier
                                 .weight(1f)
@@ -3546,151 +3579,6 @@ fun NotesCreatedDetailModal(
 }
 
 @Composable
-fun AIInteractionsDetailModal(viewModel: NoteViewModel, onDismiss: () -> Unit) {
-    var selectedPromptCategory by remember { mutableStateOf("All") }
-    var selectedBarIndex by remember { mutableStateOf<Int?>(1) }
-    var clickedPromptMsg by remember { mutableStateOf<String?>(null) }
-
-    val aiUsageData = remember {
-        listOf("Mon" to 5, "Tue" to 8, "Wed" to 12, "Thu" to 6, "Fri" to 9, "Sat" to 4, "Sun" to 2)
-    }
-
-    val queries = listOf(
-        "Explain Backpropagation with math",
-        "Summarize Physics Ch 4 PDF",
-        "Create 10 Flashcards for Organic Chem",
-        "Generate Quiz on Matrix Multiplication"
-    )
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        icon = { Icon(Icons.Default.SmartToy, contentDescription = null, tint = LipiAccent) },
-        title = {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("AI Usage Analytics & History", fontWeight = FontWeight.Bold, fontSize = 20.sp)
-                Text("36 Queries Run This Week", fontSize = 12.sp, color = LipiTextSecondary)
-            }
-        },
-        text = {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(14.dp),
-                modifier = Modifier.verticalScroll(rememberScrollState())
-            ) {
-                // Interactive AI Bar Chart
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = LipiAccent.copy(alpha = 0.06f),
-                    border = BorderStroke(1.dp, LipiAccent.copy(alpha = 0.2f)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(
-                        modifier = Modifier.padding(14.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        selectedBarIndex?.let { index ->
-                            if (index in aiUsageData.indices) {
-                                val item = aiUsageData[index]
-                                Surface(
-                                    shape = RoundedCornerShape(10.dp),
-                                    color = LipiAccent,
-                                    shadowElevation = 2.dp,
-                                    modifier = Modifier.padding(bottom = 8.dp)
-                                ) {
-                                    Text(
-                                        text = "${item.first}: ${item.second} AI Prompts Executed",
-                                        color = Color.White,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 12.sp,
-                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-                                    )
-                                }
-                            }
-                        }
-
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(100.dp),
-                            horizontalArrangement = Arrangement.SpaceEvenly,
-                            verticalAlignment = Alignment.Bottom
-                        ) {
-                            aiUsageData.forEachIndexed { idx, pair ->
-                                val isSelected = selectedBarIndex == idx
-                                Column(
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.Bottom,
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .clickable { selectedBarIndex = idx }
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth(0.6f)
-                                            .height((7 * pair.second).dp)
-                                            .clip(RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp))
-                                            .background(if (isSelected) LipiAccent else LipiAccent.copy(alpha = 0.35f))
-                                    )
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Text(
-                                        pair.first,
-                                        fontSize = 10.sp,
-                                        fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Medium,
-                                        color = if (isSelected) LipiAccent else LipiTextSecondary
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Text("Interactive Prompt Library (Tap to inspect):", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                queries.forEach { q ->
-                    Surface(
-                        shape = RoundedCornerShape(10.dp),
-                        color = LipiAccent.copy(alpha = 0.08f),
-                        border = BorderStroke(1.dp, LipiAccent.copy(alpha = 0.2f)),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { clickedPromptMsg = "Selected: '$q'" }
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(10.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = LipiAccent, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(q, fontSize = 12.sp, fontWeight = FontWeight.Medium, color = LipiTextPrimary)
-                        }
-                    }
-                }
-
-                clickedPromptMsg?.let { msg ->
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = LipiAccent.copy(alpha = 0.15f),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            msg,
-                            modifier = Modifier.padding(8.dp),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = LipiAccent,
-                            textAlign = TextAlign.Center
-                        )
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            Button(onClick = onDismiss, colors = ButtonDefaults.buttonColors(containerColor = LipiAccent)) {
-                Text("Close")
-            }
-        }
-    )
-}
-
-@Composable
 fun VoiceNoteInteractiveModal(
     viewModel: NoteViewModel,
     onDismiss: () -> Unit,
@@ -3893,374 +3781,6 @@ fun VoiceNoteInteractiveModal(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AiSummaryInteractiveModal(
-    notes: List<NoteEntity>,
-    viewModel: NoteViewModel,
-    onDismiss: () -> Unit,
-    onNavigateToNote: (String) -> Unit
-) {
-    val coroutineScope = rememberCoroutineScope()
-    var selectedNoteId by remember { mutableStateOf<Int?>(notes.firstOrNull()?.id) }
-    var customTextInput by remember { mutableStateOf("") }
-    var useCustomText by remember { mutableStateOf(notes.isEmpty()) }
-    var selectedSummaryMode by remember { mutableStateOf("Executive Brief") }
-    var isGenerating by remember { mutableStateOf(false) }
-    var generatedSummaryResult by remember { mutableStateOf<String?>(null) }
-
-    val modes = listOf("Executive Brief", "Key Concepts", "Exam Guide", "Q&A Review")
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Box(
-                    modifier = Modifier
-                        .size(36.dp)
-                        .background(LipiSecondary.copy(alpha = 0.15f), CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Default.Bolt, contentDescription = null, tint = LipiSecondary, modifier = Modifier.size(20.dp))
-                }
-                Text("AI Summary Studio", fontWeight = FontWeight.Bold, fontSize = 18.sp)
-            }
-        },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(
-                        selected = !useCustomText,
-                        onClick = { useCustomText = false },
-                        label = { Text("From Notebooks") },
-                        leadingIcon = { Icon(Icons.Default.Book, contentDescription = null, modifier = Modifier.size(14.dp)) }
-                    )
-                    FilterChip(
-                        selected = useCustomText,
-                        onClick = { useCustomText = true },
-                        label = { Text("Paste Raw Text") },
-                        leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(14.dp)) }
-                    )
-                }
-
-                if (!useCustomText) {
-                    if (notes.isNotEmpty()) {
-                        Text("Select Note to Summarize:", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            items(notes) { note ->
-                                FilterChip(
-                                    selected = selectedNoteId == note.id,
-                                    onClick = { selectedNoteId = note.id },
-                                    label = { Text(note.title.take(20), maxLines = 1) }
-                                )
-                            }
-                        }
-                    } else {
-                        Text("No notes found. Switch to 'Paste Raw Text' above.", fontSize = 12.sp, color = Color.Gray)
-                    }
-                } else {
-                    OutlinedTextField(
-                        value = customTextInput,
-                        onValueChange = { customTextInput = it },
-                        label = { Text("Enter or Paste Lecture / Book Text") },
-                        placeholder = { Text("Paste text here to summarize with Gemini AI...") },
-                        modifier = Modifier.fillMaxWidth().height(100.dp),
-                        shape = RoundedCornerShape(12.dp)
-                    )
-                }
-
-                Text("Summary Format:", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    modes.forEach { mode ->
-                        FilterChip(
-                            selected = selectedSummaryMode == mode,
-                            onClick = { selectedSummaryMode = mode },
-                            label = { Text(mode, fontSize = 11.sp) }
-                        )
-                    }
-                }
-
-                Button(
-                    onClick = {
-                        coroutineScope.launch {
-                            isGenerating = true
-                            val noteContent = if (useCustomText) customTextInput else notes.find { it.id == selectedNoteId }?.content ?: ""
-                            val promptText = "Generate a structured $selectedSummaryMode for the following study notes:\n\n$noteContent"
-                            val summary = try {
-                                GeminiClient.generateText(promptText)
-                            } catch (e: Exception) {
-                                "📌 $selectedSummaryMode Summary:\n\n• Core Concept: Key insights extracted from document.\n• High-Yield Takeaway: Critical formulas and principles categorized.\n• Review Checklist: Memorize key definitions and primary examples."
-                            }
-                            generatedSummaryResult = summary
-                            isGenerating = false
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = LipiSecondary),
-                    enabled = !isGenerating && (useCustomText && customTextInput.isNotBlank() || !useCustomText && selectedNoteId != null)
-                ) {
-                    if (isGenerating) {
-                        CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Gemini is Summarizing...")
-                    } else {
-                        Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Generate AI Summary")
-                    }
-                }
-
-                generatedSummaryResult?.let { summary ->
-                    Surface(
-                        shape = RoundedCornerShape(16.dp),
-                        color = LipiSecondary.copy(alpha = 0.08f),
-                        border = BorderStroke(1.dp, LipiSecondary.copy(alpha = 0.3f)),
-                        modifier = Modifier.fillMaxWidth().heightIn(max = 180.dp)
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp).verticalScroll(rememberScrollState())) {
-                            Text("⚡ AI Summary Result:", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = LipiSecondary)
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Text(summary, fontSize = 12.sp, lineHeight = 16.sp)
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            if (generatedSummaryResult != null) {
-                Button(
-                    onClick = {
-                        val sourceTitle = if (useCustomText) "Custom Topic" else notes.find { it.id == selectedNoteId }?.title ?: "Note"
-                        val summaryTitle = "$sourceTitle - AI Summary"
-                        val content = "⚡ AI SUMMARY ($selectedSummaryMode)\nSource: $sourceTitle\n\n${generatedSummaryResult}"
-
-                        viewModel.createNewNoteWithDesign(
-                            title = summaryTitle,
-                            templateType = "ruled",
-                            coverType = "3d_academic",
-                            pageColor = 0xFFFFFFFF,
-                            coverTitle = summaryTitle,
-                            coverSubtitle = "AI Generated Summary",
-                            coverAuthor = "Gemini AI",
-                            coverExtra = selectedSummaryMode,
-                            folder = "AI Summaries"
-                        )
-
-                        coroutineScope.launch {
-                            delay(200L)
-                            viewModel.selectedNote?.let { note ->
-                                viewModel.updateNoteContent(note, content)
-                            }
-                        }
-
-                        onNavigateToNote(summaryTitle)
-                        onDismiss()
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = LipiPrimary)
-                ) {
-                    Text("Save as Summary Note")
-                }
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Close") }
-        }
-    )
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun FlashcardsInteractiveModal(
-    notes: List<NoteEntity>,
-    viewModel: NoteViewModel,
-    onDismiss: () -> Unit,
-    onNavigateToNote: (String) -> Unit
-) {
-    val coroutineScope = rememberCoroutineScope()
-    var deckTopic by remember { mutableStateOf("Quantum Physics & Computing") }
-    var isFlipped by remember { mutableStateOf(false) }
-    var currentCardIndex by remember { mutableStateOf(0) }
-
-    data class CardData(val q: String, val a: String, var mastered: Boolean = false)
-
-    var flashcards by remember {
-        mutableStateOf(
-            listOf(
-                CardData("What is Qubit Superposition?", "The ability of a quantum bit to exist simultaneously in a linear combination of |0⟩ and |1⟩ states until measured."),
-                CardData("What is Quantum Entanglement?", "A physical phenomenon where quantum particles remain interconnected such that actions performed on one instantly affect the other."),
-                CardData("What is Backpropagation?", "An algorithm that calculates gradient updates for artificial neural network weights using the chain rule of calculus."),
-                CardData("What is Shor's Algorithm?", "A quantum computing algorithm that finds prime factors of an integer in polynomial time."),
-                CardData("What is the Uncertainty Principle?", "Heisenberg's principle stating that position and momentum cannot both be precisely measured simultaneously.")
-            )
-        )
-    }
-
-    val rotationAngle by animateFloatAsState(
-        targetValue = if (isFlipped) 180f else 0f,
-        animationSpec = tween(durationMillis = 400),
-        label = "flip"
-    )
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Box(
-                    modifier = Modifier
-                        .size(36.dp)
-                        .background(Color(0xFFF43F5E).copy(alpha = 0.15f), CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Default.Style, contentDescription = null, tint = Color(0xFFF43F5E), modifier = Modifier.size(20.dp))
-                }
-                Text("Flashcards Studio", fontWeight = FontWeight.Bold, fontSize = 18.sp)
-            }
-        },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-                OutlinedTextField(
-                    value = deckTopic,
-                    onValueChange = { deckTopic = it },
-                    label = { Text("Deck Topic / Subject") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
-                )
-
-                val currentCard = flashcards.getOrNull(currentCardIndex) ?: flashcards[0]
-
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(160.dp)
-                        .graphicsLayer {
-                            rotationY = rotationAngle
-                            cameraDistance = 12f * density
-                        }
-                        .clickable { isFlipped = !isFlipped },
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (rotationAngle > 90f) LipiPrimary.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceVariant
-                    ),
-                    border = BorderStroke(1.5.dp, if (rotationAngle > 90f) LipiPrimary else Color(0xFFF43F5E))
-                ) {
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(16.dp)
-                            .graphicsLayer {
-                                if (rotationAngle > 90f) rotationY = 180f
-                            }
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(
-                                text = if (rotationAngle > 90f) "ANSWER" else "QUESTION ${currentCardIndex + 1} OF ${flashcards.size}",
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (rotationAngle > 90f) LipiPrimary else Color(0xFFF43F5E)
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = if (rotationAngle > 90f) currentCard.a else currentCard.q,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold,
-                                textAlign = TextAlign.Center
-                            )
-                            Spacer(modifier = Modifier.height(10.dp))
-                            Text("Tap card to flip 🔄", fontSize = 10.sp, color = Color.Gray)
-                        }
-                    }
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(
-                        onClick = {
-                            if (currentCardIndex > 0) {
-                                isFlipped = false
-                                currentCardIndex--
-                            }
-                        },
-                        enabled = currentCardIndex > 0
-                    ) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Prev")
-                    }
-
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        FilterChip(
-                            selected = currentCard.mastered,
-                            onClick = {
-                                val updated = flashcards.toMutableList()
-                                updated[currentCardIndex] = currentCard.copy(mastered = !currentCard.mastered)
-                                flashcards = updated
-                            },
-                            label = { Text(if (currentCard.mastered) "Mastered 🟢" else "Review 🔴", fontSize = 11.sp) }
-                        )
-                    }
-
-                    IconButton(
-                        onClick = {
-                            if (currentCardIndex < flashcards.size - 1) {
-                                isFlipped = false
-                                currentCardIndex++
-                            }
-                        },
-                        enabled = currentCardIndex < flashcards.size - 1
-                    ) {
-                        Icon(Icons.Default.ArrowForward, contentDescription = "Next")
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    val deckTitle = "$deckTopic - Flashcards Deck"
-                    val contentBuilder = StringBuilder()
-                    contentBuilder.append("🎴 FLASHCARDS DECK: $deckTopic\n\n")
-                    flashcards.forEachIndexed { idx, card ->
-                        contentBuilder.append("Q${idx + 1}: ${card.q}\n")
-                        contentBuilder.append("A${idx + 1}: ${card.a}\n")
-                        contentBuilder.append("Status: ${if (card.mastered) "Mastered 🟢" else "Needs Review 🔴"}\n\n")
-                    }
-
-                    viewModel.createNewNoteWithDesign(
-                        title = deckTitle,
-                        templateType = "ruled",
-                        coverType = "subject_computer",
-                        pageColor = 0xFFFFFFFF,
-                        coverTitle = deckTitle,
-                        coverSubtitle = "${flashcards.size} Flashcards",
-                        coverAuthor = "Me",
-                        coverExtra = "Study Deck",
-                        folder = "Flashcards"
-                    )
-
-                    coroutineScope.launch {
-                        delay(200L)
-                        viewModel.selectedNote?.let { note ->
-                            viewModel.updateNoteContent(note, contentBuilder.toString())
-                        }
-                    }
-
-                    onNavigateToNote(deckTitle)
-                    onDismiss()
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF43F5E))
-            ) {
-                Text("Save Deck to Notes")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Close") }
-        }
-    )
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
 fun MindMapInteractiveModal(
     notes: List<NoteEntity>,
     viewModel: NoteViewModel,
@@ -4268,15 +3788,15 @@ fun MindMapInteractiveModal(
     onNavigateToNote: (String) -> Unit
 ) {
     val coroutineScope = rememberCoroutineScope()
-    var topicName by remember { mutableStateOf("Artificial Intelligence") }
+    var topicName by remember { mutableStateOf("Cell Biology & Structure") }
 
     var branchNodes by remember {
         mutableStateOf(
             listOf(
-                "Machine Learning" to listOf("Supervised", "Unsupervised", "Reinforcement"),
-                "Neural Networks" to listOf("CNNs", "RNNs", "Transformers"),
-                "Natural Language" to listOf("Tokenization", "LLMs", "Embeddings"),
-                "Computer Vision" to listOf("Detection", "Segmentation", "OCR")
+                "Cell Membrane" to listOf("Phospholipid Bilayer", "Transport Proteins", "Receptors"),
+                "Nucleus" to listOf("Chromatin", "Nuclear Envelope", "Nucleolus"),
+                "Cytoplasm" to listOf("Mitochondria", "Ribosomes", "Endoplasmic Reticulum"),
+                "Cell Division" to listOf("Mitosis", "Meiosis", "Cytokinesis")
             )
         )
     }
@@ -4735,11 +4255,10 @@ fun StudyProgressCard(
                 }
                 
                 // Divider
-                Divider(
+                VerticalDivider(
                     color = textSecondary.copy(alpha = 0.2f),
                     modifier = Modifier
                         .fillMaxHeight()
-                        .width(1.dp)
                         .padding(vertical = 4.dp)
                 )
                 

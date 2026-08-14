@@ -49,7 +49,7 @@ import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -125,7 +125,8 @@ private fun formatStorageSize(bytes: Long): String {
 @Composable
 fun NoteinApp(
     viewModel: NoteViewModel,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    userViewModel: UserViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
 ) {
     val notes by viewModel.allNotes.collectAsStateWithLifecycle()
     val selectedNote = viewModel.selectedNote
@@ -223,7 +224,6 @@ fun NoteinApp(
                 // Strict full view mode: Hide status & navigation bars, require swipe to show transiently
                 controller.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
                 controller.systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-                window.addFlags(android.view.WindowManager.LayoutParams.FLAG_FULLSCREEN)
                 window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
                     window.attributes.layoutInDisplayCutoutMode = android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
@@ -231,7 +231,6 @@ fun NoteinApp(
             } else {
                 // Normal Mode: Restore system bars & standard layout
                 controller.show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
-                window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_FULLSCREEN)
                 window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             }
         }
@@ -260,7 +259,8 @@ fun NoteinApp(
                             scope.launch { drawerState.close() }
                         },
                         searchKeyword = searchKeyword,
-                        onSearchChange = { searchKeyword = it }
+                        onSearchChange = { searchKeyword = it },
+                        userViewModel = userViewModel
                     )
                 }
             }
@@ -291,12 +291,6 @@ fun NoteinApp(
                             selected = activeTab == "sync",
                             onClick = { navigateToTab("sync") }
                         )
-                        NavigationBarItem(
-                            icon = { Icon(Icons.Default.AutoAwesome, contentDescription = "AI Hub") },
-                            label = { Text("AI Hub") },
-                            selected = activeTab == "ai",
-                            onClick = { navigateToTab("ai") }
-                        )
                     }
                 }
             }
@@ -321,7 +315,8 @@ fun NoteinApp(
                             selectedFilter = selectedFilter,
                             onFilterChange = { selectedFilter = it },
                             searchKeyword = searchKeyword,
-                            onSearchChange = { searchKeyword = it }
+                            onSearchChange = { searchKeyword = it },
+                            userViewModel = userViewModel
                         )
                     }
                 }
@@ -394,7 +389,8 @@ fun NoteinApp(
                                         navigateToTab("notes", filter)
                                     },
                                     onMenuClick = { scope.launch { drawerState.open() } },
-                                    isTablet = isTablet
+                                    isTablet = isTablet,
+                                    userViewModel = userViewModel
                                 )
                             }
                             "notes" -> {
@@ -417,10 +413,10 @@ fun NoteinApp(
                                 )
                             }
                             "sync" -> {
-                                SyncDashboard(viewModel = viewModel)
-                            }
-                            "ai" -> {
-                                AISummaryCenter(notes = notes, viewModel = viewModel)
+                                SyncDashboard(
+                                    viewModel = viewModel,
+                                    userViewModel = userViewModel
+                                )
                             }
                         }
                     }
@@ -577,26 +573,24 @@ fun NoteinApp(
                         onClick = {
                             viewModel.markPendingUpdate(viewModel.updateNotes)
                             viewModel.downloadAndInstallApk()
-                            val targetUrl = when {
-                                viewModel.updateApkUrl.isNotBlank() -> viewModel.updateApkUrl
-                                viewModel.updateReleaseUrl.isNotBlank() -> viewModel.updateReleaseUrl
-                                else -> "https://github.com/codeAditya828113/Lipi-Notes-V3"
-                            }
-                            try {
-                                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(targetUrl))
-                                context.startActivity(intent)
-                            } catch (e: Exception) {
-                                android.util.Log.e("OTAUpdate", "Could not open browser", e)
-                            }
-                            viewModel.dismissUpdatePromptDialog()
                         },
                         enabled = viewModel.updateProgress == null,
                         shape = RoundedCornerShape(10.dp),
                         modifier = Modifier.testTag("download_latest_apk_button")
                     ) {
-                        Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(if (viewModel.updateAvailable) "Download APK" else "Re-download APK", fontSize = 12.sp)
+                        if (viewModel.updateProgress != null) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.onPrimary
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Downloading...", fontSize = 12.sp)
+                        } else {
+                            Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(if (viewModel.updateAvailable) "Download & Install" else "Re-download APK", fontSize = 12.sp)
+                        }
                     }
                 }
             },
@@ -1635,7 +1629,7 @@ fun GoogleDriveBackupDialog(
                                 },
                                 shape = RoundedCornerShape(12.dp)
                             ) {
-                                Icon(Icons.Default.CompareArrows, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Icon(Icons.AutoMirrored.Filled.CompareArrows, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text("Test Conflict")
                             }
@@ -1946,7 +1940,7 @@ fun NoteListHeader(
                     modifier = Modifier.size(24.dp)
                 ) {
                     Icon(
-                        imageVector = if (isGridView) Icons.Default.FormatListBulleted else Icons.Default.GridView,
+                        imageVector = if (isGridView) Icons.AutoMirrored.Filled.FormatListBulleted else Icons.Default.GridView,
                         contentDescription = "Toggle View Mode",
                         modifier = Modifier.size(20.dp),
                         tint = MaterialTheme.colorScheme.onSurface
@@ -1963,7 +1957,7 @@ fun NoteListHeader(
                             .padding(vertical = 4.dp, horizontal = 2.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Sort,
+                            imageVector = Icons.AutoMirrored.Filled.Sort,
                             contentDescription = "Sort Options",
                             modifier = Modifier.size(20.dp),
                             tint = MaterialTheme.colorScheme.primary
@@ -2747,14 +2741,14 @@ fun NoteEditorEmptyState(
         ) {
             IconButton(onClick = onToggleSidebar) {
                 Icon(
-                    imageVector = if (isSidebarExpanded) Icons.Default.MenuOpen else Icons.Default.Menu,
+                    imageVector = if (isSidebarExpanded) Icons.AutoMirrored.Filled.MenuOpen else Icons.Default.Menu,
                     contentDescription = "Toggle Sidebar",
                     tint = if (isSidebarExpanded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
             IconButton(onClick = onToggleNoteList) {
                 Icon(
-                    imageVector = if (isNoteListExpanded) Icons.Default.ViewList else Icons.Default.List,
+                    imageVector = if (isNoteListExpanded) Icons.AutoMirrored.Filled.ViewList else Icons.AutoMirrored.Filled.List,
                     contentDescription = "Toggle Notes List",
                     tint = if (isNoteListExpanded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -2979,8 +2973,8 @@ fun RealisticPenItem(
                     )
                     val tipPath = Path().apply {
                         moveTo(w * 0.32f, bodyH + gripH)
-                        quadraticBezierTo(w * 0.32f, h, w * 0.5f, h)
-                        quadraticBezierTo(w * 0.68f, h, w * 0.68f, bodyH + gripH)
+                        quadraticTo(w * 0.32f, h, w * 0.5f, h)
+                        quadraticTo(w * 0.68f, h, w * 0.68f, bodyH + gripH)
                         close()
                     }
                     drawPath(tipPath, color = Color(0xFF334155))
@@ -3056,8 +3050,8 @@ fun RealisticPenItem(
                     val tipStart = bodyH + ferruleH
                     val tipPath = Path().apply {
                         moveTo(w * 0.26f, tipStart)
-                        quadraticBezierTo(w * 0.2f, tipStart + h * 0.25f, w * 0.5f, h)
-                        quadraticBezierTo(w * 0.8f, tipStart + h * 0.25f, w * 0.74f, tipStart)
+                        quadraticTo(w * 0.2f, tipStart + h * 0.25f, w * 0.5f, h)
+                        quadraticTo(w * 0.8f, tipStart + h * 0.25f, w * 0.74f, tipStart)
                         close()
                     }
                     drawPath(tipPath, color = Color(0xFF1E293B))
@@ -3655,7 +3649,7 @@ fun NoteEditorCanvas(
                         }
 
                         Spacer(modifier = Modifier.height(8.dp))
-                        androidx.compose.material3.Divider()
+                        HorizontalDivider()
                         Spacer(modifier = Modifier.height(8.dp))
 
                         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -3943,7 +3937,7 @@ fun NoteEditorCanvas(
                                 }
                             },
                             label = { Text("Note Link", fontSize = 11.sp) },
-                            leadingIcon = { Icon(Icons.Default.Notes, contentDescription = null, modifier = Modifier.size(14.dp)) }
+                            leadingIcon = { Icon(Icons.AutoMirrored.Filled.Notes, contentDescription = null, modifier = Modifier.size(14.dp)) }
                         )
                         FilterChip(
                             selected = linkTypeTab == 2,
@@ -4110,7 +4104,7 @@ if (showLayersDialog) {
                         Text("Drawing Strokes Layer", fontWeight = FontWeight.SemiBold)
                         Text("${viewModel.currentStrokes.size} strokes", fontSize = 12.sp, color = Color.Gray)
                     }
-                    Divider()
+                    HorizontalDivider()
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -4119,7 +4113,7 @@ if (showLayersDialog) {
                         Text("Imported Images Layer", fontWeight = FontWeight.SemiBold)
                         Text("${viewModel.currentImages.size} images", fontSize = 12.sp, color = Color.Gray)
                     }
-                    Divider()
+                    HorizontalDivider()
                     Text("Manage annotations and stroke elements on this page.", fontSize = 12.sp, color = Color.Gray)
                 }
             },
@@ -4575,7 +4569,7 @@ if (showLayersDialog) {
                         modifier = Modifier.size(32.dp)
                     ) {
                         Icon(
-                            imageVector = if (isSidebarExpanded) Icons.Default.MenuOpen else Icons.Default.Menu,
+                            imageVector = if (isSidebarExpanded) Icons.AutoMirrored.Filled.MenuOpen else Icons.Default.Menu,
                             contentDescription = "Toggle Sidebar",
                             tint = Color(0xFF475569),
                             modifier = Modifier.size(18.dp)
@@ -4623,7 +4617,7 @@ if (showLayersDialog) {
                             .testTag("undo_button")
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Undo,
+                            imageVector = Icons.AutoMirrored.Filled.Undo,
                             contentDescription = "Undo (Ctrl+Z)",
                             tint = Color(0xFF475569),
                             modifier = Modifier.size(18.dp)
@@ -4638,7 +4632,7 @@ if (showLayersDialog) {
                             .testTag("redo_button")
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Redo,
+                            imageVector = Icons.AutoMirrored.Filled.Redo,
                             contentDescription = "Redo (Ctrl+Y)",
                             tint = Color(0xFF475569),
                             modifier = Modifier.size(18.dp)
@@ -5087,7 +5081,7 @@ if (showLayersDialog) {
                             .testTag("search_handwritten_strokes_button")
                     ) {
                         Icon(
-                            imageVector = Icons.Default.ManageSearch,
+                            imageVector = Icons.AutoMirrored.Filled.ManageSearch,
                             contentDescription = "Search & Analyze Handwritten Strokes with Gemini AI",
                             tint = Color(0xFF8B5CF6), // Purple / Gemini Accent
                             modifier = Modifier.size(18.dp)
@@ -5115,7 +5109,7 @@ if (showLayersDialog) {
             }
 
             if (isToolbarExpanded) {
-                Divider(color = Color(0xFFE2E8F0), thickness = 1.dp)
+                HorizontalDivider(color = Color(0xFFE2E8F0), thickness = 1.dp)
 
                 // Row 2: Pen Shelf, Swatches, and Thickness selectors
                 Row(
@@ -6934,13 +6928,24 @@ fun CreateNoteDialog(
 }
 
 @Composable
-fun SyncDashboard(viewModel: NoteViewModel) {
+fun SyncDashboard(
+    viewModel: NoteViewModel,
+    userViewModel: UserViewModel? = null
+) {
     val notes by viewModel.allNotes.collectAsStateWithLifecycle(initialValue = emptyList())
     val logs by viewModel.syncLogs.collectAsStateWithLifecycle()
     val context = androidx.compose.ui.platform.LocalContext.current
     val googleSignInClient = androidx.compose.runtime.remember {
         GoogleDriveBackupHelper.getSignInClient(context)
     }
+
+    val actualUserViewModel = userViewModel ?: androidx.lifecycle.viewmodel.compose.viewModel<UserViewModel>()
+    val userProfile by actualUserViewModel.userProfile.collectAsStateWithLifecycle()
+    val savedProvider = userProfile.provider
+    val savedName = userProfile.displayName
+    val savedEmail = userProfile.email
+    val savedPhotoUrl = userProfile.photoUrl
+    val isSignedIn = userProfile.isSignedIn
 
     val isDark = androidx.compose.foundation.isSystemInDarkTheme()
     val bgColor = if (isDark) Color(0xFF0F172A) else Color(0xFFF7F8FC)
@@ -6955,22 +6960,6 @@ fun SyncDashboard(viewModel: NoteViewModel) {
     val successColor = Color(0xFF10B981) // Emerald
     val warningColor = Color(0xFFF59E0B) // Amber
     val surfaceBorder = if (isDark) Color(0xFF334155) else Color(0xFFE2E8F0)
-
-    var savedProvider by androidx.compose.runtime.remember {
-        androidx.compose.runtime.mutableStateOf(GoogleDriveBackupHelper.getSavedAccountProvider(context))
-    }
-    var savedName by androidx.compose.runtime.remember {
-        androidx.compose.runtime.mutableStateOf(GoogleDriveBackupHelper.getSavedAccountName(context))
-    }
-    var savedEmail by androidx.compose.runtime.remember {
-        androidx.compose.runtime.mutableStateOf(GoogleDriveBackupHelper.getSavedAccountEmail(context))
-    }
-    var savedPhotoUrl by androidx.compose.runtime.remember {
-        androidx.compose.runtime.mutableStateOf(GoogleDriveBackupHelper.getSavedPhotoUrl(context))
-    }
-    var isSignedIn by androidx.compose.runtime.remember {
-        androidx.compose.runtime.mutableStateOf(GoogleDriveBackupHelper.isSignedIn(context))
-    }
 
     // Modal dialog controls
     var showGoogleConnectDialog by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
@@ -6999,44 +6988,32 @@ fun SyncDashboard(viewModel: NoteViewModel) {
         try {
             val acct = task.getResult(com.google.android.gms.common.api.ApiException::class.java)
             if (acct != null && !acct.email.isNullOrBlank()) {
-                if (!acct.displayName.isNullOrBlank()) savedName = acct.displayName!!
-                if (!acct.email.isNullOrBlank()) savedEmail = acct.email!!
-                if (acct.photoUrl != null && acct.photoUrl.toString().isNotBlank()) {
-                    savedPhotoUrl = acct.photoUrl.toString()
-                }
-                savedProvider = "Google"
-                GoogleDriveBackupHelper.saveConnectedAccount(context, savedName, savedEmail, savedPhotoUrl, provider = "Google")
-                isSignedIn = true
-                viewModel.logSyncEvent("Successfully signed in with Google Account: $savedEmail")
+                actualUserViewModel.onGoogleSignInSuccess(acct)
+                viewModel.logSyncEvent("Successfully signed in with Google Account: ${acct.email}")
                 viewModel.syncWithGoogleDrive()
             } else {
                 val lastAcct = GoogleDriveBackupHelper.getLastSignedInAccount(context)
                 if (lastAcct != null && !lastAcct.email.isNullOrBlank()) {
-                    savedEmail = lastAcct.email!!
-                    savedName = lastAcct.displayName ?: "Google Account"
-                    savedProvider = "Google"
-                    GoogleDriveBackupHelper.saveConnectedAccount(context, savedName, savedEmail, savedPhotoUrl, provider = "Google")
-                    isSignedIn = true
-                    viewModel.logSyncEvent("Successfully connected Google Account: $savedEmail")
+                    actualUserViewModel.onGoogleSignInSuccess(lastAcct)
+                    viewModel.logSyncEvent("Successfully connected Google Account: ${lastAcct.email}")
                     viewModel.syncWithGoogleDrive()
                 } else {
-                    if (inputEmail.isBlank()) inputEmail = if (savedEmail.isNotBlank()) savedEmail else "rampritchoudhary16281@gmail.com"
+                    actualUserViewModel.onGoogleSignInFailure(null)
+                    if (inputEmail.isBlank()) inputEmail = savedEmail
                     showGoogleConnectDialog = true
-                    viewModel.logSyncEvent("Google Account setup ready. Please confirm your account email.")
+                    viewModel.logSyncEvent("Google Sign-In requires account setup confirmation.")
                 }
             }
         } catch (e: Exception) {
             val lastAcct = GoogleDriveBackupHelper.getLastSignedInAccount(context)
             if (lastAcct != null && !lastAcct.email.isNullOrBlank()) {
-                savedEmail = lastAcct.email!!
-                savedName = lastAcct.displayName ?: "Google Account"
-                savedProvider = "Google"
-                GoogleDriveBackupHelper.saveConnectedAccount(context, savedName, savedEmail, savedPhotoUrl, provider = "Google")
-                isSignedIn = true
-                viewModel.logSyncEvent("Successfully connected Google Account: $savedEmail")
+                actualUserViewModel.onGoogleSignInSuccess(lastAcct)
+                viewModel.logSyncEvent("Successfully connected Google Account: ${lastAcct.email}")
                 viewModel.syncWithGoogleDrive()
             } else {
-                if (inputEmail.isBlank()) inputEmail = if (savedEmail.isNotBlank()) savedEmail else "rampritchoudhary16281@gmail.com"
+                actualUserViewModel.onGoogleSignInFailure(e)
+                viewModel.logSyncEvent("Google Sign-In note: ${e.localizedMessage ?: "Fallback to manual configuration"}")
+                if (inputEmail.isBlank()) inputEmail = savedEmail
                 showGoogleConnectDialog = true
             }
         }
@@ -7357,6 +7334,8 @@ fun SyncDashboard(viewModel: NoteViewModel) {
                             savedEmail = savedEmail,
                             savedPhotoUrl = savedPhotoUrl,
                             isSignedIn = isSignedIn,
+                            hasError = userProfile.hasError,
+                            authError = userProfile.authError,
                             cardBg = cardBg,
                             textPrimary = textPrimary,
                             textSecondary = textSecondary,
@@ -7368,7 +7347,8 @@ fun SyncDashboard(viewModel: NoteViewModel) {
                                 try {
                                     signInLauncher.launch(googleSignInClient.signInIntent)
                                 } catch (e: Exception) {
-                                    inputEmail = if (savedEmail.isNotBlank()) savedEmail else "rampritchoudhary16281@gmail.com"
+                                    actualUserViewModel.onGoogleSignInFailure(e)
+                                    inputEmail = savedEmail
                                     showGoogleConnectDialog = true
                                 }
                             },
@@ -7383,15 +7363,11 @@ fun SyncDashboard(viewModel: NoteViewModel) {
                                 showLinkedInConnectDialog = true
                             },
                             onSignOut = {
-                                GoogleDriveBackupHelper.signOut(context) {
-                                    GoogleDriveBackupHelper.clearSavedAccount(context)
-                                    isSignedIn = false
-                                    savedName = "Guest User"
-                                    savedEmail = ""
-                                    savedPhotoUrl = ""
-                                    savedProvider = "Google"
-                                    viewModel.logSyncEvent("Signed out of $savedProvider Account.")
-                                }
+                                actualUserViewModel.signOut()
+                                viewModel.logSyncEvent("Signed out of $savedProvider Account.")
+                            },
+                            onDismissError = {
+                                actualUserViewModel.dismissError()
                             }
                         )
 
@@ -7498,6 +7474,8 @@ fun SyncDashboard(viewModel: NoteViewModel) {
                     savedEmail = savedEmail,
                     savedPhotoUrl = savedPhotoUrl,
                     isSignedIn = isSignedIn,
+                    hasError = userProfile.hasError,
+                    authError = userProfile.authError,
                     cardBg = cardBg,
                     textPrimary = textPrimary,
                     textSecondary = textSecondary,
@@ -7509,7 +7487,8 @@ fun SyncDashboard(viewModel: NoteViewModel) {
                         try {
                             signInLauncher.launch(googleSignInClient.signInIntent)
                         } catch (e: Exception) {
-                            inputEmail = if (savedEmail.isNotBlank()) savedEmail else "rampritchoudhary16281@gmail.com"
+                            actualUserViewModel.onGoogleSignInFailure(e)
+                            inputEmail = savedEmail
                             showGoogleConnectDialog = true
                         }
                     },
@@ -7524,15 +7503,11 @@ fun SyncDashboard(viewModel: NoteViewModel) {
                         showLinkedInConnectDialog = true
                     },
                     onSignOut = {
-                        GoogleDriveBackupHelper.signOut(context) {
-                            GoogleDriveBackupHelper.clearSavedAccount(context)
-                            isSignedIn = false
-                            savedName = "Guest User"
-                            savedEmail = ""
-                            savedPhotoUrl = ""
-                            savedProvider = "Google"
-                            viewModel.logSyncEvent("Signed out of $savedProvider Account.")
-                        }
+                        actualUserViewModel.signOut()
+                        viewModel.logSyncEvent("Signed out of $savedProvider Account.")
+                    },
+                    onDismissError = {
+                        actualUserViewModel.dismissError()
                     }
                 )
 
@@ -7740,13 +7715,11 @@ fun SyncDashboard(viewModel: NoteViewModel) {
                 Button(
                     onClick = {
                         if (inputEmail.isNotBlank()) {
-                            savedEmail = inputEmail.trim()
-                            savedName = inputName.ifBlank { inputEmail.split("@").firstOrNull()?.replaceFirstChar { it.uppercase() } ?: "Google Account" }
-                            savedProvider = "Google"
-                            GoogleDriveBackupHelper.saveConnectedAccount(context, savedName, savedEmail, savedPhotoUrl, provider = "Google")
-                            isSignedIn = true
+                            val newEmail = inputEmail.trim()
+                            val newName = inputName.ifBlank { inputEmail.split("@").firstOrNull()?.replaceFirstChar { it.uppercase() } ?: "Google Account" }
+                            actualUserViewModel.updateConnectedAccount(newName, newEmail, savedPhotoUrl, "Google")
                             showGoogleConnectDialog = false
-                            viewModel.logSyncEvent("Successfully connected Google Account: $savedEmail")
+                            viewModel.logSyncEvent("Successfully connected Google Account: $newEmail")
                             viewModel.syncWithGoogleDrive()
                         } else {
                             android.widget.Toast.makeText(context, "Please enter your Google email address", android.widget.Toast.LENGTH_SHORT).show()
@@ -7805,15 +7778,13 @@ fun SyncDashboard(viewModel: NoteViewModel) {
                 Button(
                     onClick = {
                         if (inputEmail.isNotBlank()) {
-                            savedEmail = inputEmail.trim()
-                            savedName = inputName.ifBlank { inputEmail.split("@").firstOrNull()?.replaceFirstChar { it.uppercase() } ?: "Microsoft User" }
-                            savedProvider = "Microsoft"
-                            GoogleDriveBackupHelper.saveConnectedAccount(context, savedName, savedEmail, savedPhotoUrl, provider = "Microsoft")
-                            isSignedIn = true
+                            val newEmail = inputEmail.trim()
+                            val newName = inputName.ifBlank { inputEmail.split("@").firstOrNull()?.replaceFirstChar { it.uppercase() } ?: "Microsoft User" }
+                            actualUserViewModel.updateConnectedAccount(newName, newEmail, savedPhotoUrl, "Microsoft")
                             showMicrosoftConnectDialog = false
-                            viewModel.logSyncEvent("Successfully connected Microsoft Account: $savedEmail")
+                            viewModel.logSyncEvent("Successfully connected Microsoft Account: $newEmail")
                             viewModel.syncWithGoogleDrive()
-                            android.widget.Toast.makeText(context, "Microsoft Account linked: $savedEmail 🚀", android.widget.Toast.LENGTH_SHORT).show()
+                            android.widget.Toast.makeText(context, "Microsoft Account linked: $newEmail 🚀", android.widget.Toast.LENGTH_SHORT).show()
                         } else {
                             android.widget.Toast.makeText(context, "Please enter your Microsoft email address", android.widget.Toast.LENGTH_SHORT).show()
                         }
@@ -7870,15 +7841,13 @@ fun SyncDashboard(viewModel: NoteViewModel) {
                 Button(
                     onClick = {
                         if (inputEmail.isNotBlank()) {
-                            savedEmail = inputEmail.trim()
-                            savedName = inputName.ifBlank { inputEmail.split("@").firstOrNull()?.replaceFirstChar { it.uppercase() } ?: "LinkedIn User" }
-                            savedProvider = "LinkedIn"
-                            GoogleDriveBackupHelper.saveConnectedAccount(context, savedName, savedEmail, savedPhotoUrl, provider = "LinkedIn")
-                            isSignedIn = true
+                            val newEmail = inputEmail.trim()
+                            val newName = inputName.ifBlank { inputEmail.split("@").firstOrNull()?.replaceFirstChar { it.uppercase() } ?: "LinkedIn User" }
+                            actualUserViewModel.updateConnectedAccount(newName, newEmail, savedPhotoUrl, "LinkedIn")
                             showLinkedInConnectDialog = false
-                            viewModel.logSyncEvent("Successfully connected LinkedIn Account: $savedEmail")
+                            viewModel.logSyncEvent("Successfully connected LinkedIn Account: $newEmail")
                             viewModel.syncWithGoogleDrive()
-                            android.widget.Toast.makeText(context, "LinkedIn Account linked: $savedEmail 💼", android.widget.Toast.LENGTH_SHORT).show()
+                            android.widget.Toast.makeText(context, "LinkedIn Account linked: $newEmail 💼", android.widget.Toast.LENGTH_SHORT).show()
                         } else {
                             android.widget.Toast.makeText(context, "Please enter your LinkedIn email address", android.widget.Toast.LENGTH_SHORT).show()
                         }
@@ -7908,6 +7877,8 @@ private fun AccountSectionCard(
     savedEmail: String,
     savedPhotoUrl: String,
     isSignedIn: Boolean,
+    hasError: Boolean = false,
+    authError: String? = null,
     cardBg: Color,
     textPrimary: Color,
     textSecondary: Color,
@@ -7918,16 +7889,69 @@ private fun AccountSectionCard(
     onSignInGoogle: () -> Unit,
     onSignInMicrosoft: () -> Unit,
     onSignInLinkedIn: () -> Unit,
-    onSignOut: () -> Unit
+    onSignOut: () -> Unit,
+    onDismissError: () -> Unit = {}
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = cardBg),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        border = BorderStroke(1.dp, surfaceBorder)
+        border = BorderStroke(1.dp, if (hasError) MaterialTheme.colorScheme.error.copy(alpha = 0.5f) else surfaceBorder)
     ) {
         Column(modifier = Modifier.padding(22.dp)) {
+            // Authentication Notice Banner if error occurs
+            if (hasError && !authError.isNullOrBlank()) {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.4f)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 16.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.WarningAmber,
+                            contentDescription = "Authentication Alert",
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Authentication Notice",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.5.sp,
+                                color = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                            Text(
+                                text = authError,
+                                fontSize = 11.5.sp,
+                                color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.85f),
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(6.dp))
+                        TextButton(
+                            onClick = onDismissError,
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = "Dismiss",
+                                color = MaterialTheme.colorScheme.error,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
+
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -7976,13 +8000,13 @@ private fun AccountSectionCard(
 
                     Column {
                         Text(
-                            text = if (isSignedIn && savedName.isNotBlank()) savedName else "Ramprit Choudhary",
+                            text = if (isSignedIn && savedName.isNotBlank() && savedName != "Guest User") savedName else if (isSignedIn) "Connected User" else "Guest User",
                             fontWeight = FontWeight.Bold,
                             fontSize = 17.sp,
                             color = textPrimary
                         )
                         Text(
-                            text = if (isSignedIn && savedEmail.isNotBlank()) savedEmail else "rampritchoudhary16281@gmail.com",
+                            text = if (isSignedIn && savedEmail.isNotBlank()) savedEmail else "No account connected (Offline)",
                             fontSize = 13.sp,
                             color = textSecondary
                         )
@@ -8004,7 +8028,7 @@ private fun AccountSectionCard(
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
-                                    text = if (isSignedIn) "Connected • $savedProvider Drive" else "Connected • Google Drive",
+                                    text = if (isSignedIn) "Connected • $savedProvider Drive" else "Not Connected • Offline Mode",
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = if (isSignedIn) successColor else primaryColor
@@ -8040,7 +8064,7 @@ private fun AccountSectionCard(
             }
             Spacer(modifier = Modifier.height(8.dp))
             LinearProgressIndicator(
-                progress = 0.94f,
+                progress = { 0.94f },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(8.dp)
@@ -8700,111 +8724,6 @@ private data class TimelineItemData(
 )
 
 @Composable
-fun AISummaryCenter(notes: List<NoteEntity>, viewModel: NoteViewModel) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp)
-    ) {
-        Text(
-            "Gemini AI Assistant Hub",
-            fontSize = 24.sp,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-        Text(
-            "Quick access to organized summaries, keyword tags, and transcribed content from your tablet notebooks.",
-            fontSize = 13.sp,
-            color = MaterialTheme.colorScheme.outline
-        )
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        val notesWithAI = remember(notes) {
-            notes.filter { !it.summary.isNullOrBlank() || !it.content.isNullOrBlank() || !it.audioTranscription.isNullOrBlank() }
-        }
-
-        if (notesWithAI.isEmpty()) {
-            Box(
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(32.dp)) {
-                    Icon(
-                        Icons.Default.AutoAwesome,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
-                        modifier = Modifier.size(64.dp)
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text("No AI Indexed Notes", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                    Text(
-                        "Open any note editor, sketch thoughts or use voice dictation, and trigger 'Analyze with Gemini' to see results aggregated in this list.",
-                        textAlign = TextAlign.Center,
-                        fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.outline,
-                        modifier = Modifier.padding(horizontal = 24.dp)
-                    )
-                }
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                items(notesWithAI) { note ->
-                    Card(
-                        modifier = Modifier.fillMaxWidth().clickable { viewModel.selectNote(note) },
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text(note.title, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.primary)
-                                Box(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(MaterialTheme.colorScheme.primaryContainer)
-                                        .padding(horizontal = 8.dp, vertical = 2.dp)
-                                ) {
-                                    Text(
-                                        note.templateType.uppercase(),
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                                    )
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.height(10.dp))
-
-                            if (!note.summary.isNullOrBlank()) {
-                                Text("ORGANIZED CATEGORY SUMMARY:", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
-                                Text(note.summary, fontSize = 13.sp, modifier = Modifier.padding(bottom = 8.dp))
-                            }
-
-                            if (!note.content.isNullOrBlank()) {
-                                Text("TRANSCRIBED HANDWRITTEN WORDS & SCRIBBLINGS:", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
-                                StyledTextRenderer(note.content, modifier = Modifier.padding(bottom = 8.dp), viewModel = viewModel)
-                            }
-
-                            if (!note.audioTranscription.isNullOrBlank()) {
-                                Text("AUDIO MEMO TRANSCRIBED TEXT:", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
-                                Text(note.audioTranscription, fontSize = 13.sp, modifier = Modifier.padding(bottom = 8.dp))
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
 fun CustomAIAssistantChip(
     selected: Boolean,
     onClick: () -> Unit,
@@ -8993,7 +8912,7 @@ fun FloatingPenSection(
                     modifier = Modifier.size(36.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Undo,
+                        imageVector = Icons.AutoMirrored.Filled.Undo,
                         contentDescription = "Undo",
                         tint = if (isDarkTheme) Color(0xFF94A3B8) else Color(0xFF1E293B),
                         modifier = Modifier.size(18.dp)
@@ -9007,7 +8926,7 @@ fun FloatingPenSection(
                     modifier = Modifier.size(36.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Redo,
+                        imageVector = Icons.AutoMirrored.Filled.Redo,
                         contentDescription = "Redo",
                         tint = if (isDarkTheme) Color(0xFF94A3B8) else Color(0xFF1E293B),
                         modifier = Modifier.size(18.dp)
@@ -9630,7 +9549,7 @@ fun ScribbleToTextDialog(
                             },
                             modifier = Modifier.size(28.dp)
                         ) {
-                            Icon(Icons.Default.Undo, contentDescription = "Undo stroke", modifier = Modifier.size(16.dp))
+                            Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = "Undo stroke", modifier = Modifier.size(16.dp))
                         }
                         IconButton(
                             onClick = { scribbleStrokes = emptyList() },

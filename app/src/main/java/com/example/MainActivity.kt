@@ -6,7 +6,6 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import com.example.data.AppDatabase
@@ -69,7 +68,12 @@ class MainActivity : ComponentActivity() {
     if (intent.action == android.content.Intent.ACTION_VIEW || intent.action == android.content.Intent.ACTION_SEND) {
       if (intent.type == "application/pdf" || intent.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
         val uri: android.net.Uri? = if (intent.action == android.content.Intent.ACTION_SEND) {
-          intent.getParcelableExtra(android.content.Intent.EXTRA_STREAM)
+          if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            intent.getParcelableExtra(android.content.Intent.EXTRA_STREAM, android.net.Uri::class.java)
+          } else {
+            @Suppress("DEPRECATION")
+            intent.getParcelableExtra(android.content.Intent.EXTRA_STREAM)
+          }
         } else {
           intent.data
         }

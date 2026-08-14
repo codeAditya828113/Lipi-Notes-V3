@@ -503,7 +503,7 @@ fun NotebookStudioDialog(
                                                 val aiCovers = listOf("3d_tech", "3d_creative", "3d_luxury", "3d_glass", "3d_nature", "subject_physics", "subject_computer")
                                                 currentCoverType = aiCovers.random()
                                                 if (prompt.isNotBlank()) {
-                                                    coverTitle = prompt.split(" ").take(3).joinToString(" ").capitalize()
+                                                    coverTitle = prompt.split(" ").take(3).joinToString(" ").replaceFirstChar { it.uppercase() }
                                                     coverSubtitle = "AI Generated Cover · 2026"
                                                 }
                                                 isAiGenerating = false
@@ -750,7 +750,7 @@ fun NotebookStudioDialog(
                                             overflow = TextOverflow.Ellipsis
                                         )
                                         Text(
-                                            text = "$notebookSize · $notebookOrientation · ${currentTemplateType.capitalize()} Paper",
+                                            text = "$notebookSize · $notebookOrientation · ${currentTemplateType.replaceFirstChar { it.uppercase() }} Paper",
                                             fontSize = 11.sp,
                                             color = Color(0xFF64748B)
                                         )
@@ -1526,7 +1526,7 @@ private fun Step3CoverGallery(
                             }
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = cover.replace("subject_", "").replace("3d_", "").capitalize(),
+                                text = cover.replace("subject_", "").replace("3d_", "").replaceFirstChar { it.uppercase() },
                                 fontSize = 10.sp,
                                 fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
                                 color = if (isSel) LipiStudioPrimary else Color(0xFF334155),
@@ -1648,12 +1648,12 @@ private fun Step4ReviewAndFinalize(
                         }
                     }
 
-                    Divider(color = Color(0xFFE2E8F0))
+                    HorizontalDivider(color = Color(0xFFE2E8F0))
 
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Column {
                             Text("Paper Layout", fontSize = 11.sp, color = Color.Gray)
-                            Text(templateType.capitalize(), fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text(templateType.replaceFirstChar { it.uppercase() }, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                         }
                         Column {
                             Text("Size & Aspect", fontSize = 11.sp, color = Color.Gray)
@@ -1661,7 +1661,7 @@ private fun Step4ReviewAndFinalize(
                         }
                         Column {
                             Text("Cover Style", fontSize = 11.sp, color = Color.Gray)
-                            Text(coverType.replace("3d_", "").capitalize(), fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text(coverType.replace("3d_", "").replaceFirstChar { it.uppercase() }, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                         }
                     }
                 }

@@ -2079,6 +2079,8 @@ Here is your complete guide to all features and capabilities available in the ap
         currentVersionName: String,
         currentVersionCode: Int
     ): Boolean {
+        if (remoteVersionCode > currentVersionCode) return true
+
         val cleanRemote = remoteVersionName.replace(Regex("[^0-9.]"), "").trim()
         val cleanCurrent = currentVersionName.replace(Regex("[^0-9.]"), "").trim()
 
@@ -2093,13 +2095,10 @@ Here is your complete guide to all features and capabilities available in the ap
                     if (r > c) return true
                     if (r < c) return false
                 }
-                // If version names are semantically identical (e.g. 1.0.1 vs 1.0.1),
-                // the app is already updated to this version.
                 return false
             }
         }
 
-        // Fallback to versionCode comparison only if version names could not be parsed
         return remoteVersionCode > currentVersionCode
     }
 
@@ -2155,7 +2154,7 @@ Here is your complete guide to all features and capabilities available in the ap
                         }
                         if (apkDownloadUrl.isBlank()) {
                             apkDownloadUrl = if (rawTag.isNotBlank()) {
-                                "https://github.com/$repoOwner/$repoName/releases/download/$rawTag/app-release.apk"
+                                "https://github.com/$repoOwner/$repoName/releases/download/$rawTag/app-debug.apk"
                             } else {
                                 "https://github.com/$repoOwner/$repoName"
                             }
@@ -2347,18 +2346,52 @@ Here is your complete guide to all features and capabilities available in the ap
         viewModelScope.launch {
             try {
                 val file = withContext(Dispatchers.IO) {
-                    val url = URL(urlToDownload)
-                    val connection = url.openConnection() as HttpURLConnection
-                    connection.connectTimeout = 20000
-                    connection.readTimeout = 20000
-                    connection.connect()
+                    var currentUrl = urlToDownload
+                    var connection: HttpURLConnection? = null
+                    var redirectCount = 0
+                    val maxRedirects = 6
 
-                    if (connection.responseCode != HttpURLConnection.HTTP_OK) {
-                        throw Exception("Server returned HTTP ${connection.responseCode}")
+                    while (redirectCount < maxRedirects) {
+                        val url = URL(currentUrl)
+                        val conn = url.openConnection() as HttpURLConnection
+                        conn.connectTimeout = 20000
+                        conn.readTimeout = 20000
+                        conn.instanceFollowRedirects = true
+                        conn.setRequestProperty("User-Agent", "LipiNotesApp/1.0 (Android)")
+                        conn.setRequestProperty("Accept", "*/*")
+                        conn.connect()
+
+                        val responseCode = conn.responseCode
+                        if (responseCode == HttpURLConnection.HTTP_MOVED_PERM ||
+                            responseCode == HttpURLConnection.HTTP_MOVED_TEMP ||
+                            responseCode == HttpURLConnection.HTTP_SEE_OTHER ||
+                            responseCode == 307 || responseCode == 308) {
+                            val newLocation = conn.getHeaderField("Location")
+                            conn.disconnect()
+                            if (!newLocation.isNullOrBlank()) {
+                                currentUrl = newLocation
+                                redirectCount++
+                                continue
+                            }
+                        }
+
+                        if (responseCode != HttpURLConnection.HTTP_OK) {
+                            conn.disconnect()
+                            throw Exception("Server returned HTTP $responseCode")
+                        }
+                        connection = conn
+                        break
+                    }
+
+                    if (connection == null) {
+                        throw Exception("Failed to establish connection after redirects")
                     }
 
                     val fileLength = connection.contentLength
-                    val updateDir = application.cacheDir
+                    val updateDir = application.getExternalFilesDir(null) ?: application.cacheDir
+                    if (!updateDir.exists()) {
+                        updateDir.mkdirs()
+                    }
                     val apkFile = File(updateDir, "update.apk")
                     if (apkFile.exists()) {
                         apkFile.delete()
@@ -2366,7 +2399,7 @@ Here is your complete guide to all features and capabilities available in the ap
 
                     connection.inputStream.use { input ->
                         FileOutputStream(apkFile).use { output ->
-                            val data = ByteArray(4096)
+                            val data = ByteArray(8192)
                             var total: Long = 0
                             var count: Int
                             while (input.read(data).also { count = it } != -1) {
@@ -2380,6 +2413,7 @@ Here is your complete guide to all features and capabilities available in the ap
                             }
                         }
                     }
+                    apkFile.setReadable(true, false)
                     apkFile
                 }
 
@@ -3455,7 +3489,7 @@ Here is your complete guide to all features and capabilities available in the ap
                     }
                     val finalStroke = if (stroke.toolType == "shapes") {
                         SmartInkEngine.generateShape(stroke, activeShapeType, depth3D = shape3dDepth, rotationAngle = shapeRotationAngle)
-                    } else if (smartShapesEnabled && (stroke.toolType == "pen" || stroke.toolType == "highlighter")) {
+                    } else if (smartShapesEnabled && (stroke.toolType == "pen" || stroke.toolType == "fountain_pen" || stroke.toolType == "pencil" || stroke.toolType == "ballpoint_pen" || stroke.toolType == "calligraphy" || stroke.toolType == "highlighter")) {
                         val corrected = SmartInkEngine.detectAndCorrectShape(stroke)
                         if (corrected != stroke) {
                             logSyncEvent("Shape Snapping: Recognized hand-drawn gesture.")
@@ -3465,7 +3499,7 @@ Here is your complete guide to all features and capabilities available in the ap
                         stroke
                     }
 
-                    val strokeToStore = if (autoRefineEnabled && (finalStroke.toolType == "pen" || finalStroke.toolType == "fountain_pen" || finalStroke.toolType == "pencil")) {
+                    val strokeToStore = if (autoRefineEnabled && finalStroke.toolType != "shapes" && finalStroke.toolType != "tape" && finalStroke.toolType != "laser" && (finalStroke.toolType == "pen" || finalStroke.toolType == "fountain_pen" || finalStroke.toolType == "pencil" || finalStroke.toolType == "ballpoint_pen" || finalStroke.toolType == "calligraphy")) {
                         HandwritingRefiner.refineSingleStroke(finalStroke, handwritingRefinementLevel.strengthFactor)
                     } else {
                         finalStroke

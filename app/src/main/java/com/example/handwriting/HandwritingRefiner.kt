@@ -20,10 +20,18 @@ object HandwritingRefiner {
             return RefinementResult(emptyList(), emptyList(), level)
         }
 
+        // Separate handwriting strokes from geometric shapes and UI annotations
+        val isHandwriting = { s: Stroke -> s.toolType != "shapes" && s.toolType != "tape" && s.toolType != "laser" }
+        val handwritingStrokes = strokes.filter(isHandwriting)
+        
+        if (handwritingStrokes.isEmpty()) {
+            return RefinementResult(strokes, strokes, level)
+        }
+
         val factor = level.strengthFactor
 
         // Step 1: Smooth stroke jitter and accidental wobble
-        val smoothedStrokes = strokes.map { stroke ->
+        val smoothedStrokes = handwritingStrokes.map { stroke ->
             refineSingleStroke(stroke, factor)
         }
 
@@ -34,7 +42,17 @@ object HandwritingRefiner {
         val slantHarmonizedStrokes = harmonizeSlant(alignedStrokes, factor, profile?.slantAngle ?: -5f)
 
         // Step 4: Spacing consistency normalization
-        val finalStrokes = normalizeWordSpacing(slantHarmonizedStrokes, factor)
+        val finalHandwritingStrokes = normalizeWordSpacing(slantHarmonizedStrokes, factor)
+
+        // Recombine in original sequence
+        var hwIndex = 0
+        val finalStrokes = strokes.map { original ->
+            if (isHandwriting(original) && hwIndex < finalHandwritingStrokes.size) {
+                finalHandwritingStrokes[hwIndex++]
+            } else {
+                original
+            }
+        }
 
         return RefinementResult(
             originalStrokes = strokes,
@@ -51,7 +69,9 @@ object HandwritingRefiner {
      * Uses Chaikin's corner cutting & moving average interpolation.
      */
     fun refineSingleStroke(stroke: Stroke, factor: Float = 0.75f): Stroke {
-        if (stroke.points.size <= 2) return stroke
+        if (stroke.toolType == "shapes" || stroke.toolType == "tape" || stroke.toolType == "laser" || stroke.points.size <= 2) {
+            return stroke
+        }
 
         val originalPoints = stroke.points
         val smoothedPoints = ArrayList<Point>(originalPoints.size)

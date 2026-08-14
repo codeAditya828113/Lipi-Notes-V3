@@ -51,11 +51,11 @@ fun OnboardingDialog(
             illustrationType = "canvas"
         ),
         OnboardingPageData(
-            title = "Gemini AI Summaries & Transcription",
-            subtitle = "Instantly transcribe handwritten notes or recorded voice memos with Gemini 3.5 Flash AI model.",
-            icon = Icons.Default.AutoAwesome,
+            title = "Voice Notes & Audio Memos",
+            subtitle = "Record synchronized audio alongside your written notes and keep lecture audio clips organized inside notebooks.",
+            icon = Icons.Default.Mic,
             primaryColor = Color(0xFF9C27B0),
-            illustrationType = "ai"
+            illustrationType = "voice"
         ),
         OnboardingPageData(
             title = "Document Annotation (PDF/DOCX)",
@@ -257,8 +257,8 @@ fun OnboardingIllustration(
                     }
                     drawPath(path = p, color = color, style = Stroke(width = 6f))
                 }
-                "ai" -> {
-                    // Draw floating sparkles around center
+                "voice" -> {
+                    // Draw microphone / waveform circles
                     drawCircle(color = color.copy(alpha = 0.2f), radius = w * 0.4f, center = Offset(w / 2, h / 2))
                     drawCircle(color = color.copy(alpha = 0.4f), radius = w * 0.25f, center = Offset(w / 2, h / 2))
                 }

@@ -14,21 +14,23 @@ android {
   compileSdk { version = release(36) { minorApiLevel = 1 } }
 
   val runNumber = providers.environmentVariable("GITHUB_RUN_NUMBER")
-    .map { it.toIntOrNull() ?: 2 }
-    .orElse(2)
+    .map { it.toIntOrNull() ?: 1 }
+    .orElse(1)
     .get()
   val customVersionCode = providers.environmentVariable("VERSION_CODE")
     .map { it.toIntOrNull() ?: runNumber }
     .orElse(runNumber)
     .get()
-  val finalVersionCode = maxOf(customVersionCode, 200)
+  val customVersionName = providers.environmentVariable("VERSION_NAME")
+    .orElse("1.0.$customVersionCode")
+    .get()
 
   defaultConfig {
     applicationId = "com.aistudio.novanotes.fcbecc"
     minSdk = 24
     targetSdk = 36
-    versionCode = finalVersionCode
-    versionName = "1.0.$finalVersionCode"
+    versionCode = customVersionCode
+    versionName = customVersionName
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -137,17 +139,17 @@ dependencies {
   debugImplementation(libs.androidx.compose.ui.tooling)
   "ksp"(libs.androidx.room.compiler)
   "ksp"(libs.moshi.kotlin.codegen)
+
+  implementation("com.google.android.gms:play-services-auth:21.2.0")
+  // Google Drive REST API wrapper
+  implementation("com.google.api-client:google-api-client-android:1.34.1") {
+      exclude(group = "org.apache.httpcomponents")
+  }
+  implementation("com.google.apis:google-api-services-drive:v3-rev20220815-2.0.0") {
+      exclude(group = "org.apache.httpcomponents")
+  }
+  implementation("com.google.mlkit:text-recognition:16.0.1")
+  implementation("androidx.input:input-motionprediction:1.0.0-beta03")
+  implementation("androidx.graphics:graphics-core:1.0.0")
 }
-dependencies {
-    implementation("com.google.android.gms:play-services-auth:21.2.0")
-    // Google Drive REST API wrapper
-    implementation("com.google.api-client:google-api-client-android:1.34.1") {
-        exclude(group = "org.apache.httpcomponents")
-    }
-    implementation("com.google.apis:google-api-services-drive:v3-rev20220815-2.0.0") {
-        exclude(group = "org.apache.httpcomponents")
-    }
-    implementation("com.google.mlkit:text-recognition:16.0.1")
-    implementation("androidx.input:input-motionprediction:1.0.0-beta03")
-    implementation("androidx.graphics:graphics-core:1.0.0")
-}
+

@@ -25,9 +25,11 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -134,11 +136,9 @@ fun LipiDocumentScanner(
     var flashMode by remember { mutableIntStateOf(ImageCapture.FLASH_MODE_OFF) } // OFF, ON, AUTO
     var isCameraFront by remember { mutableStateOf(false) }
 
-    // OCR & AI State
+    // OCR State
     var isOcrRunning by remember { mutableStateOf(false) }
     var aggregatedOcrText by remember { mutableStateOf("") }
-    var aiAnalysisResult by remember { mutableStateOf<String?>(null) }
-    var isAiAnalyzing by remember { mutableStateOf(false) }
 
     // Gallery Picker launcher
     val galleryLauncher = rememberLauncherForActivityResult(
@@ -338,8 +338,6 @@ fun LipiDocumentScanner(
                             scannedPages = scannedPages,
                             isOcrRunning = isOcrRunning,
                             aggregatedOcrText = aggregatedOcrText,
-                            aiAnalysisResult = aiAnalysisResult,
-                            isAiAnalyzing = isAiAnalyzing,
                             onRunOcr = {
                                 isOcrRunning = true
                                 scope.launch(Dispatchers.IO) {
@@ -361,19 +359,6 @@ fun LipiDocumentScanner(
                                     withContext(Dispatchers.Main) {
                                         isOcrRunning = false
                                         aggregatedOcrText = if (finalOcr.isNotBlank()) finalOcr else "No clear text recognized in scanned document."
-                                    }
-                                }
-                            },
-                            onSummarizeWithAi = {
-                                if (aggregatedOcrText.isNotBlank()) {
-                                    isAiAnalyzing = true
-                                    scope.launch(Dispatchers.IO) {
-                                        delay(1200L) // simulated fast AI model pass
-                                        val summary = "📌 Key Summary of Scanned Document:\n• Document contains structured handwritten & printed notes.\n• Contains actionable study goals and formula breakdowns.\n• Recommended for flashcard review."
-                                        withContext(Dispatchers.Main) {
-                                            isAiAnalyzing = false
-                                            aiAnalysisResult = summary
-                                        }
                                     }
                                 }
                             },
@@ -759,7 +744,7 @@ private fun CameraScannerScreen(
                                 fontSize = 13.sp
                             )
                             Spacer(modifier = Modifier.width(4.dp))
-                            Icon(Icons.Default.ArrowForward, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                            Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
                         }
                     }
                 } else {
@@ -829,7 +814,7 @@ private fun CropFilterAdjustScreen(
             IconButton(onClick = {
                 currentRotation = (currentRotation + 90) % 360
             }) {
-                Icon(Icons.Default.RotateRight, contentDescription = "Rotate", tint = Color.White)
+                Icon(Icons.AutoMirrored.Filled.RotateRight, contentDescription = "Rotate", tint = Color.White)
             }
         }
 
@@ -1042,7 +1027,7 @@ private fun ReviewPagesScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onClose) {
-                Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
             }
 
             Text(
@@ -1167,10 +1152,7 @@ private fun FinishDestinationScreen(
     scannedPages: List<ScannedPage>,
     isOcrRunning: Boolean,
     aggregatedOcrText: String,
-    aiAnalysisResult: String?,
-    isAiAnalyzing: Boolean,
     onRunOcr: () -> Unit,
-    onSummarizeWithAi: () -> Unit,
     onSaveToTarget: (NoteEntity?) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -1231,7 +1213,7 @@ private fun FinishDestinationScreen(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // Contextual OCR Enhancement Card: "✨ Make it searchable"
+            // Contextual OCR Enhancement Card: "Make it searchable"
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(18.dp),
@@ -1246,14 +1228,14 @@ private fun FinishDestinationScreen(
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
-                                Icons.Default.AutoAwesome,
+                                Icons.Default.DocumentScanner,
                                 contentDescription = null,
                                 tint = Color(0xFF4DA3FF),
                                 modifier = Modifier.size(20.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                "✨ Make it Searchable (ML Kit OCR)",
+                                "Make it Searchable (ML Kit OCR)",
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 14.sp,
                                 color = Color.White
@@ -1291,7 +1273,7 @@ private fun FinishDestinationScreen(
 
                         Spacer(modifier = Modifier.height(12.dp))
 
-                        // AI Action Chips
+                        // Action Chip
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             AssistChip(
                                 onClick = {
@@ -1301,35 +1283,6 @@ private fun FinishDestinationScreen(
                                 label = { Text("Copy Text", fontSize = 11.sp) },
                                 leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(14.dp)) }
                             )
-
-                            AssistChip(
-                                onClick = onSummarizeWithAi,
-                                label = { Text("Summarize with AI", fontSize = 11.sp) },
-                                leadingIcon = { Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(14.dp)) }
-                            )
-                        }
-
-                        if (isAiAnalyzing) {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                CircularProgressIndicator(modifier = Modifier.size(14.dp), color = Color(0xFF4DA3FF), strokeWidth = 2.dp)
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Lipi AI summarizing document...", fontSize = 11.sp, color = Color(0xFF4DA3FF))
-                            }
-                        } else if (aiAnalysisResult != null) {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Surface(
-                                shape = RoundedCornerShape(10.dp),
-                                color = Color(0xFF0F172A),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text(
-                                    text = aiAnalysisResult,
-                                    fontSize = 12.sp,
-                                    color = Color.White,
-                                    modifier = Modifier.padding(10.dp)
-                                )
-                            }
                         }
                     }
                 }
@@ -1362,7 +1315,7 @@ private fun FinishDestinationScreen(
                         modifier = Modifier.padding(16.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.Default.MenuBook, contentDescription = null, tint = Color.White, modifier = Modifier.size(24.dp))
+                        Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = null, tint = Color.White, modifier = Modifier.size(24.dp))
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
                             Text(
@@ -1396,7 +1349,7 @@ private fun FinishDestinationScreen(
                     modifier = Modifier.padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(Icons.Default.NoteAdd, contentDescription = null, tint = Color(0xFF4DA3FF), modifier = Modifier.size(24.dp))
+                    Icon(Icons.AutoMirrored.Filled.NoteAdd, contentDescription = null, tint = Color(0xFF4DA3FF), modifier = Modifier.size(24.dp))
                     Spacer(modifier = Modifier.width(12.dp))
                     Column {
                         Text(
@@ -1529,7 +1482,7 @@ private fun createSampleDocumentBitmap(): Bitmap {
         "• Automatic perspective correction and corner straightening",
         "• Enhanced contrast for high-legibility handwriting scanning",
         "• Multi-page PDF generation & instant notebook embedding",
-        "• On-device Gemini AI summarization and text searchability",
+        "• Local text extraction and notebook searchability",
         "",
         "3. Stylus & Vector Drawing Notes:",
         "Superposed strokes are rendered with sub-pixel precision.",

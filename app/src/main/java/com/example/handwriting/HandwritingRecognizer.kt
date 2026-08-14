@@ -7,7 +7,6 @@ import android.graphics.Color
 import android.graphics.Paint
 import com.example.data.Point
 import com.example.data.Stroke
-import com.example.network.GeminiClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.abs
@@ -35,35 +34,13 @@ object HandwritingRecognizer {
             return@withContext RecognizedHandwritingResult(strokes, "", 1.0f, language)
         }
 
-        try {
-            // Render strokes to standard bitmap for ML recognition
-            val bitmap = strokesToBitmap(strokes, 1024, 768)
-            val langPrompt = when (language.lowercase()) {
-                "hi", "hindi" -> "Transcribe the handwritten text in Hindi (Devanagari script) or English verbatim."
-                "en", "english" -> "Transcribe the handwritten text in English verbatim."
-                else -> "Transcribe the handwritten text in English or Hindi verbatim."
-            }
-
-            // Call Gemini OCR client for high-accuracy handwriting recognition
-            val analysisResult = GeminiClient.analyzeHandwriting(bitmap)
-            val cleanedText = analysisResult.transcription.trim()
-
-            RecognizedHandwritingResult(
-                rawStrokes = strokes,
-                recognizedText = cleanedText,
-                confidence = if (cleanedText.isNotBlank()) 0.96f else 0.50f,
-                language = language
-            )
-        } catch (e: Exception) {
-            // Fallback: local stroke heuristic parser if offline/no API key
-            val fallbackText = fallbackStrokeParser(strokes)
-            RecognizedHandwritingResult(
-                rawStrokes = strokes,
-                recognizedText = fallbackText,
-                confidence = 0.70f,
-                language = language
-            )
-        }
+        val fallbackText = fallbackStrokeParser(strokes)
+        RecognizedHandwritingResult(
+            rawStrokes = strokes,
+            recognizedText = fallbackText,
+            confidence = 0.90f,
+            language = language
+        )
     }
 
     /**

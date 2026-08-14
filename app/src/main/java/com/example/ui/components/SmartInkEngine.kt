@@ -119,13 +119,57 @@ object SmartInkEngine {
                 generatedPoints.add(Point(x0, y0 + finalH))
                 generatedPoints.add(Point(x0, y0))
             }
-            "circle", "ellipse" -> {
+            "rounded_rectangle", "round_rect" -> {
+                val r = minOf(width, height) * 0.15f
+                val x0 = cx - width / 2f
+                val y0 = cy - height / 2f
+                val x1 = cx + width / 2f
+                val y1 = cy + height / 2f
+                
+                // Top-left arc to top-right
+                val steps = 8
+                // Top edge
+                generatedPoints.add(Point(x0 + r, y0))
+                generatedPoints.add(Point(x1 - r, y0))
+                // Top-right corner
+                for (i in 0..steps) {
+                    val a = -Math.PI / 2 + (i.toFloat() / steps) * (Math.PI / 2)
+                    generatedPoints.add(Point((x1 - r + r * cos(a)).toFloat(), (y0 + r + r * sin(a)).toFloat()))
+                }
+                // Right edge
+                generatedPoints.add(Point(x1, y1 - r))
+                // Bottom-right corner
+                for (i in 0..steps) {
+                    val a = 0.0 + (i.toFloat() / steps) * (Math.PI / 2)
+                    generatedPoints.add(Point((x1 - r + r * cos(a)).toFloat(), (y1 - r + r * sin(a)).toFloat()))
+                }
+                // Bottom edge
+                generatedPoints.add(Point(x0 + r, y1))
+                // Bottom-left corner
+                for (i in 0..steps) {
+                    val a = Math.PI / 2 + (i.toFloat() / steps) * (Math.PI / 2)
+                    generatedPoints.add(Point((x0 + r + r * cos(a)).toFloat(), (y1 - r + r * sin(a)).toFloat()))
+                }
+                // Left edge
+                generatedPoints.add(Point(x0, y0 + r))
+                // Top-left corner
+                for (i in 0..steps) {
+                    val a = Math.PI + (i.toFloat() / steps) * (Math.PI / 2)
+                    generatedPoints.add(Point((x0 + r + r * cos(a)).toFloat(), (y0 + r + r * sin(a)).toFloat()))
+                }
+                generatedPoints.add(Point(x0 + r, y0))
+            }
+            "circle", "ellipse", "oval" -> {
                 val rx = if (shapeType.lowercase() == "circle") minOf(width, height) / 2f else width / 2f
                 val ry = if (shapeType.lowercase() == "circle") minOf(width, height) / 2f else height / 2f
                 for (i in 0..48) {
                     val angle = (i / 48f) * 2 * Math.PI
                     generatedPoints.add(Point((cx + rx * cos(angle)).toFloat(), (cy + ry * sin(angle)).toFloat()))
                 }
+            }
+            "line", "straight_line" -> {
+                generatedPoints.add(Point(minX, minY))
+                generatedPoints.add(Point(maxX, maxY))
             }
             "triangle" -> {
                 generatedPoints.add(Point(cx, minY))
@@ -513,7 +557,7 @@ object SmartInkEngine {
         if (totalLength <= 0f) return stroke
 
         // 2. Line Snapping: High directness ratio (start-to-end vs total length)
-        if (startToEndDist > 60f && (startToEndDist / totalLength) > 0.91f) {
+        if (startToEndDist > 50f && (startToEndDist / totalLength) > 0.88f) {
             val count = 20
             val snappedPoints = (0..count).map { step ->
                 val t = step.toFloat() / count
@@ -522,7 +566,7 @@ object SmartInkEngine {
                 val p = first.pressure + t * (last.pressure - first.pressure)
                 Point(x, y, p)
             }
-            return stroke.copy(points = snappedPoints)
+            return stroke.copy(points = snappedPoints, toolType = "shapes")
         }
 
         // Calculate bounding box variables
@@ -542,16 +586,27 @@ object SmartInkEngine {
         val width = maxX - minX
         val height = maxY - minY
 
-        // 3. Circle / Ellipse / Rectangle Snapping (Closed loops)
-        val isClosedLoop = startToEndDist < 100f && totalLength > 150f
+        if (width < 25f || height < 25f) return stroke
+
+        // 3. Closed Loop Shape Detection
+        val isClosedLoop = startToEndDist < minOf(90f, totalLength * 0.25f) && totalLength > 100f
         if (isClosedLoop) {
+            // Simplify stroke points using Douglas-Peucker to find vertices
+            val epsilon = (width + height) * 0.07f
+            val simplified = ramerDouglasPeucker(points, epsilon)
+            val cornerCount = if (simplified.size > 2 && hypot(simplified.first().x - simplified.last().x, simplified.first().y - simplified.last().y) < epsilon * 2) {
+                simplified.size - 1
+            } else {
+                simplified.size
+            }
+
             val radii = points.map { pt -> hypot(pt.x - centerX, pt.y - centerY) }
             val avgRadius = radii.average().toFloat()
             val variance = radii.map { r -> (r - avgRadius) * (r - avgRadius) }.average()
             val stdDev = kotlin.math.sqrt(variance).toFloat()
 
-            // If radius variations are low, it's a circle/ellipse
-            if (avgRadius > 25f && (stdDev / avgRadius) < 0.23f) {
+            // Circle / Ellipse check: low radius variance and smooth round loop
+            if (avgRadius > 20f && (stdDev / avgRadius) < 0.20f) {
                 val semiMajor = width / 2f
                 val semiMinor = height / 2f
                 val snappedPoints = (0..48).map { step ->
@@ -560,21 +615,96 @@ object SmartInkEngine {
                     val y = centerY + semiMinor * sin(angle)
                     Point(x, y, 1.0f)
                 }
-                return stroke.copy(points = snappedPoints)
-            } else if (avgRadius > 25f) {
-                // Otherwise snap to a clean rectangle
-                val snappedPoints = listOf(
-                    Point(minX, minY, 1.0f),
-                    Point(maxX, minY, 1.0f),
-                    Point(maxX, maxY, 1.0f),
-                    Point(minX, maxY, 1.0f),
-                    Point(minX, minY, 1.0f) // Close the loop
-                )
-                return stroke.copy(points = snappedPoints)
+                return stroke.copy(points = snappedPoints, toolType = "shapes")
+            }
+
+            // Triangle snapping (3 distinct corners)
+            if (cornerCount == 3) {
+                val p1 = Point(centerX, minY, 1f)
+                val p2 = Point(maxX, maxY, 1f)
+                val p3 = Point(minX, maxY, 1f)
+                return stroke.copy(points = listOf(p1, p2, p3, p1), toolType = "shapes")
+            }
+
+            // 4-corner shapes: Rectangle, Square, or Diamond
+            if (cornerCount == 4) {
+                // Check if corners are near the midpoints of bounding box (Diamond)
+                val isDiamond = simplified.take(4).any { pt -> abs(pt.x - centerX) < width * 0.15f && (abs(pt.y - minY) < height * 0.15f || abs(pt.y - maxY) < height * 0.15f) }
+                if (isDiamond) {
+                    val snappedPoints = listOf(
+                        Point(centerX, minY, 1.0f),
+                        Point(maxX, centerY, 1.0f),
+                        Point(centerX, maxY, 1.0f),
+                        Point(minX, centerY, 1.0f),
+                        Point(centerX, minY, 1.0f)
+                    )
+                    return stroke.copy(points = snappedPoints, toolType = "shapes")
+                } else {
+                    val snappedPoints = listOf(
+                        Point(minX, minY, 1.0f),
+                        Point(maxX, minY, 1.0f),
+                        Point(maxX, maxY, 1.0f),
+                        Point(minX, maxY, 1.0f),
+                        Point(minX, minY, 1.0f)
+                    )
+                    return stroke.copy(points = snappedPoints, toolType = "shapes")
+                }
+            }
+
+            // 5-corner shape: Pentagon
+            if (cornerCount == 5) {
+                val rx = width / 2f
+                val ry = height / 2f
+                val snappedPoints = (0..5).map { i ->
+                    val angle = i * 2 * Math.PI / 5 - Math.PI / 2
+                    Point((centerX + rx * cos(angle)).toFloat(), (centerY + ry * sin(angle)).toFloat(), 1.0f)
+                }
+                return stroke.copy(points = snappedPoints, toolType = "shapes")
+            }
+
+            // 6-corner shape: Hexagon
+            if (cornerCount == 6) {
+                val rx = width / 2f
+                val ry = height / 2f
+                val snappedPoints = (0..6).map { i ->
+                    val angle = i * 2 * Math.PI / 6 - Math.PI / 2
+                    Point((centerX + rx * cos(angle)).toFloat(), (centerY + ry * sin(angle)).toFloat(), 1.0f)
+                }
+                return stroke.copy(points = snappedPoints, toolType = "shapes")
             }
         }
 
         return stroke
+    }
+
+    private fun ramerDouglasPeucker(pts: List<Point>, epsilon: Float): List<Point> {
+        if (pts.size < 3) return pts
+        var maxDist = 0f
+        var maxIndex = 0
+        val first = pts.first()
+        val last = pts.last()
+
+        val lineLen = hypot(last.x - first.x, last.y - first.y)
+        for (i in 1 until pts.size - 1) {
+            val pt = pts[i]
+            val dist = if (lineLen == 0f) {
+                hypot(pt.x - first.x, pt.y - first.y)
+            } else {
+                abs((last.y - first.y) * pt.x - (last.x - first.x) * pt.y + last.x * first.y - last.y * first.x) / lineLen
+            }
+            if (dist > maxDist) {
+                maxDist = dist
+                maxIndex = i
+            }
+        }
+
+        return if (maxDist > epsilon) {
+            val left = ramerDouglasPeucker(pts.subList(0, maxIndex + 1), epsilon)
+            val right = ramerDouglasPeucker(pts.subList(maxIndex, pts.size), epsilon)
+            left.dropLast(1) + right
+        } else {
+            listOf(first, last)
+        }
     }
 
     /**

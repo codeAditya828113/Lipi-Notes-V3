@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -178,7 +179,7 @@ fun PdfAnnotationViewer(
                                 modifier = Modifier.testTag("pdf_viewer_close_button")
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.ArrowBack,
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                                     contentDescription = "Back to Editor",
                                     tint = Color.White
                                 )
@@ -418,7 +419,7 @@ fun PdfAnnotationViewer(
                         shape = RoundedCornerShape(16.dp),
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                     ) {
-                        Icon(Icons.Default.NavigateBefore, contentDescription = "Previous Page")
+                        Icon(Icons.AutoMirrored.Filled.NavigateBefore, contentDescription = "Previous Page")
                         Spacer(modifier = Modifier.width(4.dp))
                         Text("Prev", fontSize = 12.sp)
                     }
@@ -467,7 +468,7 @@ fun PdfAnnotationViewer(
                     ) {
                         Text("Next", fontSize = 12.sp)
                         Spacer(modifier = Modifier.width(4.dp))
-                        Icon(Icons.Default.NavigateNext, contentDescription = "Next Page")
+                        Icon(Icons.AutoMirrored.Filled.NavigateNext, contentDescription = "Next Page")
                     }
                 }
             }

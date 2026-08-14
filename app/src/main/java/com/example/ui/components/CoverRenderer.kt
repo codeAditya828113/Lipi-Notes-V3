@@ -211,7 +211,7 @@ fun Cover3DAcademic(title: String, subtitle: String, author: String, extra: Stri
                         textAlign = TextAlign.Center
                     )
                 }
-                Divider(
+                HorizontalDivider(
                     color = Color(0xFFE2E8F0),
                     thickness = 1.dp,
                     modifier = Modifier.padding(vertical = 12.dp)
@@ -523,7 +523,7 @@ fun Cover3DLuxury(title: String, subtitle: String, author: String, extra: String
                             color = Color(0xFFD1D5DB)
                         )
                     }
-                    Divider(color = Color(0xFFEAB308).copy(alpha = 0.5f), thickness = 1.dp, modifier = Modifier.padding(vertical = 12.dp))
+                    HorizontalDivider(color = Color(0xFFEAB308).copy(alpha = 0.5f), thickness = 1.dp, modifier = Modifier.padding(vertical = 12.dp))
                     Text(
                         text = if (author.isNotBlank()) author else "Confidential",
                         fontSize = 11.sp,
@@ -698,7 +698,7 @@ fun ScienceCover(title: String, author: String, year: String) {
                         Text(author, fontSize = 14.sp, color = Color.DarkGray)
                         Text(year, fontSize = 14.sp, color = Color.DarkGray)
                     }
-                    Divider(color = Color.LightGray, thickness = 1.dp, modifier = Modifier.padding(top = 4.dp))
+                    HorizontalDivider(color = Color.LightGray, thickness = 1.dp, modifier = Modifier.padding(top = 4.dp))
                 }
             }
         }
@@ -866,7 +866,7 @@ fun EnglishCover(title: String, author: String, year: String) {
                 Text(title.uppercase(), fontSize = 18.sp, fontWeight = FontWeight.Bold)
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(author, fontSize = 20.sp, fontFamily = FontFamily.Cursive)
-                Divider(color = Color.Black, modifier = Modifier.padding(vertical = 12.dp))
+                HorizontalDivider(color = Color.Black, modifier = Modifier.padding(vertical = 12.dp))
                 Text(year, fontSize = 18.sp, fontWeight = FontWeight.Bold)
             }
         }
@@ -977,7 +977,7 @@ fun Cover3DTiger(title: String, author: String) {
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = if (author.isNotBlank()) author else "Aditya Kumar",
+                    text = if (author.isNotBlank()) author else "",
                     fontSize = 11.sp,
                     color = Color(0xFFFCD34D),
                     fontWeight = FontWeight.Medium
@@ -1045,7 +1045,7 @@ fun Cover3DReader(title: String, author: String) {
                 )
                 Spacer(modifier = Modifier.height(10.dp))
                 Text(
-                    text = if (author.isNotBlank()) author else "Aditya Kumar",
+                    text = if (author.isNotBlank()) author else "",
                     fontSize = 12.sp,
                     fontFamily = FontFamily.Serif,
                     color = Color(0xFF78350F)
@@ -1101,7 +1101,7 @@ fun Cover3DSketch(title: String, author: String) {
                     textAlign = TextAlign.Center
                 )
                 Spacer(modifier = Modifier.height(8.dp))
-                Text(text = if (author.isNotBlank()) author else "Aditya Kumar", fontSize = 11.sp, color = Color(0xFFA1A1AA))
+                Text(text = if (author.isNotBlank()) author else "", fontSize = 11.sp, color = Color(0xFFA1A1AA))
             }
         }
     }
@@ -1141,7 +1141,7 @@ fun Cover3DWash(title: String, author: String) {
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(text = if (title.isNotBlank()) title else "Fluid Art Notes", fontSize = 20.sp, fontWeight = FontWeight.Black, color = Color(0xFF0F172A), textAlign = TextAlign.Center)
                 Spacer(modifier = Modifier.height(8.dp))
-                Text(text = if (author.isNotBlank()) author else "Aditya Kumar", fontSize = 11.sp, color = Color(0xFF0284C7), fontWeight = FontWeight.SemiBold)
+                Text(text = if (author.isNotBlank()) author else "", fontSize = 11.sp, color = Color(0xFF0284C7), fontWeight = FontWeight.SemiBold)
             }
         }
     }
@@ -1183,7 +1183,7 @@ fun Cover3DInk(title: String, author: String) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(text = if (title.isNotBlank()) title else "Ink & Brush Journal", fontSize = 20.sp, fontWeight = FontWeight.Black, color = Color.White, textAlign = TextAlign.Center)
                 Spacer(modifier = Modifier.height(8.dp))
-                Text(text = if (author.isNotBlank()) author else "Aditya Kumar", fontSize = 11.sp, color = Color(0xFFCBD5E1))
+                Text(text = if (author.isNotBlank()) author else "", fontSize = 11.sp, color = Color(0xFFCBD5E1))
             }
         }
     }
@@ -1240,7 +1240,7 @@ fun Cover3DCar(title: String, author: String) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(text = if (title.isNotBlank()) title.uppercase() else "RACING TELEMETRY", fontSize = 18.sp, fontWeight = FontWeight.Black, color = Color.White, textAlign = TextAlign.Center)
                 Spacer(modifier = Modifier.height(8.dp))
-                Text(text = if (author.isNotBlank()) author else "Aditya Kumar", fontSize = 11.sp, color = Color(0xFFA1A1AA))
+                Text(text = if (author.isNotBlank()) author else "", fontSize = 11.sp, color = Color(0xFFA1A1AA))
             }
         }
     }
@@ -1283,7 +1283,7 @@ fun Cover3DGeo1(title: String, subtitle: String, author: String) {
                     Text(text = subtitle, fontSize = 11.sp, color = Color(0xFF6B21A8))
                 }
                 Spacer(modifier = Modifier.height(8.dp))
-                Text(text = if (author.isNotBlank()) author else "Aditya Kumar", fontSize = 11.sp, color = Color(0xFF4C1D95), fontWeight = FontWeight.Bold)
+                Text(text = if (author.isNotBlank()) author else "", fontSize = 11.sp, color = Color(0xFF4C1D95), fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -1327,7 +1327,7 @@ fun Cover3DGeo2(title: String, subtitle: String, author: String) {
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(text = if (title.isNotBlank()) title else "STRUCTURED NOTES", fontSize = 20.sp, fontWeight = FontWeight.Black, color = Color(0xFF134E4A), textAlign = TextAlign.Center)
                 Spacer(modifier = Modifier.height(8.dp))
-                Text(text = if (author.isNotBlank()) author else "Aditya Kumar", fontSize = 11.sp, color = Color(0xFF0D9488), fontWeight = FontWeight.Bold)
+                Text(text = if (author.isNotBlank()) author else "", fontSize = 11.sp, color = Color(0xFF0D9488), fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -1366,7 +1366,7 @@ fun Cover3DGeo3(title: String, subtitle: String, author: String) {
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(text = if (title.isNotBlank()) title else "PRISM NOTEBOOK", fontSize = 20.sp, fontWeight = FontWeight.Black, color = Color(0xFF500724), textAlign = TextAlign.Center)
                 Spacer(modifier = Modifier.height(8.dp))
-                Text(text = if (author.isNotBlank()) author else "Aditya Kumar", fontSize = 11.sp, color = Color(0xFFBE185D), fontWeight = FontWeight.Bold)
+                Text(text = if (author.isNotBlank()) author else "", fontSize = 11.sp, color = Color(0xFFBE185D), fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -1454,9 +1454,9 @@ fun SubjectMathCover(title: String, subtitle: String, author: String, extra: Str
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(text = subtitle, fontSize = 11.sp, color = Color(0xFFBAE6FD), fontFamily = FontFamily.SansSerif)
                 }
-                Divider(color = Color(0xFF38BDF8).copy(alpha = 0.4f), thickness = 1.dp, modifier = Modifier.padding(vertical = 8.dp))
+                HorizontalDivider(color = Color(0xFF38BDF8).copy(alpha = 0.4f), thickness = 1.dp, modifier = Modifier.padding(vertical = 8.dp))
                 Text(
-                    text = if (author.isNotBlank()) author else "Aditya Kumar",
+                    text = if (author.isNotBlank()) author else "",
                     fontSize = 11.sp,
                     color = Color(0xFF38BDF8),
                     fontWeight = FontWeight.Bold,
@@ -1530,8 +1530,8 @@ fun SubjectGkGsCover(title: String, subtitle: String, author: String, extra: Str
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(text = subtitle, fontSize = 11.sp, color = Color(0xFFA7F3D0))
                 }
-                Divider(color = Color(0xFFFDE047).copy(alpha = 0.4f), thickness = 1.dp, modifier = Modifier.padding(vertical = 10.dp))
-                Text(text = if (author.isNotBlank()) author else "Aditya Kumar", fontSize = 11.sp, color = Color(0xFF34D399), fontWeight = FontWeight.Bold)
+                HorizontalDivider(color = Color(0xFFFDE047).copy(alpha = 0.4f), thickness = 1.dp, modifier = Modifier.padding(vertical = 10.dp))
+                Text(text = if (author.isNotBlank()) author else "", fontSize = 11.sp, color = Color(0xFF34D399), fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -1581,8 +1581,8 @@ fun SubjectCurrentAffairsCover(title: String, subtitle: String, author: String, 
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(text = subtitle, fontSize = 11.sp, color = Color(0xFFFECDD3))
                 }
-                Divider(color = Color(0xFFE11D48).copy(alpha = 0.4f), thickness = 1.dp, modifier = Modifier.padding(vertical = 10.dp))
-                Text(text = if (author.isNotBlank()) author else "Aditya Kumar", fontSize = 11.sp, color = Color(0xFFFB7185), fontWeight = FontWeight.Bold)
+                HorizontalDivider(color = Color(0xFFE11D48).copy(alpha = 0.4f), thickness = 1.dp, modifier = Modifier.padding(vertical = 10.dp))
+                Text(text = if (author.isNotBlank()) author else "", fontSize = 11.sp, color = Color(0xFFFB7185), fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -1629,8 +1629,8 @@ fun SubjectReasoningCover(title: String, subtitle: String, author: String, extra
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(text = subtitle, fontSize = 11.sp, color = Color(0xFFE9D5FF))
                 }
-                Divider(color = Color(0xFFA855F7).copy(alpha = 0.4f), thickness = 1.dp, modifier = Modifier.padding(vertical = 10.dp))
-                Text(text = if (author.isNotBlank()) author else "Aditya Kumar", fontSize = 11.sp, color = Color(0xFFC084FC), fontWeight = FontWeight.Bold)
+                HorizontalDivider(color = Color(0xFFA855F7).copy(alpha = 0.4f), thickness = 1.dp, modifier = Modifier.padding(vertical = 10.dp))
+                Text(text = if (author.isNotBlank()) author else "", fontSize = 11.sp, color = Color(0xFFC084FC), fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -1679,8 +1679,8 @@ fun SubjectHindiCover(title: String, subtitle: String, author: String, extra: St
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(text = subtitle, fontSize = 11.sp, color = Color(0xFF9A3412))
                 }
-                Divider(color = Color(0xFFEA580C).copy(alpha = 0.3f), thickness = 1.dp, modifier = Modifier.padding(vertical = 10.dp))
-                Text(text = if (author.isNotBlank()) author else "Aditya Kumar", fontSize = 11.sp, color = Color(0xFFC2410C), fontWeight = FontWeight.Bold)
+                HorizontalDivider(color = Color(0xFFEA580C).copy(alpha = 0.3f), thickness = 1.dp, modifier = Modifier.padding(vertical = 10.dp))
+                Text(text = if (author.isNotBlank()) author else "", fontSize = 11.sp, color = Color(0xFFC2410C), fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -1730,8 +1730,8 @@ fun SubjectEnglishCover(title: String, subtitle: String, author: String, extra: 
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(text = subtitle, fontSize = 11.sp, fontFamily = FontFamily.Serif, color = Color(0xFF93C5FD))
                 }
-                Divider(color = Color(0xFFFDE047).copy(alpha = 0.4f), thickness = 1.dp, modifier = Modifier.padding(vertical = 10.dp))
-                Text(text = if (author.isNotBlank()) author else "Aditya Kumar", fontSize = 11.sp, fontFamily = FontFamily.Serif, color = Color(0xFFFDE047))
+                HorizontalDivider(color = Color(0xFFFDE047).copy(alpha = 0.4f), thickness = 1.dp, modifier = Modifier.padding(vertical = 10.dp))
+                Text(text = if (author.isNotBlank()) author else "", fontSize = 11.sp, fontFamily = FontFamily.Serif, color = Color(0xFFFDE047))
             }
         }
     }
@@ -1775,8 +1775,8 @@ fun SubjectScienceCover(title: String, subtitle: String, author: String, extra: 
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(text = subtitle, fontSize = 11.sp, color = Color(0xFF99F6E4))
                 }
-                Divider(color = Color(0xFF2DD4BF).copy(alpha = 0.4f), thickness = 1.dp, modifier = Modifier.padding(vertical = 10.dp))
-                Text(text = if (author.isNotBlank()) author else "Aditya Kumar", fontSize = 11.sp, color = Color(0xFF2DD4BF), fontWeight = FontWeight.Bold)
+                HorizontalDivider(color = Color(0xFF2DD4BF).copy(alpha = 0.4f), thickness = 1.dp, modifier = Modifier.padding(vertical = 10.dp))
+                Text(text = if (author.isNotBlank()) author else "", fontSize = 11.sp, color = Color(0xFF2DD4BF), fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -1820,8 +1820,8 @@ fun SubjectSstCover(title: String, subtitle: String, author: String, extra: Stri
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(text = subtitle, fontSize = 11.sp, color = Color(0xFF78350F))
                 }
-                Divider(color = Color(0xFFB45309).copy(alpha = 0.3f), thickness = 1.dp, modifier = Modifier.padding(vertical = 10.dp))
-                Text(text = if (author.isNotBlank()) author else "Aditya Kumar", fontSize = 11.sp, color = Color(0xFFB45309), fontWeight = FontWeight.Bold)
+                HorizontalDivider(color = Color(0xFFB45309).copy(alpha = 0.3f), thickness = 1.dp, modifier = Modifier.padding(vertical = 10.dp))
+                Text(text = if (author.isNotBlank()) author else "", fontSize = 11.sp, color = Color(0xFFB45309), fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -1863,8 +1863,8 @@ fun SubjectSanskritCover(title: String, subtitle: String, author: String, extra:
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(text = subtitle, fontSize = 11.sp, color = Color(0xFF92400E))
                 }
-                Divider(color = Color(0xFFD97706).copy(alpha = 0.3f), thickness = 1.dp, modifier = Modifier.padding(vertical = 10.dp))
-                Text(text = if (author.isNotBlank()) author else "Aditya Kumar", fontSize = 11.sp, color = Color(0xFFB45309), fontWeight = FontWeight.Bold)
+                HorizontalDivider(color = Color(0xFFD97706).copy(alpha = 0.3f), thickness = 1.dp, modifier = Modifier.padding(vertical = 10.dp))
+                Text(text = if (author.isNotBlank()) author else "", fontSize = 11.sp, color = Color(0xFFB45309), fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -1906,8 +1906,8 @@ fun SubjectComputerCover(title: String, subtitle: String, author: String, extra:
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(text = subtitle, fontSize = 11.sp, color = Color(0xFFBAE6FD), fontFamily = FontFamily.Monospace)
                 }
-                Divider(color = Color(0xFF38BDF8).copy(alpha = 0.4f), thickness = 1.dp, modifier = Modifier.padding(vertical = 10.dp))
-                Text(text = if (author.isNotBlank()) author else "Aditya Kumar", fontSize = 11.sp, color = Color(0xFF38BDF8), fontFamily = FontFamily.Monospace)
+                HorizontalDivider(color = Color(0xFF38BDF8).copy(alpha = 0.4f), thickness = 1.dp, modifier = Modifier.padding(vertical = 10.dp))
+                Text(text = if (author.isNotBlank()) author else "", fontSize = 11.sp, color = Color(0xFF38BDF8), fontFamily = FontFamily.Monospace)
             }
         }
     }
@@ -1946,7 +1946,7 @@ fun SubjectPhysicsCover(title: String, subtitle: String, author: String, extra: 
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(text = if (title.isNotBlank()) title else "QUANTUM PHYSICS", fontSize = 18.sp, fontWeight = FontWeight.Black, color = Color.White, textAlign = TextAlign.Center)
                 Spacer(modifier = Modifier.height(8.dp))
-                Text(text = if (author.isNotBlank()) author else "Aditya Kumar", fontSize = 11.sp, color = Color(0xFFA5B4FC), fontWeight = FontWeight.Bold)
+                Text(text = if (author.isNotBlank()) author else "", fontSize = 11.sp, color = Color(0xFFA5B4FC), fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -1985,7 +1985,7 @@ fun SubjectChemistryCover(title: String, subtitle: String, author: String, extra
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(text = if (title.isNotBlank()) title else "ORGANIC CHEMISTRY", fontSize = 18.sp, fontWeight = FontWeight.Black, color = Color.White, textAlign = TextAlign.Center)
                 Spacer(modifier = Modifier.height(8.dp))
-                Text(text = if (author.isNotBlank()) author else "Aditya Kumar", fontSize = 11.sp, color = Color(0xFFA7F3D0), fontWeight = FontWeight.Bold)
+                Text(text = if (author.isNotBlank()) author else "", fontSize = 11.sp, color = Color(0xFFA7F3D0), fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -2024,7 +2024,7 @@ fun SubjectBiologyCover(title: String, subtitle: String, author: String, extra: 
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(text = if (title.isNotBlank()) title else "BIOLOGY & GENETICS", fontSize = 18.sp, fontWeight = FontWeight.Black, color = Color.White, textAlign = TextAlign.Center)
                 Spacer(modifier = Modifier.height(8.dp))
-                Text(text = if (author.isNotBlank()) author else "Aditya Kumar", fontSize = 11.sp, color = Color(0xFFBBF7D0), fontWeight = FontWeight.Bold)
+                Text(text = if (author.isNotBlank()) author else "", fontSize = 11.sp, color = Color(0xFFBBF7D0), fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -2063,7 +2063,7 @@ fun SubjectHistoryCover(title: String, subtitle: String, author: String, extra: 
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(text = if (title.isNotBlank()) title else "WORLD HISTORY", fontSize = 18.sp, fontWeight = FontWeight.Black, color = Color(0xFF451A03), textAlign = TextAlign.Center)
                 Spacer(modifier = Modifier.height(8.dp))
-                Text(text = if (author.isNotBlank()) author else "Aditya Kumar", fontSize = 11.sp, color = Color(0xFFD97706), fontWeight = FontWeight.Bold)
+                Text(text = if (author.isNotBlank()) author else "", fontSize = 11.sp, color = Color(0xFFD97706), fontWeight = FontWeight.Bold)
             }
         }
     }
