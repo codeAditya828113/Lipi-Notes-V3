@@ -125,13 +125,23 @@ fun DrawingCanvas(
     onImageDeleted: (Int) -> Unit = {},
     onLassoDrag: (Offset) -> Unit = {},
     onLassoScaleUpdated: (Float, Float) -> Unit = {_,_->},
-    onScrollStateChanged: (Boolean) -> Unit = {}
+    onScrollStateChanged: (Boolean) -> Unit = {},
+    contentBlocks: List<com.example.data.LipiContentBlock> = emptyList(),
+    selectedBlockId: String? = null,
+    audioManager: com.example.audio.LipiAudioManager? = null,
+    onBlockSelected: (String?) -> Unit = {},
+    onBlockUpdated: (com.example.data.LipiContentBlock) -> Unit = {},
+    onBlockDeleted: (com.example.data.LipiContentBlock) -> Unit = {},
+    onNavigateToNotePage: (Int, Int) -> Unit = {_,_->},
+    onOpenPdfViewer: (String, Int) -> Unit = {_,_->}
 ) {
     val context = LocalContext.current
     val view = LocalView.current
     val pdfFile = remember(noteId) {
         if (noteId != null) File(context.filesDir, "note_$noteId.pdf") else null
     }
+
+    var editingContentBlock by remember { mutableStateOf<com.example.data.LipiContentBlock?>(null) }
 
     // Infinite/Scrollable Canvas Offset and Scale
     var scale by remember { mutableStateOf(1f) }
@@ -300,6 +310,11 @@ fun DrawingCanvas(
                         val entry = iterator.next()
                         val p = entry.key
                         if (!visiblePages.contains(p) && kotlin.math.abs(p - pdfPage) > 4) {
+                            try {
+                                if (!entry.value.isRecycled) {
+                                    entry.value.recycle()
+                                }
+                            } catch (_: Exception) {}
                             iterator.remove()
                             removedAny = true
                         }
@@ -326,6 +341,11 @@ fun DrawingCanvas(
 
         DisposableEffect(Unit) {
             onDispose {
+                pdfBitmaps.values.forEach { bmp ->
+                    try {
+                        if (!bmp.isRecycled) bmp.recycle()
+                    } catch (_: Exception) {}
+                }
                 pdfBitmaps = emptyMap()
             }
         }
@@ -2317,6 +2337,60 @@ fun DrawingCanvas(
                         }
                     }
                 }
+
+                // Lipi Content Blocks Interactive Layer
+                if (audioManager != null && contentBlocks.isNotEmpty()) {
+                    val pivotX = widthPx / 2f
+                    val pivotY = heightPx / 2f
+
+                    contentBlocks.forEach { block ->
+                        val blockPage = block.page.coerceIn(1, pdfPageCount)
+                        val worldX = fromNormalizedX(block.x, blockPage)
+                        val worldY = fromNormalizedY(block.y, blockPage)
+                        val worldW = (block.width / 600f) * getPageWidth(blockPage)
+                        val worldH = (block.height / getNormH(blockPage)) * getPageHeight(blockPage)
+
+                        val screenX = (worldX - pivotX) * scale + pivotX + offset.x
+                        val screenY = (worldY - pivotY) * scale + pivotY + offset.y
+                        val screenW = worldW * scale
+                        val screenH = worldH * scale
+
+                        if (screenY + screenH >= -200f && screenY <= heightPx + 200f) {
+                            LipiContentBlockItem(
+                                block = block,
+                                isSelected = selectedBlockId == block.id,
+                                audioManager = audioManager,
+                                scale = scale,
+                                renderX = screenX,
+                                renderY = screenY,
+                                renderWidth = screenW,
+                                renderHeight = screenH,
+                                onSelect = {
+                                    onBlockSelected(if (selectedBlockId == block.id) null else block.id)
+                                },
+                                onNavigateToNotePage = onNavigateToNotePage,
+                                onOpenPdf = onOpenPdfViewer,
+                                onEditBlock = { editingContentBlock = it },
+                                onDeleteBlock = { onBlockDeleted(it) }
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (editingContentBlock != null) {
+                LipiContentBlockEditDialog(
+                    block = editingContentBlock!!,
+                    onDismiss = { editingContentBlock = null },
+                    onSave = {
+                        onBlockUpdated(it)
+                        editingContentBlock = null
+                    },
+                    onDelete = {
+                        onBlockDeleted(it)
+                        editingContentBlock = null
+                    }
+                )
             }
         }
 

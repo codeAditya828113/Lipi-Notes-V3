@@ -106,4 +106,18 @@ class MainActivity : ComponentActivity() {
       }
     }
   }
+
+  override fun onTrimMemory(level: Int) {
+    super.onTrimMemory(level)
+    com.example.pdf.LipiPdfManager.clearCache()
+    if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) {
+      System.gc()
+    }
+  }
+
+  override fun onLowMemory() {
+    super.onLowMemory()
+    com.example.pdf.LipiPdfManager.clearCache()
+    System.gc()
+  }
 }

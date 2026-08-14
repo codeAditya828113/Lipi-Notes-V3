@@ -23,6 +23,7 @@ data class NoteEntity(
     val summary: String? = null, // AI summary / categorization tag
     val drawingData: String = "[]", // Serialized drawing strokes
     val imagesData: String = "[]", // Serialized images
+    val contentBlocksData: String = "[]", // Unified Lipi Content Blocks (Audio, Links, PDF pages, etc.)
     val isSynced: Boolean = false, // Sync status
     val tags: String = "", // Comma-separated tags e.g. "work,personal"
     val isPinned: Boolean = false,

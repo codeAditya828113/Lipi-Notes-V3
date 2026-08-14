@@ -4676,6 +4676,21 @@ if (showLayersDialog) {
                         )
                     }
 
+                    // Lipi Insert Menu [ + Attach / Media / Link / Audio ]
+                    IconButton(
+                        onClick = { viewModel.showInsertMenu = true },
+                        modifier = Modifier
+                            .size(32.dp)
+                            .testTag("notebook_toolbar_insert_menu_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AddCircle,
+                            contentDescription = "Insert Media, Audio, Link, PDF & Text Blocks",
+                            tint = Color(0xFF6366F1),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
                     // Add Image [ 🌄+ ]
                     IconButton(
                         onClick = { imagePickerLauncher.launch("image/*") },
@@ -5539,6 +5554,32 @@ if (showLayersDialog) {
                     onLassoDrag = { offset -> viewModel.lassoDragOffset = Offset(viewModel.lassoDragOffset.x + offset.x, viewModel.lassoDragOffset.y + offset.y) },
                     onLassoScaleUpdated = { scaleX, scaleY -> viewModel.updateLassoScale(scaleX, scaleY) },
                     onScrollStateChanged = { isScrollingCanvas = it },
+                    contentBlocks = viewModel.currentContentBlocks,
+                    selectedBlockId = viewModel.selectedContentBlockId,
+                    audioManager = viewModel.lipiAudioManager,
+                    onBlockSelected = { viewModel.selectedContentBlockId = it },
+                    onBlockUpdated = { viewModel.updateContentBlock(it) },
+                    onBlockDeleted = { viewModel.deleteContentBlock(it.id) },
+                    onNavigateToNotePage = { targetNoteId, targetPage ->
+                        val targetNote = viewModel.allNotes.value.firstOrNull { it.id == targetNoteId }
+                        if (targetNote != null) {
+                            viewModel.selectNote(targetNote)
+                            viewModel.setPDFPage(targetPage)
+                        }
+                    },
+                    onOpenPdfViewer = { pdfPath, page ->
+                        try {
+                            val pdfFile = java.io.File(pdfPath)
+                            val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", pdfFile)
+                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                                setDataAndType(uri, "application/pdf")
+                                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            context.startActivity(intent)
+                        } catch (e: Exception) {
+                            android.widget.Toast.makeText(context, "Opening PDF (Page $page)", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    },
                     modifier = Modifier.fillMaxSize()
                 )
 
@@ -6312,6 +6353,16 @@ if (showLayersDialog) {
             onCopyText = { },
             onInsertAsText = { viewModel.convertHandwritingToText() },
             onClose = { viewModel.toggleScribbleMode() }
+        )
+    }
+
+    // Lipi Content Blocks Insert Menu Sheet
+    if (viewModel.showInsertMenu) {
+        LipiInsertMenuSheet(
+            viewModel = viewModel,
+            audioManager = viewModel.lipiAudioManager,
+            onDismiss = { viewModel.showInsertMenu = false },
+            onOpenScanner = { viewModel.openDocumentScanner("notebook", viewModel.selectedNote) }
         )
     }
 }

@@ -572,6 +572,67 @@ class NoteViewModel(
     var fadingTicker by mutableStateOf(0L)
 
     var currentImages by mutableStateOf<List<com.example.data.ImageElement>>(emptyList())
+    
+    // Lipi Audio Manager instance
+    val lipiAudioManager = com.example.audio.LipiAudioManager(application)
+
+    // Unified Lipi Content Blocks (Audio, Links, PDF, Text)
+    var currentContentBlocks by mutableStateOf<List<com.example.data.LipiContentBlock>>(emptyList())
+    var selectedContentBlockId by mutableStateOf<String?>(null)
+    var showInsertMenu by mutableStateOf(false)
+
+    fun addContentBlock(block: com.example.data.LipiContentBlock) {
+        currentContentBlocks = currentContentBlocks + block
+        saveActiveCanvasStrokes()
+    }
+
+    fun updateContentBlock(block: com.example.data.LipiContentBlock) {
+        currentContentBlocks = currentContentBlocks.map { if (it.id == block.id) block else it }
+        saveActiveCanvasStrokes()
+    }
+
+    fun deleteContentBlock(blockId: String) {
+        currentContentBlocks = currentContentBlocks.filter { it.id != blockId }
+        if (selectedContentBlockId == blockId) {
+            selectedContentBlockId = null
+        }
+        saveActiveCanvasStrokes()
+    }
+
+    fun moveContentBlock(blockId: String, deltaX: Float, deltaY: Float) {
+        currentContentBlocks = currentContentBlocks.map {
+            if (it.id == blockId) {
+                it.copyWith(x = it.x + deltaX, y = it.y + deltaY)
+            } else it
+        }
+        saveActiveCanvasStrokes()
+    }
+
+    fun addImageFromUri(uri: android.net.Uri) {
+        try {
+            val context = application.applicationContext
+            val imageDir = java.io.File(context.filesDir, "note_images").apply { if (!exists()) mkdirs() }
+            val persistentFile = java.io.File(imageDir, "img_${System.currentTimeMillis()}_${(1000..9999).random()}.jpg")
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                persistentFile.outputStream().use { output ->
+                    input.copyTo(output)
+                }
+            }
+            val persistentPath = persistentFile.absolutePath
+            val newImage = com.example.data.ImageElement(
+                uri = persistentPath,
+                x = 100f,
+                y = 100f,
+                width = 400f,
+                height = 400f,
+                page = pdfPage
+            )
+            currentImages = currentImages + newImage
+            saveActiveCanvasStrokes()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
         
     var activeStroke by mutableStateOf<Stroke?>(null)
         private set
@@ -2707,11 +2768,13 @@ Here is your complete guide to all features and capabilities available in the ap
             sharedPrefs.edit().putLong("last_opened_note_id", note.id.toLong()).apply()
             currentStrokes = StrokeSerializer.deserializeStrokes(note.drawingData)
             currentImages = com.example.data.ImageElementSerializer.deserializeImages(note.imagesData)
+            currentContentBlocks = com.example.data.LipiContentBlockSerializer.deserializeBlocks(note.contentBlocksData)
             pdfPage = 1 // reset pdf page
             transcriptionResult = note.audioTranscription
             
             val maxStrokePage = currentStrokes.maxOfOrNull { it.page } ?: 1
             val maxImagePage = currentImages.maxOfOrNull { it.page } ?: 1
+            val maxBlockPage = currentContentBlocks.maxOfOrNull { it.page } ?: 1
             
             if (note.templateType == "pdf" || note.templateType == "docx") {
                 val pdfFile = File(application.filesDir, "note_${note.id}.pdf")
@@ -2720,7 +2783,7 @@ Here is your complete guide to all features and capabilities available in the ap
                 }
                 val originalCount = PdfHelper.getPdfPageCount(pdfFile)
                 val storedCount = sharedPrefs.getInt("note_page_count_${note.id}", originalCount)
-                pdfPageCount = maxOf(storedCount, originalCount, maxStrokePage, maxImagePage, 1)
+                pdfPageCount = maxOf(storedCount, originalCount, maxStrokePage, maxImagePage, maxBlockPage, 1)
 
                 // Auto extract text with Google ML Kit if content is blank
                 if (note.content.isBlank()) {
@@ -2728,13 +2791,15 @@ Here is your complete guide to all features and capabilities available in the ap
                 }
             } else {
                 val storedCount = sharedPrefs.getInt("note_page_count_${note.id}", 1)
-                pdfPageCount = maxOf(storedCount, maxStrokePage, maxImagePage, 1)
+                pdfPageCount = maxOf(storedCount, maxStrokePage, maxImagePage, maxBlockPage, 1)
             }
             sharedPrefs.edit().putInt("note_page_count_${note.id}", pdfPageCount).apply()
         } else {
             sharedPrefs.edit().remove("last_opened_note_id").apply()
             currentStrokes = emptyList()
             currentImages = emptyList()
+            currentContentBlocks = emptyList()
+            selectedContentBlockId = null
             activeStroke = null
             transcriptionResult = null
             pdfPageCount = 1
@@ -2749,7 +2814,7 @@ Here is your complete guide to all features and capabilities available in the ap
         sharedPrefs.edit().putInt("note_page_count_${note.id}", pdfPageCount).apply()
         
         if (insertionIndex <= pdfPageCount) {
-            // Shift all strokes and images on pages >= insertionIndex by 1 page
+            // Shift all strokes, images, and content blocks on pages >= insertionIndex by 1 page
             currentStrokes = currentStrokes.map { stroke ->
                 if (stroke.page >= insertionIndex) {
                     stroke.copy(page = stroke.page + 1)
@@ -2762,6 +2827,13 @@ Here is your complete guide to all features and capabilities available in the ap
                     img.copy(page = img.page + 1)
                 } else {
                     img
+                }
+            }
+            currentContentBlocks = currentContentBlocks.map { block ->
+                if (block.page >= insertionIndex) {
+                    block.copyWith(page = block.page + 1)
+                } else {
+                    block
                 }
             }
             saveActiveCanvasStrokes()
@@ -3704,9 +3776,11 @@ Here is your complete guide to all features and capabilities available in the ap
         viewModelScope.launch(Dispatchers.IO) {
             val serialized = StrokeSerializer.serializeStrokes(currentStrokes)
             val serializedImages = com.example.data.ImageElementSerializer.serializeImages(currentImages)
+            val serializedBlocks = com.example.data.LipiContentBlockSerializer.serializeBlocks(currentContentBlocks)
             val updated = currentNote.copy(
                 drawingData = serialized,
-                                imagesData = serializedImages,
+                imagesData = serializedImages,
+                contentBlocksData = serializedBlocks,
                 lastModifiedTime = System.currentTimeMillis(),
                 isSynced = false // Mark dirty for Drive backup
             )
