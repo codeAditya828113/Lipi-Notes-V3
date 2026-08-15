@@ -179,51 +179,78 @@ fun LipiDocumentScanner(
     val gmsScannerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartIntentSenderForResult()
     ) { result ->
-        if (result.resultCode == android.app.Activity.RESULT_OK) {
-            val scanResult = GmsDocumentScanningResult.fromActivityResultIntent(result.data)
-            if (scanResult != null) {
-                scope.launch(Dispatchers.IO) {
-                    val pageJpegs = scanResult.pages
-                    val pdfUri = scanResult.pdf?.uri
+        try {
+            if (result.resultCode == android.app.Activity.RESULT_OK) {
+                val scanResult = try {
+                    GmsDocumentScanningResult.fromActivityResultIntent(result.data)
+                } catch (e: Throwable) {
+                    Log.w("LipiScanner", "Failed to parse GMS Document Scanning Result", e)
+                    null
+                }
+                if (scanResult != null) {
+                    scope.launch(Dispatchers.IO) {
+                        try {
+                            val pageJpegs = scanResult.pages
+                            val pdfUri = scanResult.pdf?.uri
 
-                    if (pdfUri != null && pageJpegs.isNullOrEmpty()) {
-                        // PDF returned
-                        val tempPdfFile = File(context.cacheDir, "gms_scanned_${System.currentTimeMillis()}.pdf")
-                        context.contentResolver.openInputStream(pdfUri)?.use { input ->
-                            tempPdfFile.outputStream().use { output -> input.copyTo(output) }
-                        }
-                        val title = "Scanned Document ${SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault()).format(Date())}"
-                        withContext(Dispatchers.Main) {
-                            viewModel.saveScannedPdfToNotebook(
-                                pdfFile = tempPdfFile,
-                                pdfTitle = title,
-                                targetNote = viewModel.activeNoteForScanner
-                            ) {
-                                Toast.makeText(context, "Scanned PDF saved to notebook!", Toast.LENGTH_SHORT).show()
-                                onDismiss()
+                            if (pdfUri != null && pageJpegs.isNullOrEmpty()) {
+                                // PDF returned
+                                val tempPdfFile = File(context.cacheDir, "gms_scanned_${System.currentTimeMillis()}.pdf")
+                                context.contentResolver.openInputStream(pdfUri)?.use { input ->
+                                    tempPdfFile.outputStream().use { output -> input.copyTo(output) }
+                                }
+                                val title = "Scanned Document ${SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault()).format(Date())}"
+                                withContext(Dispatchers.Main) {
+                                    viewModel.saveScannedPdfToNotebook(
+                                        pdfFile = tempPdfFile,
+                                        pdfTitle = title,
+                                        targetNote = viewModel.activeNoteForScanner
+                                    ) {
+                                        Toast.makeText(context, "Scanned PDF saved to notebook!", Toast.LENGTH_SHORT).show()
+                                        onDismiss()
+                                    }
+                                }
+                            } else if (!pageJpegs.isNullOrEmpty()) {
+                                // Pages returned
+                                val newPages = mutableListOf<ScannedPage>()
+                                for (page in pageJpegs) {
+                                    val bitmap = PdfHelper.loadSoftwareBitmap(context, page.imageUri.toString())
+                                    if (bitmap != null) {
+                                        val filtered = PdfHelper.applyScanFilter(bitmap, "Auto")
+                                        newPages.add(ScannedPage(rawBitmap = bitmap, displayBitmap = filtered))
+                                    }
+                                }
+                                withContext(Dispatchers.Main) {
+                                    if (newPages.isNotEmpty()) {
+                                        scannedPages.clear()
+                                        scannedPages.addAll(newPages)
+                                        activePageIndex = scannedPages.size - 1
+                                        currentMode = ScannerScreenMode.FINISH_DESTINATION
+                                    } else {
+                                        currentMode = ScannerScreenMode.CAMERA
+                                    }
+                                }
+                            } else {
+                                withContext(Dispatchers.Main) {
+                                    currentMode = ScannerScreenMode.CAMERA
+                                }
                             }
-                        }
-                    } else if (!pageJpegs.isNullOrEmpty()) {
-                        // Pages returned
-                        val newPages = mutableListOf<ScannedPage>()
-                        for (page in pageJpegs) {
-                            val bitmap = PdfHelper.loadSoftwareBitmap(context, page.imageUri.toString())
-                            if (bitmap != null) {
-                                val filtered = PdfHelper.applyScanFilter(bitmap, "Auto")
-                                newPages.add(ScannedPage(rawBitmap = bitmap, displayBitmap = filtered))
-                            }
-                        }
-                        withContext(Dispatchers.Main) {
-                            if (newPages.isNotEmpty()) {
-                                scannedPages.clear()
-                                scannedPages.addAll(newPages)
-                                activePageIndex = scannedPages.size - 1
-                                currentMode = ScannerScreenMode.FINISH_DESTINATION
+                        } catch (e: Throwable) {
+                            Log.e("LipiScanner", "Error processing GMS scan result", e)
+                            withContext(Dispatchers.Main) {
+                                currentMode = ScannerScreenMode.CAMERA
                             }
                         }
                     }
+                } else {
+                    currentMode = ScannerScreenMode.CAMERA
                 }
+            } else {
+                currentMode = ScannerScreenMode.CAMERA
             }
+        } catch (e: Throwable) {
+            Log.e("LipiScanner", "GMS scanner activity result exception", e)
+            currentMode = ScannerScreenMode.CAMERA
         }
     }
 
@@ -245,18 +272,23 @@ fun LipiDocumentScanner(
             if (activity != null) {
                 scannerClient.getStartScanIntent(activity)
                     .addOnSuccessListener { intentSender ->
-                        gmsScannerLauncher.launch(
-                            IntentSenderRequest.Builder(intentSender).build()
-                        )
+                        try {
+                            gmsScannerLauncher.launch(
+                                IntentSenderRequest.Builder(intentSender).build()
+                            )
+                        } catch (e: Throwable) {
+                            Log.e("LipiScanner", "Failed to launch GMS scanner intent", e)
+                            currentMode = ScannerScreenMode.CAMERA
+                        }
                     }
-                    .addOnFailureListener {
-                        // Fallback to native Lipi CameraX Scanner
+                    .addOnFailureListener { e ->
+                        Log.w("LipiScanner", "GmsDocumentScanner launch failed, falling back to Camera", e)
                         currentMode = ScannerScreenMode.CAMERA
                     }
             } else {
                 currentMode = ScannerScreenMode.CAMERA
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.e("LipiScanner", "GmsDocumentScanner launch failed, falling back to CameraX", e)
             currentMode = ScannerScreenMode.CAMERA
         }
@@ -660,6 +692,7 @@ private fun CameraScannerScreen(
     var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
     var isDocumentDetected by remember { mutableStateOf(false) }
     var isStableForCapture by remember { mutableStateOf(false) }
+    var cameraBindError by remember { mutableStateOf<String?>(null) }
 
     // Animated document bounds
     val animatedTopLeft = remember { Animatable(Offset(0.15f, 0.20f), Offset.VectorConverter) }
@@ -676,7 +709,7 @@ private fun CameraScannerScreen(
             delay(800L)
             isStableForCapture = true
 
-            if (isAutoCapture && !captureTriggered) {
+            if (isAutoCapture && !captureTriggered && cameraBindError == null) {
                 delay(600L)
                 captureTriggered = true
                 val sampleBitmap = createSampleDocumentBitmap()
@@ -693,37 +726,133 @@ private fun CameraScannerScreen(
                 val previewView = PreviewView(ctx).apply {
                     scaleType = PreviewView.ScaleType.FILL_CENTER
                 }
-                val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
-                cameraProviderFuture.addListener({
-                    try {
-                        val cameraProvider = cameraProviderFuture.get()
-                        val preview = Preview.Builder().build().also {
-                            it.setSurfaceProvider(previewView.surfaceProvider)
+                try {
+                    val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
+                    cameraProviderFuture.addListener({
+                        try {
+                            val cameraProvider = cameraProviderFuture.get()
+                            val cameraSelector = if (isFrontCamera) CameraSelector.DEFAULT_FRONT_CAMERA else CameraSelector.DEFAULT_BACK_CAMERA
+
+                            if (cameraProvider.hasCamera(cameraSelector)) {
+                                val preview = Preview.Builder().build().also {
+                                    it.setSurfaceProvider(previewView.surfaceProvider)
+                                }
+
+                                val capture = ImageCapture.Builder()
+                                    .setFlashMode(flashMode)
+                                    .setTargetRotation(previewView.display.rotation)
+                                    .build()
+                                imageCapture = capture
+
+                                cameraProvider.unbindAll()
+                                cameraProvider.bindToLifecycle(
+                                    lifecycleOwner,
+                                    cameraSelector,
+                                    preview,
+                                    capture
+                                )
+                            } else {
+                                cameraBindError = "Camera not available on this device"
+                            }
+                        } catch (e: Throwable) {
+                            Log.e("LipiScanner", "CameraX binding error", e)
+                            cameraBindError = "Camera preview unavailable"
                         }
-
-                        val capture = ImageCapture.Builder()
-                            .setFlashMode(flashMode)
-                            .setTargetRotation(previewView.display.rotation)
-                            .build()
-                        imageCapture = capture
-
-                        val cameraSelector = if (isFrontCamera) CameraSelector.DEFAULT_FRONT_CAMERA else CameraSelector.DEFAULT_BACK_CAMERA
-
-                        cameraProvider.unbindAll()
-                        cameraProvider.bindToLifecycle(
-                            lifecycleOwner,
-                            cameraSelector,
-                            preview,
-                            capture
-                        )
-                    } catch (e: Exception) {
-                        Log.e("LipiScanner", "CameraX binding error", e)
-                    }
-                }, ContextCompat.getMainExecutor(ctx))
+                    }, ContextCompat.getMainExecutor(ctx))
+                } catch (e: Throwable) {
+                    Log.e("LipiScanner", "ProcessCameraProvider error", e)
+                    cameraBindError = "Camera provider unavailable"
+                }
                 previewView
             },
             modifier = Modifier.fillMaxSize()
         )
+
+        if (cameraBindError != null) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color(0xFF0F172A)),
+                contentAlignment = Alignment.Center
+            ) {
+                Card(
+                    modifier = Modifier
+                        .padding(24.dp)
+                        .widthIn(max = 420.dp),
+                    shape = RoundedCornerShape(24.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 12.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            modifier = Modifier.size(56.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    Icons.Default.CameraEnhance,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(28.dp)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = "Camera Preview Unavailable",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Physical camera hardware is limited in the current environment. You can select document images from your Gallery or simulate a document scan.",
+                            fontSize = 13.sp,
+                            textAlign = TextAlign.Center,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(20.dp))
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Button(
+                                onClick = { onGalleryClick() },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(44.dp),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Icon(Icons.Default.PhotoLibrary, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Import Document from Gallery", fontWeight = FontWeight.SemiBold)
+                            }
+                            OutlinedButton(
+                                onClick = { onPageCaptured(createSampleDocumentBitmap()) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(44.dp),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Icon(Icons.Default.DocumentScanner, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Simulate Sample Document Scan", fontWeight = FontWeight.SemiBold)
+                            }
+                            TextButton(
+                                onClick = { onCloseClick() },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Close Scanner")
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         // Darkened Vignette Overlay
         Box(
