@@ -41,11 +41,7 @@ class MainActivity : ComponentActivity() {
     com.example.sync.AutoSyncWorker.schedulePeriodicAutoSync(this, 1)
 
     setContent {
-      val isDark = when (viewModel.themeMode) {
-        "dark", "oled" -> true
-        "light" -> false
-        else -> false
-      }
+      val isDark = viewModel.isDarkTheme(androidx.compose.foundation.isSystemInDarkTheme())
       val isOled = viewModel.themeMode == "oled"
       MyApplicationTheme(
         darkTheme = isDark,

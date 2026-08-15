@@ -125,6 +125,7 @@ fun DrawingCanvas(
     onImageDeleted: (Int) -> Unit = {},
     onLassoDrag: (Offset) -> Unit = {},
     onLassoScaleUpdated: (Float, Float) -> Unit = {_,_->},
+    onLassoStrokesUpdated: (List<Stroke>, Rect?) -> Unit = {_,_->},
     onScrollStateChanged: (Boolean) -> Unit = {},
     contentBlocks: List<com.example.data.LipiContentBlock> = emptyList(),
     selectedBlockId: String? = null,
@@ -441,6 +442,18 @@ fun DrawingCanvas(
             val pTop = getPageTop(p)
             (ny / getNormH(p)) * pH + pTop
         }
+        val findPageForWorldY: (Float) -> Int = { worldY ->
+            var targetP = 1
+            for (p in 1..pdfPageCount) {
+                val top = getPageTop(p)
+                val height = getPageHeight(p)
+                if (worldY < top + height + pageGap / 2f || p == pdfPageCount) {
+                    targetP = p
+                    break
+                }
+            }
+            targetP.coerceIn(1, pdfPageCount)
+        }
 
         // Smooth animate scroll when pdfPage changes externally (e.g. Next/Prev button, jump dialog, or add page)
         LaunchedEffect(pdfPage, pdfPageCount, heightPx) {
@@ -619,18 +632,17 @@ fun DrawingCanvas(
                         }
 
                         if (touchedImageIndex != null) {
-                            if (selectedImageIndex == touchedImageIndex) {
-                                if (isResize) {
-                                    activeImageInteraction = "resize"
-                                    activeImageCorner = touchedCorner
-                                    lastFingerDragPoint = Offset(x, y)
-                                    return@pointerInteropFilter true
-                                } else {
-                                    activeImageInteraction = "drag"
-                                    activeImageCorner = null
-                                    lastFingerDragPoint = Offset(x, y)
-                                    return@pointerInteropFilter true
-                                }
+                            selectedImageIndex = touchedImageIndex
+                            if (isResize) {
+                                activeImageInteraction = "resize"
+                                activeImageCorner = touchedCorner
+                                lastFingerDragPoint = Offset(x, y)
+                                return@pointerInteropFilter true
+                            } else {
+                                activeImageInteraction = "drag"
+                                activeImageCorner = null
+                                lastFingerDragPoint = Offset(x, y)
+                                return@pointerInteropFilter true
                             }
                         } else if (lassoSelectedStrokes.isEmpty()) {
                             selectedImageIndex = null
@@ -691,6 +703,23 @@ fun DrawingCanvas(
                             }
                             lastFingerDragPoint = Offset(x, y)
                         } else if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                            val curImg = images.getOrNull(i)
+                            if (curImg != null) {
+                                val origPage = curImg.page.coerceIn(1, pdfPageCount)
+                                val curWorldX = fromNormalizedX(curImg.x, origPage)
+                                val curWorldY = fromNormalizedY(curImg.y, origPage)
+                                val curWorldW = (curImg.width / 600f) * getPageWidth(origPage)
+                                val curWorldH = (curImg.height / getNormH(origPage)) * getPageHeight(origPage)
+
+                                val targetPage = findPageForWorldY(curWorldY + curWorldH / 2f)
+                                if (targetPage != origPage) {
+                                    val newNormX = toNormalizedX(curWorldX, targetPage)
+                                    val newNormY = toNormalizedY(curWorldY, targetPage)
+                                    val newNormW = (curWorldW / getPageWidth(targetPage)) * 600f
+                                    val newNormH = (curWorldH / getPageHeight(targetPage)) * getNormH(targetPage)
+                                    onImageUpdated(i, curImg.copy(x = newNormX, y = newNormY, width = newNormW, height = newNormH, page = targetPage))
+                                }
+                            }
                             activeImageInteraction = null
                             activeImageCorner = null
                             lastFingerDragPoint = null
@@ -768,6 +797,50 @@ fun DrawingCanvas(
                             }
                             return@pointerInteropFilter true
                         } else if ((action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) && activeLassoInteraction != null) {
+                            if (lassoSelectedStrokes.isNotEmpty()) {
+                                val b = lassoBoundingBox
+                                val cxVal = if (b != null) (b.left + b.right) / 2f else 0f
+                                val cyVal = if (b != null) (b.top + b.bottom) / 2f else 0f
+
+                                val updatedStrokes = lassoSelectedStrokes.map { stroke ->
+                                    val strokeOrigPage = stroke.page.coerceIn(1, pdfPageCount)
+                                    val worldPoints = stroke.points.map { pt ->
+                                        val tx = pt.x + lassoDragOffset.x
+                                        val ty = pt.y + lassoDragOffset.y
+                                        val fx = if (b != null && lassoScaleX != 1f) cxVal + (tx - cxVal) * lassoScaleX else tx
+                                        val fy = if (b != null && lassoScaleY != 1f) cyVal + (ty - cyVal) * lassoScaleY else ty
+                                        val wx = fromNormalizedX(fx, strokeOrigPage)
+                                        val wy = fromNormalizedY(fy, strokeOrigPage)
+                                        Triple(wx, wy, pt)
+                                    }
+                                    val avgWy = if (worldPoints.isNotEmpty()) worldPoints.map { it.second }.average().toFloat() else 0f
+                                    val targetPage = findPageForWorldY(avgWy)
+
+                                    val newPoints = worldPoints.map { (wx, wy, pt) ->
+                                        Point(toNormalizedX(wx, targetPage), toNormalizedY(wy, targetPage), pt.pressure, pt.tilt)
+                                    }
+                                    stroke.copy(points = newPoints, page = targetPage)
+                                }
+
+                                val firstStroke = updatedStrokes.firstOrNull()
+                                val newBox = if (firstStroke != null) {
+                                    var minX = Float.MAX_VALUE
+                                    var maxX = Float.MIN_VALUE
+                                    var minY = Float.MAX_VALUE
+                                    var maxY = Float.MIN_VALUE
+                                    updatedStrokes.forEach { s ->
+                                        val sBox = SmartInkEngine.getBoundingBox(s)
+                                        minX = minOf(minX, sBox.left)
+                                        maxX = maxOf(maxX, sBox.right)
+                                        minY = minOf(minY, sBox.top)
+                                        maxY = maxOf(maxY, sBox.bottom)
+                                    }
+                                    Rect(minX, minY, maxX, maxY)
+                                } else null
+
+                                onLassoStrokesUpdated(updatedStrokes, newBox)
+                            }
+
                             activeLassoInteraction = null
                             activeLassoCorner = null
                             initialLassoTouchPoint = null
@@ -1039,27 +1112,26 @@ fun DrawingCanvas(
                             longPressJob?.cancel()
                             longPressJob = coroutineScope.launch {
                                 delay(400) // 400ms long press threshold
-                                val targetPage = touchedPage
-                                val targetNormX = startX
-                                val targetNormY = startY
+                                val pivotX = widthPx / 2f
+                                val pivotY = heightPx / 2f
+                                val worldX = (downTouchX - pivotX - offset.x) / scale + pivotX
+                                val worldY = (downTouchY - pivotY - offset.y) / scale + pivotY
 
-                                // Check for target image ONLY on long press
+                                // Check for target image on long press
                                 var targetImgIdx: Int? = null
                                 var targetImgElem: com.example.data.ImageElement? = null
                                 for (i in images.indices.reversed()) {
                                     val img = images[i]
                                     val imgPage = img.page.coerceIn(1, pdfPageCount)
-                                    if (imgPage == targetPage) {
-                                        val renderX = img.x
-                                        val renderY = img.y
-                                        val renderW = img.width
-                                        val renderH = img.height
-                                        if (targetNormX >= renderX - 15f && targetNormX <= renderX + renderW + 15f &&
-                                            targetNormY >= renderY - 15f && targetNormY <= renderY + renderH + 15f) {
-                                            targetImgIdx = i
-                                            targetImgElem = img
-                                            break
-                                        }
+                                    val renderX = fromNormalizedX(img.x, imgPage)
+                                    val renderY = fromNormalizedY(img.y, imgPage)
+                                    val renderW = (img.width / 600f) * getPageWidth(imgPage)
+                                    val renderH = (img.height / getNormH(imgPage)) * getPageHeight(imgPage)
+                                    if (worldX >= renderX - 25f && worldX <= renderX + renderW + 25f &&
+                                        worldY >= renderY - 25f && worldY <= renderY + renderH + 25f) {
+                                        targetImgIdx = i
+                                        targetImgElem = img
+                                        break
                                     }
                                 }
 
@@ -1071,16 +1143,23 @@ fun DrawingCanvas(
                                         view.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
                                     } catch (e: Exception) {}
                                 } else {
-                                    // Check ONLY for explicit geometric shape on long press (toolType == "shapes" or fillShape == true)
-                                    val pageStrokes = strokes.filter { it.page == targetPage || (pdfPageCount <= 1 && it.page <= 1) }
+                                    // Check for explicit geometric shape on long press across all strokes
                                     var targetShape: com.example.data.Stroke? = null
 
-                                    for (s in pageStrokes.reversed()) {
+                                    for (s in strokes.reversed()) {
                                         if (s.toolType == "shapes" || s.fillShape) {
+                                            val sPage = s.page.coerceIn(1, pdfPageCount)
                                             val box = SmartInkEngine.getBoundingBox(s)
+                                            val leftPx = fromNormalizedX(box.left, sPage)
+                                            val rightPx = fromNormalizedX(box.right, sPage)
+                                            val topPx = fromNormalizedY(box.top, sPage)
+                                            val bottomPx = fromNormalizedY(box.bottom, sPage)
                                             val padding = 35f
-                                            if (targetNormX >= box.left - padding && targetNormX <= box.right + padding &&
-                                                targetNormY >= box.top - padding && targetNormY <= box.bottom + padding) {
+                                            val minX = minOf(leftPx, rightPx) - padding
+                                            val maxX = maxOf(leftPx, rightPx) + padding
+                                            val minY = minOf(topPx, bottomPx) - padding
+                                            val maxY = maxOf(topPx, bottomPx) + padding
+                                            if (worldX in minX..maxX && worldY in minY..maxY) {
                                                 targetShape = s
                                                 break
                                             }
@@ -1103,13 +1182,14 @@ fun DrawingCanvas(
                             if (activeLassoInteraction != null) {
                                 longPressJob?.cancel()
                                 val lastPoint = lastLassoTouchPoint ?: Offset(x, y)
+                                val lassoTargetPage = lassoSelectedStrokes.firstOrNull()?.page?.coerceIn(1, pdfPageCount) ?: strokeStartedPage
                                 if (activeLassoInteraction == "move") {
                                     val dxPx = x - lastPoint.x
                                     val dyPx = y - lastPoint.y
-                                    val pageW = getPageWidth(strokeStartedPage)
-                                    val pageH = getPageHeight(strokeStartedPage)
+                                    val pageW = getPageWidth(lassoTargetPage)
+                                    val pageH = getPageHeight(lassoTargetPage)
                                     val normDx = (dxPx / scale / pageW) * 600f
-                                    val normDy = (dyPx / scale / pageH) * getNormH(strokeStartedPage)
+                                    val normDy = (dyPx / scale / pageH) * getNormH(lassoTargetPage)
                                     onLassoDrag(Offset(normDx, normDy))
                                     lastLassoTouchPoint = Offset(x, y)
                                 }
@@ -1180,6 +1260,56 @@ fun DrawingCanvas(
                         }
                         MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                             longPressJob?.cancel()
+                            if (activeLassoInteraction != null) {
+                                if (lassoSelectedStrokes.isNotEmpty()) {
+                                    val b = lassoBoundingBox
+                                    val cxVal = if (b != null) (b.left + b.right) / 2f else 0f
+                                    val cyVal = if (b != null) (b.top + b.bottom) / 2f else 0f
+
+                                    val updatedStrokes = lassoSelectedStrokes.map { stroke ->
+                                        val strokeOrigPage = stroke.page.coerceIn(1, pdfPageCount)
+                                        val worldPoints = stroke.points.map { pt ->
+                                            val tx = pt.x + lassoDragOffset.x
+                                            val ty = pt.y + lassoDragOffset.y
+                                            val fx = if (b != null && lassoScaleX != 1f) cxVal + (tx - cxVal) * lassoScaleX else tx
+                                            val fy = if (b != null && lassoScaleY != 1f) cyVal + (ty - cyVal) * lassoScaleY else ty
+                                            val wx = fromNormalizedX(fx, strokeOrigPage)
+                                            val wy = fromNormalizedY(fy, strokeOrigPage)
+                                            Triple(wx, wy, pt)
+                                        }
+                                        val avgWy = if (worldPoints.isNotEmpty()) worldPoints.map { it.second }.average().toFloat() else 0f
+                                        val targetPage = findPageForWorldY(avgWy)
+
+                                        val newPoints = worldPoints.map { (wx, wy, pt) ->
+                                            Point(toNormalizedX(wx, targetPage), toNormalizedY(wy, targetPage), pt.pressure, pt.tilt)
+                                        }
+                                        stroke.copy(points = newPoints, page = targetPage)
+                                    }
+
+                                    val firstStroke = updatedStrokes.firstOrNull()
+                                    val newBox = if (firstStroke != null) {
+                                        var minX = Float.MAX_VALUE
+                                        var maxX = Float.MIN_VALUE
+                                        var minY = Float.MAX_VALUE
+                                        var maxY = Float.MIN_VALUE
+                                        updatedStrokes.forEach { s ->
+                                            val sBox = SmartInkEngine.getBoundingBox(s)
+                                            minX = minOf(minX, sBox.left)
+                                            maxX = maxOf(maxX, sBox.right)
+                                            minY = minOf(minY, sBox.top)
+                                            maxY = maxOf(maxY, sBox.bottom)
+                                        }
+                                        Rect(minX, minY, maxX, maxY)
+                                    } else null
+
+                                    onLassoStrokesUpdated(updatedStrokes, newBox)
+                                }
+
+                                activeLassoInteraction = null
+                                activeLassoCorner = null
+                                initialLassoTouchPoint = null
+                                lastLassoTouchPoint = null
+                            }
                             try {
                                 stylusInputProcessor.renderCommit()
                             } catch (_: Exception) {}
@@ -1374,60 +1504,56 @@ fun DrawingCanvas(
                 // 1.5 Draw Images (with viewport culling)
                 images.forEach { img ->
                     val imgPage = img.page.coerceIn(1, pdfPageCount)
-                    val pageTop = getPageTop(imgPage)
-                    val pageH = getPageHeight(imgPage)
-                    if (pageTop + pageH >= visibleTop && pageTop <= visibleBottom) {
-                        imageBitmaps[img.uri]?.let { bmp ->
-                            val renderX = fromNormalizedX(img.x, imgPage)
-                            val renderY = fromNormalizedY(img.y, imgPage)
-                            val renderW = (img.width / 600f) * getPageWidth(imgPage)
-                            val renderH = (img.height / getNormH(imgPage)) * getPageHeight(imgPage)
+                    imageBitmaps[img.uri]?.let { bmp ->
+                        val renderX = fromNormalizedX(img.x, imgPage)
+                        val renderY = fromNormalizedY(img.y, imgPage)
+                        val renderW = (img.width / 600f) * getPageWidth(imgPage)
+                        val renderH = (img.height / getNormH(imgPage)) * getPageHeight(imgPage)
 
-                            if (renderY + renderH >= visibleTop && renderY <= visibleBottom) {
-                                val filter = getImageColorFilter(img.filter)
-                                val srcX = (bmp.width * img.cropLeft).toInt().coerceIn(0, bmp.width - 1)
-                                val srcY = (bmp.height * img.cropTop).toInt().coerceIn(0, bmp.height - 1)
-                                val srcW = (bmp.width * (1f - img.cropLeft - img.cropRight)).toInt().coerceIn(1, bmp.width - srcX)
-                                val srcH = (bmp.height * (1f - img.cropTop - img.cropBottom)).toInt().coerceIn(1, bmp.height - srcY)
+                        if (renderY + renderH >= visibleTop && renderY <= visibleBottom) {
+                            val filter = getImageColorFilter(img.filter)
+                            val srcX = (bmp.width * img.cropLeft).toInt().coerceIn(0, bmp.width - 1)
+                            val srcY = (bmp.height * img.cropTop).toInt().coerceIn(0, bmp.height - 1)
+                            val srcW = (bmp.width * (1f - img.cropLeft - img.cropRight)).toInt().coerceIn(1, bmp.width - srcX)
+                            val srcH = (bmp.height * (1f - img.cropTop - img.cropBottom)).toInt().coerceIn(1, bmp.height - srcY)
 
-                                drawImage(
-                                    image = bmp,
-                                    srcOffset = androidx.compose.ui.unit.IntOffset(srcX, srcY),
-                                    srcSize = androidx.compose.ui.unit.IntSize(srcW, srcH),
-                                    dstOffset = androidx.compose.ui.unit.IntOffset(renderX.toInt(), renderY.toInt()),
-                                    dstSize = androidx.compose.ui.unit.IntSize(renderW.toInt(), renderH.toInt()),
-                                    colorFilter = filter
+                            drawImage(
+                                image = bmp,
+                                srcOffset = androidx.compose.ui.unit.IntOffset(srcX, srcY),
+                                srcSize = androidx.compose.ui.unit.IntSize(srcW, srcH),
+                                dstOffset = androidx.compose.ui.unit.IntOffset(renderX.toInt(), renderY.toInt()),
+                                dstSize = androidx.compose.ui.unit.IntSize(renderW.toInt(), renderH.toInt()),
+                                colorFilter = filter
+                            )
+                            if (selectedImageIndex == images.indexOf(img)) {
+                                val selectColor = Color(0xFF2196F3)
+                                drawRect(
+                                    color = selectColor,
+                                    topLeft = Offset(renderX, renderY),
+                                    size = Size(renderW, renderH),
+                                    style = DrawStroke(
+                                        width = 2.dp.toPx(),
+                                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(15f, 10f), 0f)
+                                    )
                                 )
-                                if (selectedImageIndex == images.indexOf(img)) {
-                                    val selectColor = Color(0xFF2196F3)
-                                    drawRect(
+                                val handleRadius = 6.dp.toPx()
+                                val corners = listOf(
+                                    Offset(renderX, renderY),
+                                    Offset(renderX + renderW, renderY),
+                                    Offset(renderX, renderY + renderH),
+                                    Offset(renderX + renderW, renderY + renderH)
+                                )
+                                corners.forEach { corner ->
+                                    drawCircle(
                                         color = selectColor,
-                                        topLeft = Offset(renderX, renderY),
-                                        size = Size(renderW, renderH),
-                                        style = DrawStroke(
-                                            width = 2.dp.toPx(),
-                                            pathEffect = PathEffect.dashPathEffect(floatArrayOf(15f, 10f), 0f)
-                                        )
+                                        radius = handleRadius,
+                                        center = corner
                                     )
-                                    val handleRadius = 6.dp.toPx()
-                                    val corners = listOf(
-                                        Offset(renderX, renderY),
-                                        Offset(renderX + renderW, renderY),
-                                        Offset(renderX, renderY + renderH),
-                                        Offset(renderX + renderW, renderY + renderH)
+                                    drawCircle(
+                                        color = Color.White,
+                                        radius = handleRadius - 2.dp.toPx(),
+                                        center = corner
                                     )
-                                    corners.forEach { corner ->
-                                        drawCircle(
-                                            color = selectColor,
-                                            radius = handleRadius,
-                                            center = corner
-                                        )
-                                        drawCircle(
-                                            color = Color.White,
-                                            radius = handleRadius - 2.dp.toPx(),
-                                            center = corner
-                                        )
-                                    }
                                 }
                             }
                         }
@@ -1437,30 +1563,32 @@ fun DrawingCanvas(
                 val drawSingleStroke: (com.example.data.Stroke, Boolean, Float) -> Unit = { stroke, isLassoed, alphaMult ->
                     if (!stroke.isHidden) {
                         val strokePage = stroke.page.coerceIn(1, pdfPageCount)
-                        val pTop = getPageTop(strokePage)
-                        val pH = getPageHeight(strokePage)
-                        val pLeft = getPageLeft(strokePage)
-                        val pW = getPageWidth(strokePage)
-                        val isVisible = pTop + pH >= visibleTop && pTop <= visibleBottom
+                        val rawPoints = stroke.points
+                        if (rawPoints.isNotEmpty()) {
+                            val bbox = lassoBoundingBox
+                            val cX = if (bbox != null) (bbox.left + bbox.right) / 2f else 0f
+                            val cY = if (bbox != null) (bbox.top + bbox.bottom) / 2f else 0f
 
-                        if (isVisible) {
-                            clipRect(left = pLeft, top = pTop, right = pLeft + pW, bottom = pTop + pH) {
-                                val rawPoints = stroke.points
-                                if (rawPoints.isNotEmpty()) {
-                                val bbox = lassoBoundingBox
-                                val cX = if (bbox != null) (bbox.left + bbox.right) / 2f else 0f
-                                val cY = if (bbox != null) (bbox.top + bbox.bottom) / 2f else 0f
+                            val points = if (isLassoed && bbox != null) {
+                                rawPoints.map { pt ->
+                                    val tx = pt.x + lassoDragOffset.x
+                                    val ty = pt.y + lassoDragOffset.y
+                                    val fx = if (lassoScaleX != 1f) cX + (tx - cX) * lassoScaleX else tx
+                                    val fy = if (lassoScaleY != 1f) cY + (ty - cY) * lassoScaleY else ty
+                                    com.example.data.Point(fx, fy, pt.pressure)
+                                }
+                            } else rawPoints
 
-                                val points = if (isLassoed && bbox != null) {
-                                    rawPoints.map { pt ->
-                                        val tx = pt.x + lassoDragOffset.x
-                                        val ty = pt.y + lassoDragOffset.y
-                                        val fx = if (lassoScaleX != 1f) cX + (tx - cX) * lassoScaleX else tx
-                                        val fy = if (lassoScaleY != 1f) cY + (ty - cY) * lassoScaleY else ty
-                                        com.example.data.Point(fx, fy, pt.pressure)
-                                    }
-                                } else rawPoints
+                            var minWY = Float.MAX_VALUE
+                            var maxWY = -Float.MAX_VALUE
+                            for (pt in points) {
+                                val wy = fromNormalizedY(pt.y, strokePage)
+                                if (wy < minWY) minWY = wy
+                                if (wy > maxWY) maxWY = wy
+                            }
+                            val isVisible = isLassoed || (maxWY >= visibleTop && minWY <= visibleBottom)
 
+                            if (isVisible) {
                                 val baseAlpha = if (isLassoed) 0.95f else 1f
                                 val rawC = stroke.color
                                 val strokeColorInt = if (stroke.toolType != "highlighter" && stroke.toolType != "laser" && stroke.toolType != "tape") {
@@ -1636,7 +1764,6 @@ fun DrawingCanvas(
                         }
                     }
                 }
-            }
 
                 // 2. Draw Highlighter Layer (Renders BEHIND ink pens) using index loops without list allocation
                 for (i in strokes.indices) {
@@ -1670,30 +1797,32 @@ fun DrawingCanvas(
                 val drawSingleStroke: (com.example.data.Stroke, Boolean, Float) -> Unit = { stroke, isLassoed, alphaMult ->
                     if (!stroke.isHidden) {
                         val strokePage = stroke.page.coerceIn(1, pdfPageCount)
-                        val pTop = getPageTop(strokePage)
-                        val pH = getPageHeight(strokePage)
-                        val pLeft = getPageLeft(strokePage)
-                        val pW = getPageWidth(strokePage)
-                        val isVisible = pTop + pH >= visibleTop && pTop <= visibleBottom
+                        val rawPoints = stroke.points
+                        if (rawPoints.isNotEmpty()) {
+                            val bbox = lassoBoundingBox
+                            val cX = if (bbox != null) (bbox.left + bbox.right) / 2f else 0f
+                            val cY = if (bbox != null) (bbox.top + bbox.bottom) / 2f else 0f
 
-                        if (isVisible) {
-                            clipRect(left = pLeft, top = pTop, right = pLeft + pW, bottom = pTop + pH) {
-                                val rawPoints = stroke.points
-                            if (rawPoints.isNotEmpty()) {
-                                val bbox = lassoBoundingBox
-                                val cX = if (bbox != null) (bbox.left + bbox.right) / 2f else 0f
-                                val cY = if (bbox != null) (bbox.top + bbox.bottom) / 2f else 0f
+                            val points = if (isLassoed && bbox != null) {
+                                rawPoints.map { pt ->
+                                    val tx = pt.x + lassoDragOffset.x
+                                    val ty = pt.y + lassoDragOffset.y
+                                    val fx = if (lassoScaleX != 1f) cX + (tx - cX) * lassoScaleX else tx
+                                    val fy = if (lassoScaleY != 1f) cY + (ty - cY) * lassoScaleY else ty
+                                    com.example.data.Point(fx, fy, pt.pressure)
+                                }
+                            } else rawPoints
 
-                                val points = if (isLassoed && bbox != null) {
-                                    rawPoints.map { pt ->
-                                        val tx = pt.x + lassoDragOffset.x
-                                        val ty = pt.y + lassoDragOffset.y
-                                        val fx = if (lassoScaleX != 1f) cX + (tx - cX) * lassoScaleX else tx
-                                        val fy = if (lassoScaleY != 1f) cY + (ty - cY) * lassoScaleY else ty
-                                        com.example.data.Point(fx, fy, pt.pressure)
-                                    }
-                                } else rawPoints
+                            var minWY = Float.MAX_VALUE
+                            var maxWY = -Float.MAX_VALUE
+                            for (pt in points) {
+                                val wy = fromNormalizedY(pt.y, strokePage)
+                                if (wy < minWY) minWY = wy
+                                if (wy > maxWY) maxWY = wy
+                            }
+                            val isVisible = isLassoed || (maxWY >= visibleTop && minWY <= visibleBottom)
 
+                            if (isVisible) {
                                 val baseAlpha = if (isLassoed) 0.95f else 1f
                                 val rawC = stroke.color
                                 val strokeColorInt = if (stroke.toolType != "highlighter" && stroke.toolType != "laser" && stroke.toolType != "tape") {
@@ -1819,8 +1948,7 @@ fun DrawingCanvas(
                             }
                         }
                     }
-                }
-            } // End of drawSingleStroke in second Canvas
+                } // End of drawSingleStroke in second Canvas
 
                 // Draw active highlighters
                 for (i in lassoSelectedStrokes.indices) {

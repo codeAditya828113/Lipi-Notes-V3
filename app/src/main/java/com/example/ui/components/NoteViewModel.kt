@@ -1312,6 +1312,14 @@ class NoteViewModel(
         lassoBoundingBox = SmartInkEngine.getBoundingBox(reGenerated)
     }
 
+    fun updateLassoStrokes(strokes: List<Stroke>, boundingBox: Rect?) {
+        lassoSelectedStrokes = strokes
+        lassoBoundingBox = boundingBox
+        lassoDragOffset = Offset.Zero
+        lassoScaleX = 1f
+        lassoScaleY = 1f
+    }
+
     fun clearLassoSelection() {
         if (lassoSelectedStrokes.isNotEmpty()) {
             val bbox = lassoBoundingBox
@@ -1441,6 +1449,14 @@ class NoteViewModel(
     // Theme Mode & Dynamic Color
     var themeMode by mutableStateOf(sharedPrefs.getString("theme_mode", "light") ?: "light")
         private set
+
+    fun isDarkTheme(systemInDarkTheme: Boolean = false): Boolean {
+        return when (themeMode) {
+            "dark", "oled" -> true
+            "light" -> false
+            else -> systemInDarkTheme
+        }
+    }
 
     var dynamicColorEnabled by mutableStateOf(sharedPrefs.getBoolean("dynamic_color_enabled", true))
         private set
@@ -1959,6 +1975,7 @@ class NoteViewModel(
     init {
         startAutoSaveLoop()
         startFadingLoop()
+        startActiveStudyLoop()
         loadTimerStateForActiveNote()
         checkFirstRunOrUpdateChangelog()
 
@@ -2633,14 +2650,57 @@ Here is your complete guide to all features and capabilities available in the ap
         logSyncEvent("Updated Study Streak to $studyStreakDays days")
     }
 
-    fun incrementStudyStreak() {
-        studyStreakDays++
+    private var activeStudyJob: kotlinx.coroutines.Job? = null
+
+    fun startActiveStudyLoop() {
+        if (activeStudyJob?.isActive == true) return
+        activeStudyJob = viewModelScope.launch {
+            while (true) {
+                kotlinx.coroutines.delay(1000L)
+                if (selectedNote != null || timerIsRunning) {
+                    addStudySecond()
+                }
+            }
+        }
+    }
+
+    fun stopActiveStudyLoop() {
+        activeStudyJob?.cancel()
+        activeStudyJob = null
+    }
+
+    fun recordStudySession(minutes: Int) {
+        val seconds = minutes * 60
+        dailyStudySeconds += seconds
         val today = getCurrentDateString()
-        lastStudyDateString = today
+        val daySecs = sharedPrefs.getInt("study_secs_$today", 0) + seconds
         sharedPrefs.edit()
-            .putString("last_study_date", today)
-            .putInt("study_streak_days", studyStreakDays)
+            .putInt("daily_study_seconds", dailyStudySeconds)
+            .putInt("study_secs_$today", daySecs)
             .apply()
+        incrementStudyStreak()
+        logSyncEvent("Recorded $minutes min study session")
+    }
+
+    fun getStudySecondsForDate(dateStr: String): Int {
+        val today = getCurrentDateString()
+        return if (dateStr == today) {
+            dailyStudySeconds
+        } else {
+            sharedPrefs.getInt("study_secs_$dateStr", 0)
+        }
+    }
+
+    fun incrementStudyStreak() {
+        val today = getCurrentDateString()
+        if (lastStudyDateString != today) {
+            studyStreakDays = if (studyStreakDays == 0) 1 else studyStreakDays + 1
+            lastStudyDateString = today
+            sharedPrefs.edit()
+                .putString("last_study_date", today)
+                .putInt("study_streak_days", studyStreakDays)
+                .apply()
+        }
         logSyncEvent("Incremented Study Streak to $studyStreakDays days! 🔥")
     }
 
@@ -2655,43 +2715,43 @@ Here is your complete guide to all features and capabilities available in the ap
         lastStudyDateString = sharedPrefs.getString("last_study_date", "") ?: ""
         dailyGoalTargetMinutes = sharedPrefs.getInt("daily_goal_minutes", 30)
         dailyTaskGoalTarget = sharedPrefs.getInt("daily_task_goal", 3)
-        val savedStreak = sharedPrefs.getInt("study_streak_days", 0)
+        val savedStreak = sharedPrefs.getInt("study_streak_days", 1)
         
         if (lastStudyDateString != today) {
-            dailyStudySeconds = 0
             if (lastStudyDateString.isNotEmpty()) {
                 val daysSince = getDaysBetween(lastStudyDateString, today)
-                if (daysSince >= 2) {
-                    // Two or more days passed without studying -> streak resets to 0!
-                    studyStreakDays = 0
-                    sharedPrefs.edit().putInt("study_streak_days", 0).apply()
+                if (daysSince >= 2L) {
+                    // Two or more days missed -> start new streak at 1
+                    studyStreakDays = 1
+                    sharedPrefs.edit().putInt("study_streak_days", 1).apply()
                 } else {
-                    // Last study was yesterday (1 day ago) -> maintain streak count
-                    studyStreakDays = savedStreak
+                    // Last study was yesterday -> maintain active streak
+                    studyStreakDays = savedStreak.coerceAtLeast(1)
                 }
             } else {
-                studyStreakDays = savedStreak
+                studyStreakDays = savedStreak.coerceAtLeast(1)
             }
+            dailyStudySeconds = sharedPrefs.getInt("study_secs_$today", 0)
         } else {
-            dailyStudySeconds = sharedPrefs.getInt("daily_study_seconds", 0)
-            studyStreakDays = savedStreak
+            dailyStudySeconds = sharedPrefs.getInt("daily_study_seconds", sharedPrefs.getInt("study_secs_$today", 0))
+            studyStreakDays = savedStreak.coerceAtLeast(1)
         }
     }
 
-    private fun addStudySecond() {
+    fun addStudySecond() {
         dailyStudySeconds++
         val today = getCurrentDateString()
         
         if (lastStudyDateString != today) {
             if (lastStudyDateString.isNotEmpty()) {
                 val daysSince = getDaysBetween(lastStudyDateString, today)
-                if (daysSince >= 2) {
-                    studyStreakDays = 1
-                } else {
+                if (daysSince == 1L) {
                     studyStreakDays++
+                } else if (daysSince >= 2L) {
+                    studyStreakDays = 1
                 }
             } else {
-                studyStreakDays = if (studyStreakDays == 0) 1 else studyStreakDays + 1
+                studyStreakDays = if (studyStreakDays == 0) 1 else studyStreakDays
             }
             lastStudyDateString = today
             sharedPrefs.edit()
@@ -2700,9 +2760,11 @@ Here is your complete guide to all features and capabilities available in the ap
                 .apply()
         }
         
-        if (dailyStudySeconds % 10 == 0) {
-            // Save every 10 seconds to avoid too many writes
-            sharedPrefs.edit().putInt("daily_study_seconds", dailyStudySeconds).apply()
+        if (dailyStudySeconds % 5 == 0) {
+            sharedPrefs.edit()
+                .putInt("daily_study_seconds", dailyStudySeconds)
+                .putInt("study_secs_$today", dailyStudySeconds)
+                .apply()
         }
     }
 

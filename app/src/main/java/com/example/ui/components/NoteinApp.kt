@@ -679,11 +679,14 @@ fun NoteWorkspaceTabBar(
 ) {
     if (viewModel.isFullscreen) return
 
+    val sysDark = androidx.compose.foundation.isSystemInDarkTheme()
+    val isDark = viewModel.isDarkTheme(sysDark)
+
     Row(
         verticalAlignment = Alignment.Bottom,
         modifier = modifier
             .fillMaxWidth()
-            .background(Color(0xFFF1F5F9))
+            .background(if (isDark) Color(0xFF0F172A) else Color(0xFFF1F5F9))
             .padding(horizontal = 8.dp, vertical = 0.dp)
     ) {
         val openNotes = remember(notes, viewModel.openNoteIds) {
@@ -700,17 +703,17 @@ fun NoteWorkspaceTabBar(
             // "All Notes" Tab
             val isAllNotesSelected = (selectedNote == null)
             val allNotesBg by animateColorAsState(
-                targetValue = if (isAllNotesSelected) Color.White else Color(0xFFE2E8F0),
+                targetValue = if (isAllNotesSelected) (if (isDark) Color(0xFF1E293B) else Color.White) else (if (isDark) Color(0xFF334155) else Color(0xFFE2E8F0)),
                 animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing),
                 label = "allNotesBg"
             )
             val allNotesTextColor by animateColorAsState(
-                targetValue = if (isAllNotesSelected) Color(0xFF0F172A) else Color(0xFF475569),
+                targetValue = if (isAllNotesSelected) (if (isDark) Color(0xFFF8FAFC) else Color(0xFF0F172A)) else (if (isDark) Color(0xFF94A3B8) else Color(0xFF475569)),
                 animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing),
                 label = "allNotesTextColor"
             )
             val allNotesIconColor by animateColorAsState(
-                targetValue = if (isAllNotesSelected) Color(0xFF2563EB) else Color(0xFF64748B),
+                targetValue = if (isAllNotesSelected) Color(0xFF2563EB) else (if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)),
                 animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing),
                 label = "allNotesIconColor"
             )
@@ -720,7 +723,7 @@ fun NoteWorkspaceTabBar(
                     .padding(horizontal = 2.dp)
                     .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)),
                 color = allNotesBg,
-                border = if (isAllNotesSelected) BorderStroke(1.dp, Color(0xFFCBD5E1)) else null
+                border = if (isAllNotesSelected) BorderStroke(1.dp, if (isDark) Color(0xFF475569) else Color(0xFFCBD5E1)) else null
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -751,12 +754,12 @@ fun NoteWorkspaceTabBar(
                 val baseIconTint = if (note.templateType == "pdf") Color(0xFFD32F2F) else Color(0xFF3B82F6)
 
                 val tabBg by animateColorAsState(
-                    targetValue = if (isTabSelected) Color.White else Color(0xFFE2E8F0),
+                    targetValue = if (isTabSelected) (if (isDark) Color(0xFF1E293B) else Color.White) else (if (isDark) Color(0xFF334155) else Color(0xFFE2E8F0)),
                     animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing),
                     label = "tabBg"
                 )
                 val tabTextColor by animateColorAsState(
-                    targetValue = if (isTabSelected) Color(0xFF0F172A) else Color(0xFF475569),
+                    targetValue = if (isTabSelected) (if (isDark) Color(0xFFF8FAFC) else Color(0xFF0F172A)) else (if (isDark) Color(0xFF94A3B8) else Color(0xFF475569)),
                     animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing),
                     label = "tabTextColor"
                 )
@@ -5553,6 +5556,7 @@ if (showLayersDialog) {
                     },
                     onLassoDrag = { offset -> viewModel.lassoDragOffset = Offset(viewModel.lassoDragOffset.x + offset.x, viewModel.lassoDragOffset.y + offset.y) },
                     onLassoScaleUpdated = { scaleX, scaleY -> viewModel.updateLassoScale(scaleX, scaleY) },
+                    onLassoStrokesUpdated = { strokes, bbox -> viewModel.updateLassoStrokes(strokes, bbox) },
                     onScrollStateChanged = { isScrollingCanvas = it },
                     contentBlocks = viewModel.currentContentBlocks,
                     selectedBlockId = viewModel.selectedContentBlockId,
@@ -6998,7 +7002,8 @@ fun SyncDashboard(
     val savedPhotoUrl = userProfile.photoUrl
     val isSignedIn = userProfile.isSignedIn
 
-    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+    val sysDark = androidx.compose.foundation.isSystemInDarkTheme()
+    val isDark = viewModel.isDarkTheme(sysDark)
     val bgColor = if (isDark) Color(0xFF0F172A) else Color(0xFFF7F8FC)
     val cardBg = if (isDark) Color(0xFF1E293B) else Color.White
     val textPrimary = if (isDark) Color.White else Color(0xFF0F172A)

@@ -47,6 +47,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.sp
 import com.example.data.NoteEntity
 import java.text.SimpleDateFormat
@@ -57,18 +58,19 @@ import kotlinx.coroutines.launch
 // ==========================================
 // LIPI COLOR SYSTEM (Android 16 M3 Expressive)
 // ==========================================
-private val LipiBgLight @Composable get() = if (androidx.compose.foundation.isSystemInDarkTheme()) Color(0xFF0F172A) else Color(0xFFF7F8FC)
-private val LipiCardWhite @Composable get() = if (androidx.compose.foundation.isSystemInDarkTheme()) Color(0xFF1E293B) else Color(0xFFFFFFFF)
+private val isLipiDark @Composable get() = MaterialTheme.colorScheme.background.luminance() < 0.5f
+private val LipiBgLight @Composable get() = if (isLipiDark) Color(0xFF0F172A) else Color(0xFFF7F8FC)
+private val LipiCardWhite @Composable get() = if (isLipiDark) Color(0xFF1E293B) else Color(0xFFFFFFFF)
 private val LipiPrimary = Color(0xFF5B6DFF)      // Royal Indigo
 private val LipiSecondary = Color(0xFF8A7CFF)    // Lavender
 private val LipiAccent = Color(0xFF4DA3FF)       // Sky Blue
 private val LipiSuccess = Color(0xFF2ECC71)      // Emerald Green
 private val LipiWarning = Color(0xFFFF9F43)      // Warm Amber
 private val LipiError = Color(0xFFFF5C5C)        // Coral Red
-private val LipiTextPrimary @Composable get() = if (androidx.compose.foundation.isSystemInDarkTheme()) Color(0xFFF8FAFC) else Color(0xFF1E293B)
-private val LipiTextSecondary @Composable get() = if (androidx.compose.foundation.isSystemInDarkTheme()) Color(0xFF94A3B8) else Color(0xFF64748B)
-private val LipiBorder @Composable get() = if (androidx.compose.foundation.isSystemInDarkTheme()) Color(0xFF334155) else Color(0xFFE2E8F0)
-private val LipiSoftBg @Composable get() = if (androidx.compose.foundation.isSystemInDarkTheme()) Color(0xFF1E293B) else Color(0xFFF1F5F9)
+private val LipiTextPrimary @Composable get() = if (isLipiDark) Color(0xFFF8FAFC) else Color(0xFF1E293B)
+private val LipiTextSecondary @Composable get() = if (isLipiDark) Color(0xFF94A3B8) else Color(0xFF64748B)
+private val LipiBorder @Composable get() = if (isLipiDark) Color(0xFF334155) else Color(0xFFE2E8F0)
+private val LipiSoftBg @Composable get() = if (isLipiDark) Color(0xFF1E293B) else Color(0xFFF1F5F9)
 
 /**
  * Redesigned "All Notes" screen matching the homepage's visual language.
@@ -639,7 +641,7 @@ private fun AllNotesHeaderSection(
                 }
 
                 // Cloud Sync Status Indicator
-                val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+                val isDark = isLipiDark
                 Surface(
                     shape = RoundedCornerShape(20.dp),
                     color = if (viewModel.isSyncing) LipiPrimary.copy(alpha = 0.12f) else if (isDark) Color(0xFF132E1D) else Color(0xFFF0FDF4),
