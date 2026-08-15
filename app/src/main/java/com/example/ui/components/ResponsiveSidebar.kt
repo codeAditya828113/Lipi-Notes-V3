@@ -1772,6 +1772,27 @@ private fun EngineSettingsCard(
                         )
                     }
 
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    // Full View Mode toggle
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Full View Mode", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                            Text("Hide status & navigation bars", fontSize = 9.5.sp, color = MaterialTheme.colorScheme.outline)
+                        }
+                        Switch(
+                            checked = viewModel.isFullViewMode,
+                            onCheckedChange = {
+                                viewModel.isFullViewMode = it
+                            },
+                            modifier = Modifier.scale(0.8f).testTag("full_view_mode_switch")
+                        )
+                    }
+
                     Spacer(modifier = Modifier.height(10.dp))
 
                     // Theme Mode Selector

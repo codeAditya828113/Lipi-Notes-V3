@@ -501,7 +501,20 @@ class NoteViewModel(
         }
 
      var isRulerActive by mutableStateOf(false)
-     var isFullscreen by mutableStateOf(true)
+
+     private var _isFullViewMode by mutableStateOf(prefs.getBoolean("isFullViewMode", true))
+     var isFullViewMode: Boolean
+         get() = _isFullViewMode
+         set(value) {
+             _isFullViewMode = value
+             prefs.edit().putBoolean("isFullViewMode", value).apply()
+         }
+
+     var isFullscreen: Boolean
+         get() = isFullViewMode
+         set(value) {
+             isFullViewMode = value
+         }
  
      // Shape Customization States
      var shape3dDepth by mutableStateOf(0.35f)
@@ -577,21 +590,30 @@ class NoteViewModel(
     val lipiAudioManager = com.example.audio.LipiAudioManager(application)
 
     // Unified Lipi Content Blocks (Audio, Links, PDF, Text)
+    data class NoteCanvasSnapshot(
+        val strokes: List<Stroke>,
+        val images: List<com.example.data.ImageElement>,
+        val contentBlocks: List<com.example.data.LipiContentBlock>
+    )
+
     var currentContentBlocks by mutableStateOf<List<com.example.data.LipiContentBlock>>(emptyList())
     var selectedContentBlockId by mutableStateOf<String?>(null)
     var showInsertMenu by mutableStateOf(false)
 
     fun addContentBlock(block: com.example.data.LipiContentBlock) {
+        saveToUndoStack()
         currentContentBlocks = currentContentBlocks + block
         saveActiveCanvasStrokes()
     }
 
     fun updateContentBlock(block: com.example.data.LipiContentBlock) {
+        saveToUndoStack()
         currentContentBlocks = currentContentBlocks.map { if (it.id == block.id) block else it }
         saveActiveCanvasStrokes()
     }
 
     fun deleteContentBlock(blockId: String) {
+        saveToUndoStack()
         currentContentBlocks = currentContentBlocks.filter { it.id != blockId }
         if (selectedContentBlockId == blockId) {
             selectedContentBlockId = null
@@ -600,11 +622,39 @@ class NoteViewModel(
     }
 
     fun moveContentBlock(blockId: String, deltaX: Float, deltaY: Float) {
+        saveToUndoStack()
         currentContentBlocks = currentContentBlocks.map {
             if (it.id == blockId) {
-                it.copyWith(x = it.x + deltaX, y = it.y + deltaY)
+                it.copyWith(x = (it.x + deltaX).coerceAtLeast(0f), y = (it.y + deltaY).coerceAtLeast(0f))
             } else it
         }
+        saveActiveCanvasStrokes()
+    }
+
+    fun resizeContentBlock(blockId: String, newWidth: Float, newHeight: Float) {
+        saveToUndoStack()
+        currentContentBlocks = currentContentBlocks.map {
+            if (it.id == blockId) {
+                it.copyWith(width = newWidth.coerceAtLeast(60f), height = newHeight.coerceAtLeast(40f))
+            } else it
+        }
+        saveActiveCanvasStrokes()
+    }
+
+    fun duplicateContentBlock(blockId: String) {
+        val existing = currentContentBlocks.find { it.id == blockId } ?: return
+        saveToUndoStack()
+        val newId = java.util.UUID.randomUUID().toString()
+        val copy = when (existing) {
+            is com.example.data.AudioContentBlock -> existing.copy(id = newId, x = existing.x + 20f, y = existing.y + 20f)
+            is com.example.data.WebLinkContentBlock -> existing.copy(id = newId, x = existing.x + 20f, y = existing.y + 20f)
+            is com.example.data.InternalLinkContentBlock -> existing.copy(id = newId, x = existing.x + 20f, y = existing.y + 20f)
+            is com.example.data.PdfAttachmentContentBlock -> existing.copy(id = newId, x = existing.x + 20f, y = existing.y + 20f)
+            is com.example.data.PdfPageContentBlock -> existing.copy(id = newId, x = existing.x + 20f, y = existing.y + 20f)
+            is com.example.data.TextContentBlock -> existing.copy(id = newId, x = existing.x + 20f, y = existing.y + 20f)
+        }
+        currentContentBlocks = currentContentBlocks + copy
+        selectedContentBlockId = newId
         saveActiveCanvasStrokes()
     }
 
@@ -627,45 +677,50 @@ class NoteViewModel(
                 height = 400f,
                 page = pdfPage
             )
+            saveToUndoStack()
             currentImages = currentImages + newImage
             saveActiveCanvasStrokes()
         } catch (e: Exception) {
             e.printStackTrace()
         }
     }
-        
+
     var activeStroke by mutableStateOf<Stroke?>(null)
         private set
 
     // Undo/Redo Stacks
-    private val undoStack = mutableListOf<List<Stroke>>()
-    private val redoStack = mutableListOf<List<Stroke>>()
+    private val undoStack = mutableListOf<NoteCanvasSnapshot>()
+    private val redoStack = mutableListOf<NoteCanvasSnapshot>()
 
     fun saveToUndoStack() {
         if (undoStack.size >= 30) {
             undoStack.removeAt(0)
         }
-        undoStack.add(currentStrokes)
+        undoStack.add(NoteCanvasSnapshot(currentStrokes, currentImages, currentContentBlocks))
         redoStack.clear()
     }
 
     fun undo() {
         if (undoStack.isNotEmpty()) {
             val prev = undoStack.removeAt(undoStack.size - 1)
-            redoStack.add(currentStrokes)
-            currentStrokes = prev
+            redoStack.add(NoteCanvasSnapshot(currentStrokes, currentImages, currentContentBlocks))
+            currentStrokes = prev.strokes
+            currentImages = prev.images
+            currentContentBlocks = prev.contentBlocks
             saveActiveCanvasStrokes()
-            logSyncEvent("Undo drawing operation")
+            logSyncEvent("Undo operation")
         }
     }
 
     fun redo() {
         if (redoStack.isNotEmpty()) {
             val next = redoStack.removeAt(redoStack.size - 1)
-            undoStack.add(currentStrokes)
-            currentStrokes = next
+            undoStack.add(NoteCanvasSnapshot(currentStrokes, currentImages, currentContentBlocks))
+            currentStrokes = next.strokes
+            currentImages = next.images
+            currentContentBlocks = next.contentBlocks
             saveActiveCanvasStrokes()
-            logSyncEvent("Redo drawing operation")
+            logSyncEvent("Redo operation")
         }
     }
 

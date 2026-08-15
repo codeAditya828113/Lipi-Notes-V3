@@ -133,6 +133,9 @@ fun DrawingCanvas(
     onBlockSelected: (String?) -> Unit = {},
     onBlockUpdated: (com.example.data.LipiContentBlock) -> Unit = {},
     onBlockDeleted: (com.example.data.LipiContentBlock) -> Unit = {},
+    onMoveBlock: (String, Float, Float) -> Unit = { _, _, _ -> },
+    onResizeBlock: (String, Float, Float) -> Unit = { _, _, _ -> },
+    onDuplicateBlock: (String) -> Unit = {},
     onNavigateToNotePage: (Int, Int) -> Unit = {_,_->},
     onOpenPdfViewer: (String, Int) -> Unit = {_,_->}
 ) {
@@ -2496,6 +2499,9 @@ fun DrawingCanvas(
                                 onSelect = {
                                     onBlockSelected(if (selectedBlockId == block.id) null else block.id)
                                 },
+                                onMoveBlock = { dx, dy -> onMoveBlock(block.id, dx, dy) },
+                                onResizeBlock = { w, h -> onResizeBlock(block.id, w, h) },
+                                onDuplicateBlock = { onDuplicateBlock(block.id) },
                                 onNavigateToNotePage = onNavigateToNotePage,
                                 onOpenPdf = onOpenPdfViewer,
                                 onEditBlock = { editingContentBlock = it },

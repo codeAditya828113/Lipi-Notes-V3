@@ -60,6 +60,9 @@ fun LipiContentBlockItem(
     renderWidth: Float,
     renderHeight: Float,
     onSelect: () -> Unit,
+    onMoveBlock: (deltaX: Float, deltaY: Float) -> Unit = { _, _ -> },
+    onResizeBlock: (newWidth: Float, newHeight: Float) -> Unit = { _, _ -> },
+    onDuplicateBlock: (LipiContentBlock) -> Unit = {},
     onNavigateToNotePage: (noteId: Int, page: Int) -> Unit,
     onOpenPdf: (filePath: String, page: Int) -> Unit,
     onEditBlock: (LipiContentBlock) -> Unit,
@@ -85,6 +88,14 @@ fun LipiContentBlockItem(
                     )
                 } else Modifier
             )
+            .pointerInput(block.id, isSelected) {
+                detectDragGestures { change, dragAmount ->
+                    change.consume()
+                    val worldDeltaX = (dragAmount.x / (600f * scale)) * 600f
+                    val worldDeltaY = (dragAmount.y / (800f * scale)) * 800f
+                    onMoveBlock(worldDeltaX, worldDeltaY)
+                }
+            }
             .combinedClickable(
                 onClick = { onSelect() },
                 onLongClick = { onEditBlock(block) }
@@ -171,31 +182,90 @@ fun LipiContentBlockItem(
             }
         }
 
-        // Selection Corner Indicators
+        // Selection Corner Indicators & Resize Handles
         if (isSelected) {
-            Box(
+            // Floating Action Bar above selected block
+            Surface(
                 modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .size(10.dp)
-                    .background(MaterialTheme.colorScheme.primary, CircleShape)
-            )
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .size(10.dp)
-                    .background(MaterialTheme.colorScheme.primary, CircleShape)
-            )
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .size(10.dp)
-                    .background(MaterialTheme.colorScheme.primary, CircleShape)
-            )
+                    .align(Alignment.TopCenter)
+                    .offset(y = (-44).dp),
+                shape = RoundedCornerShape(20.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                shadowElevation = 8.dp,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    IconButton(
+                        onClick = { onEditBlock(block) },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(Icons.Default.Edit, contentDescription = "Edit Block", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                    }
+                    IconButton(
+                        onClick = { onDuplicateBlock(block) },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(Icons.Default.ContentCopy, contentDescription = "Duplicate Block", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                    }
+                    IconButton(
+                        onClick = { onDeleteBlock(block) },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(Icons.Default.Delete, contentDescription = "Delete Block", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+                    }
+                }
+            }
+
+            // Bottom-Right Corner Resize Handle
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .size(10.dp)
+                    .offset(x = 8.dp, y = 8.dp)
+                    .size(24.dp)
                     .background(MaterialTheme.colorScheme.primary, CircleShape)
+                    .border(2.dp, Color.White, CircleShape)
+                    .pointerInput(block.id) {
+                        detectDragGestures { change, dragAmount ->
+                            change.consume()
+                            val dw = (dragAmount.x / scale).coerceIn(-20f, 50f)
+                            val dh = (dragAmount.y / scale).coerceIn(-20f, 50f)
+                            onResizeBlock((block.width + dw).coerceAtLeast(80f), (block.height + dh).coerceAtLeast(50f))
+                        }
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Default.OpenInFull, contentDescription = "Resize", tint = Color.White, modifier = Modifier.size(12.dp))
+            }
+
+            // Top-Left Corner Handle
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .size(12.dp)
+                    .background(MaterialTheme.colorScheme.primary, CircleShape)
+                    .border(1.5.dp, Color.White, CircleShape)
+            )
+
+            // Top-Right Corner Handle
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .size(12.dp)
+                    .background(MaterialTheme.colorScheme.primary, CircleShape)
+                    .border(1.5.dp, Color.White, CircleShape)
+            )
+
+            // Bottom-Left Corner Handle
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .size(12.dp)
+                    .background(MaterialTheme.colorScheme.primary, CircleShape)
+                    .border(1.5.dp, Color.White, CircleShape)
             )
         }
     }

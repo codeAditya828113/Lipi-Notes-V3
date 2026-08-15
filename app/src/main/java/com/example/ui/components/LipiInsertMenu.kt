@@ -68,6 +68,7 @@ fun LipiInsertMenuSheet(
     var showWebLinkDialog by remember { mutableStateOf(false) }
     var showInternalLinkDialog by remember { mutableStateOf(false) }
     var showStickyTextDialog by remember { mutableStateOf(false) }
+    var showTextBoxDialog by remember { mutableStateOf(false) }
     var showPdfPagePickerSheet by remember { mutableStateOf(false) }
     var selectedPdfFileForPageInsert by remember { mutableStateOf<File?>(null) }
     var selectedPdfTitle by remember { mutableStateOf("") }
@@ -261,6 +262,13 @@ fun LipiInsertMenuSheet(
                     }
                 ),
                 InsertOption(
+                    title = "Text Box",
+                    subtitle = "Editable multiline text block",
+                    icon = Icons.Default.TextFields,
+                    color = Color(0xFF14B8A6),
+                    onClick = { showTextBoxDialog = true }
+                ),
+                InsertOption(
                     title = "Sticky Note",
                     subtitle = "Colored text note",
                     icon = Icons.Default.StickyNote2,
@@ -401,6 +409,30 @@ fun LipiInsertMenuSheet(
         )
     }
 
+    // Text Box Dialog
+    if (showTextBoxDialog) {
+        LipiTextBoxDialog(
+            onDismiss = { showTextBoxDialog = false },
+            onConfirm = { text ->
+                val activePage = viewModel.pdfPage
+                val newBlock = TextContentBlock(
+                    page = activePage,
+                    x = 60f,
+                    y = 120f,
+                    width = 240f,
+                    height = 120f,
+                    text = text,
+                    backgroundColor = 0xFFFFFFFFL,
+                    textColor = 0xFF1E293BL,
+                    isStickyNote = false
+                )
+                viewModel.addContentBlock(newBlock)
+                showTextBoxDialog = false
+                onDismiss()
+            }
+        )
+    }
+
     // Sticky Text Note Dialog
     if (showStickyTextDialog) {
         LipiStickyTextDialog(
@@ -445,6 +477,25 @@ fun LipiInsertMenuSheet(
                 )
                 viewModel.addContentBlock(newBlock)
                 showPdfPagePickerSheet = false
+                onDismiss()
+            },
+            onPagesSelected = { pageIndices ->
+                val activePage = viewModel.pdfPage
+                pageIndices.forEachIndexed { idx, pageIndex ->
+                    val newBlock = PdfPageContentBlock(
+                        page = activePage,
+                        x = 40f + (idx * 15f),
+                        y = 40f + (idx * 15f),
+                        width = 520f,
+                        height = 700f,
+                        pdfFilePath = selectedPdfFileForPageInsert!!.absolutePath,
+                        pdfPageIndex = pageIndex,
+                        sourcePdfTitle = selectedPdfTitle
+                    )
+                    viewModel.addContentBlock(newBlock)
+                }
+                showPdfPagePickerSheet = false
+                Toast.makeText(context, "Embedded ${pageIndices.size} PDF page(s) on Page $activePage", Toast.LENGTH_SHORT).show()
                 onDismiss()
             }
         )
@@ -856,6 +907,48 @@ fun LipiInternalLinkDialog(
     )
 }
 
+@Composable
+fun LipiTextBoxDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (text: String) -> Unit
+) {
+    var text by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add Text Box", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    placeholder = { Text("Type text here...") },
+                    minLines = 3,
+                    maxLines = 8,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (text.isNotBlank()) {
+                        onConfirm(text.trim())
+                    }
+                },
+                enabled = text.isNotBlank()
+            ) {
+                Text("Insert Text")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
 /**
  * Sticky Text Note Creation Dialog
  */
@@ -939,9 +1032,12 @@ fun LipiPdfPagePickerSheet(
     pdfFile: File,
     pdfTitle: String,
     onDismiss: () -> Unit,
-    onPageSelected: (pageIndex: Int) -> Unit
+    onPageSelected: (pageIndex: Int) -> Unit,
+    onPagesSelected: (pageIndices: List<Int>) -> Unit = { pageIdx -> onPageSelected(pageIdx.firstOrNull() ?: 0) }
 ) {
+    val context = LocalContext.current
     val pageCount = remember(pdfFile) { LipiPdfManager.getPdfPageCount(pdfFile) }
+    val selectedPages = remember { mutableStateListOf<Int>() }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -960,7 +1056,7 @@ fun LipiPdfPagePickerSheet(
             ) {
                 Column {
                     Text(
-                        text = "Choose PDF Page to Embed",
+                        text = "Choose PDF Pages to Embed",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
@@ -970,12 +1066,26 @@ fun LipiPdfPagePickerSheet(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                IconButton(onClick = onDismiss) {
-                    Icon(Icons.Default.Close, contentDescription = "Close")
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(
+                        onClick = {
+                            if (selectedPages.size == pageCount) {
+                                selectedPages.clear()
+                            } else {
+                                selectedPages.clear()
+                                selectedPages.addAll(0 until pageCount)
+                            }
+                        }
+                    ) {
+                        Text(if (selectedPages.size == pageCount) "Deselect All" else "Select All")
+                    }
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, contentDescription = "Close")
+                    }
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(minSize = 130.dp),
@@ -983,18 +1093,46 @@ fun LipiPdfPagePickerSheet(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 420.dp)
+                    .heightIn(max = 380.dp)
             ) {
                 items(pageCount) { pageIdx ->
+                    val isSelected = selectedPages.contains(pageIdx)
                     PdfPageThumbnailItem(
                         pdfFile = pdfFile,
                         pageIndex = pageIdx,
-                        onClick = { onPageSelected(pageIdx) }
+                        isSelected = isSelected,
+                        onClick = {
+                            if (isSelected) {
+                                selectedPages.remove(pageIdx)
+                            } else {
+                                selectedPages.add(pageIdx)
+                            }
+                        }
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Button(
+                onClick = {
+                    if (selectedPages.isNotEmpty()) {
+                        onPagesSelected(selectedPages.sorted())
+                    } else {
+                        Toast.makeText(context, "Please select at least 1 page", Toast.LENGTH_SHORT).show()
+                    }
+                },
+                enabled = selectedPages.isNotEmpty(),
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text(
+                    text = if (selectedPages.isEmpty()) "Select Pages to Embed" else "Insert ${selectedPages.size} Selected Page${if (selectedPages.size > 1) "s" else ""}",
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
         }
     }
 }
@@ -1003,6 +1141,7 @@ fun LipiPdfPagePickerSheet(
 private fun PdfPageThumbnailItem(
     pdfFile: File,
     pageIndex: Int,
+    isSelected: Boolean,
     onClick: () -> Unit
 ) {
     var bitmap by remember { mutableStateOf<Bitmap?>(null) }
@@ -1018,7 +1157,7 @@ private fun PdfPageThumbnailItem(
         onClick = onClick,
         shape = RoundedCornerShape(10.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
-        border = BorderStroke(1.dp, Color(0xFFCBD5E1)),
+        border = BorderStroke(if (isSelected) 2.5.dp else 1.dp, if (isSelected) MaterialTheme.colorScheme.primary else Color(0xFFCBD5E1)),
         modifier = Modifier
             .fillMaxWidth()
             .height(180.dp)
@@ -1035,6 +1174,15 @@ private fun PdfPageThumbnailItem(
                     CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                 }
             }
+
+            // Checkbox Indicator
+            Checkbox(
+                checked = isSelected,
+                onCheckedChange = { onClick() },
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(2.dp)
+            )
 
             // Page badge
             Surface(

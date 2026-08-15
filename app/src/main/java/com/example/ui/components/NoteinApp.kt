@@ -183,7 +183,6 @@ fun NoteinApp(
     }
 
     val isBackHandlerEnabled = drawerState.isOpen ||
-            viewModel.isFullscreen ||
             selectedNote != null ||
             searchKeyword.isNotEmpty() ||
             tabStack.size > 1 ||
@@ -194,9 +193,6 @@ fun NoteinApp(
         when {
             drawerState.isOpen -> {
                 scope.launch { drawerState.close() }
-            }
-            viewModel.isFullscreen -> {
-                viewModel.isFullscreen = false
             }
             selectedNote != null -> {
                 viewModel.selectNote(null)
@@ -216,22 +212,21 @@ fun NoteinApp(
         }
     }
 
-    LaunchedEffect(viewModel.isFullscreen) {
-        val window = (context as? android.app.Activity)?.window
-        if (window != null) {
-            val controller = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
-            if (viewModel.isFullscreen) {
-                // Strict full view mode: Hide status & navigation bars, require swipe to show transiently
-                controller.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
-                controller.systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-                window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
-                    window.attributes.layoutInDisplayCutoutMode = android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+    LaunchedEffect(viewModel.isFullViewMode) {
+        val activity = (context as? com.example.MainActivity)
+        if (activity != null) {
+            activity.updateSystemBarsVisibility(viewModel.isFullViewMode)
+        } else {
+            val window = (context as? android.app.Activity)?.window
+            if (window != null) {
+                androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
+                val controller = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
+                if (viewModel.isFullViewMode) {
+                    controller.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+                    controller.systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                } else {
+                    controller.show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
                 }
-            } else {
-                // Normal Mode: Restore system bars & standard layout
-                controller.show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
-                window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             }
         }
     }
@@ -268,8 +263,9 @@ fun NoteinApp(
     ) {
         Scaffold(
             modifier = modifier.fillMaxSize(),
+            contentWindowInsets = WindowInsets(0, 0, 0, 0),
             bottomBar = {
-                if (!isTablet && activeTab != "notes") {
+                if (!isTablet && activeTab != "notes" && !viewModel.isFullViewMode) {
                     NavigationBar(
                         modifier = Modifier.testTag("bottom_nav_bar")
                     ) {
@@ -5583,6 +5579,9 @@ if (showLayersDialog) {
                     onBlockSelected = { viewModel.selectedContentBlockId = it },
                     onBlockUpdated = { viewModel.updateContentBlock(it) },
                     onBlockDeleted = { viewModel.deleteContentBlock(it.id) },
+                    onMoveBlock = { id, dx, dy -> viewModel.moveContentBlock(id, dx, dy) },
+                    onResizeBlock = { id, w, h -> viewModel.resizeContentBlock(id, w, h) },
+                    onDuplicateBlock = { id -> viewModel.duplicateContentBlock(id) },
                     onNavigateToNotePage = { targetNoteId, targetPage ->
                         val targetNote = viewModel.allNotes.value.firstOrNull { it.id == targetNoteId }
                         if (targetNote != null) {

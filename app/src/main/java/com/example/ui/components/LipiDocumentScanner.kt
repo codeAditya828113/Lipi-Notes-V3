@@ -592,6 +592,9 @@ fun LipiDocumentScanner(
                                     }
                                 }
                             },
+                            onEditPages = {
+                                currentMode = ScannerScreenMode.REVIEW_PAGES
+                            },
                             onDismiss = { onDismiss() }
                         )
                     }
@@ -667,6 +670,235 @@ private fun FirstUseIntroCard(onGotIt: () -> Unit) {
     }
 }
 
+enum class ScannerState {
+    INITIALIZING,
+    SEARCHING,
+    DOCUMENT_DETECTED,
+    STABILIZING,
+    READY_TO_CAPTURE,
+    CAPTURING,
+    PROCESSING
+}
+
+data class DetectionResult(
+    val state: ScannerState,
+    val corners: List<Offset>,
+    val confidence: Float,
+    val statusText: String
+)
+
+/**
+ * Computer-Vision Frame Analyzer for CameraX
+ * Performs luminance variance, Sobel edge magnitude, and quadrilateral contour analysis.
+ */
+private class DocumentImageAnalyzer(
+    private val onResult: (DetectionResult) -> Unit
+) : ImageAnalysis.Analyzer {
+
+    private var previousCorners: List<Offset>? = null
+    private var stableFrameCount = 0
+
+    @OptIn(ExperimentalGetImage::class)
+    override fun analyze(imageProxy: ImageProxy) {
+        val image = imageProxy.image
+        if (image == null) {
+            imageProxy.close()
+            return
+        }
+
+        try {
+            val planes = image.planes
+            if (planes.isEmpty()) {
+                imageProxy.close()
+                return
+            }
+
+            val yBuffer = planes[0].buffer
+            val width = image.width
+            val height = image.height
+            val rowStride = planes[0].rowStride
+            val pixelStride = planes[0].pixelStride
+
+            val sampleW = 120
+            val sampleH = 90
+            val scaleX = width.toFloat() / sampleW
+            val scaleY = height.toFloat() / sampleH
+
+            val grid = IntArray(sampleW * sampleH)
+            var sumLuminance = 0L
+
+            for (y in 0 until sampleH) {
+                val origY = (y * scaleY).toInt().coerceIn(0, height - 1)
+                for (x in 0 until sampleW) {
+                    val origX = (x * scaleX).toInt().coerceIn(0, width - 1)
+                    val index = origY * rowStride + origX * pixelStride
+                    if (index < yBuffer.capacity()) {
+                        val lum = yBuffer.get(index).toInt() and 0xFF
+                        grid[y * sampleW + x] = lum
+                        sumLuminance += lum
+                    }
+                }
+            }
+
+            val totalPixels = sampleW * sampleH
+            val meanLuminance = sumLuminance.toFloat() / totalPixels
+
+            var sumVariance = 0.0
+            for (i in 0 until totalPixels) {
+                val diff = grid[i] - meanLuminance
+                sumVariance += diff * diff
+            }
+            val stdDevLuminance = kotlin.math.sqrt(sumVariance / totalPixels)
+
+            // False positive rejection rules:
+            // Walls, ceilings, featureless tables, beds, pitch dark rooms have low variance or extreme light
+            if (meanLuminance < 18f || meanLuminance > 242f || stdDevLuminance < 18.0) {
+                stableFrameCount = 0
+                previousCorners = null
+                onResult(
+                    DetectionResult(
+                        state = ScannerState.SEARCHING,
+                        corners = listOf(
+                            Offset(0.15f, 0.20f),
+                            Offset(0.85f, 0.20f),
+                            Offset(0.85f, 0.80f),
+                            Offset(0.15f, 0.80f)
+                        ),
+                        confidence = 0f,
+                        statusText = "Looking for a document..."
+                    )
+                )
+                imageProxy.close()
+                return
+            }
+
+            // Sobel Edge Gradient calculation across grid
+            val edgeMag = FloatArray(sampleW * sampleH)
+            var totalEdgeMag = 0.0f
+
+            for (y in 1 until sampleH - 1) {
+                for (x in 1 until sampleW - 1) {
+                    val p00 = grid[(y - 1) * sampleW + (x - 1)]
+                    val p01 = grid[(y - 1) * sampleW + x]
+                    val p02 = grid[(y - 1) * sampleW + (x + 1)]
+                    val p10 = grid[y * sampleW + (x - 1)]
+                    val p12 = grid[y * sampleW + (x + 1)]
+                    val p20 = grid[(y + 1) * sampleW + (x - 1)]
+                    val p21 = grid[(y + 1) * sampleW + x]
+                    val p22 = grid[(y + 1) * sampleW + (x + 1)]
+
+                    val gx = (p02 + 2 * p12 + p22) - (p00 + 2 * p10 + p20)
+                    val gy = (p20 + 2 * p21 + p22) - (p00 + 2 * p01 + p02)
+                    val mag = kotlin.math.sqrt((gx * gx + gy * gy).toDouble()).toFloat()
+
+                    val idx = y * sampleW + x
+                    edgeMag[idx] = mag
+                    totalEdgeMag += mag
+                }
+            }
+
+            val avgEdgeMag = totalEdgeMag / totalPixels
+
+            // Bounding box around primary edge density
+            var minX = sampleW
+            var maxX = 0
+            var minY = sampleH
+            var maxY = 0
+            val edgeThreshold = (avgEdgeMag * 1.5f).coerceAtLeast(35f)
+
+            var edgePointCount = 0
+            for (y in 2 until sampleH - 2) {
+                for (x in 2 until sampleW - 2) {
+                    if (edgeMag[y * sampleW + x] >= edgeThreshold) {
+                        edgePointCount++
+                        if (x < minX) minX = x
+                        if (x > maxX) maxX = x
+                        if (y < minY) minY = y
+                        if (y > maxY) maxY = y
+                    }
+                }
+            }
+
+            val boxW = (maxX - minX).coerceAtLeast(0)
+            val boxH = (maxY - minY).coerceAtLeast(0)
+            val boxArea = boxW * boxH
+            val areaFraction = boxArea.toFloat() / totalPixels
+            val aspectRatio = if (boxH > 0) boxW.toFloat() / boxH.toFloat() else 0f
+
+            // Document detection criteria check (supports books, A4 paper, worksheets, notebooks):
+            val isGenuineQuad = edgePointCount > (totalPixels * 0.04f) &&
+                    areaFraction in 0.14f..0.82f &&
+                    aspectRatio in 0.45f..2.3f
+
+            if (!isGenuineQuad) {
+                stableFrameCount = 0
+                previousCorners = null
+                onResult(
+                    DetectionResult(
+                        state = ScannerState.SEARCHING,
+                        corners = listOf(
+                            Offset(0.15f, 0.20f),
+                            Offset(0.85f, 0.20f),
+                            Offset(0.85f, 0.80f),
+                            Offset(0.15f, 0.80f)
+                        ),
+                        confidence = 0f,
+                        statusText = "Looking for a document..."
+                    )
+                )
+            } else {
+                val normTL = Offset(minX.toFloat() / sampleW, minY.toFloat() / sampleH)
+                val normTR = Offset(maxX.toFloat() / sampleW, minY.toFloat() / sampleH)
+                val normBR = Offset(maxX.toFloat() / sampleW, maxY.toFloat() / sampleH)
+                val normBL = Offset(minX.toFloat() / sampleW, maxY.toFloat() / sampleH)
+                val currentCorners = listOf(normTL, normTR, normBR, normBL)
+
+                val prev = previousCorners
+                if (prev != null && prev.size == 4) {
+                    val maxShift = currentCorners.zip(prev).maxOf { (curr, pr) ->
+                        kotlin.math.abs(curr.x - pr.x) + kotlin.math.abs(curr.y - pr.y)
+                    }
+
+                    if (maxShift < 0.05f) {
+                        stableFrameCount++
+                    } else {
+                        stableFrameCount = 0
+                    }
+                } else {
+                    stableFrameCount = 0
+                }
+                previousCorners = currentCorners
+
+                val state = when {
+                    stableFrameCount >= 6 -> ScannerState.READY_TO_CAPTURE
+                    stableFrameCount >= 2 -> ScannerState.STABILIZING
+                    else -> ScannerState.DOCUMENT_DETECTED
+                }
+
+                val statusText = when (state) {
+                    ScannerState.READY_TO_CAPTURE -> "Ready"
+                    ScannerState.STABILIZING -> "Hold steady..."
+                    ScannerState.DOCUMENT_DETECTED -> "Document detected"
+                    else -> "Looking for a document..."
+                }
+
+                onResult(
+                    DetectionResult(
+                        state = state,
+                        corners = currentCorners,
+                        confidence = (stableFrameCount / 6f).coerceIn(0.3f, 1f),
+                        statusText = statusText
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            Log.e("LipiScanner", "Document analysis exception", e)
+        } finally {
+            imageProxy.close()
+        }
+    }
+}
+
 /**
  * CAMERA SCANNER SCREEN
  */
@@ -688,11 +920,16 @@ private fun CameraScannerScreen(
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val scope = rememberCoroutineScope()
 
     var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
+    var currentScannerState by remember { mutableStateOf(ScannerState.SEARCHING) }
+    var statusText by remember { mutableStateOf("Looking for a document...") }
     var isDocumentDetected by remember { mutableStateOf(false) }
     var isStableForCapture by remember { mutableStateOf(false) }
     var cameraBindError by remember { mutableStateOf<String?>(null) }
+    var isCapturingPhoto by remember { mutableStateOf(false) }
+    var detectedCorners by remember { mutableStateOf<List<Offset>?>(null) }
 
     // Animated document bounds
     val animatedTopLeft = remember { Animatable(Offset(0.15f, 0.20f), Offset.VectorConverter) }
@@ -702,25 +939,78 @@ private fun CameraScannerScreen(
 
     var captureTriggered by remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) {
-        while (true) {
-            delay(1000L)
-            isDocumentDetected = true
-            delay(800L)
-            isStableForCapture = true
-
-            if (isAutoCapture && !captureTriggered && cameraBindError == null) {
-                delay(600L)
-                captureTriggered = true
-                val sampleBitmap = createSampleDocumentBitmap()
-                onPageCaptured(sampleBitmap)
-                break
-            }
+    fun performRealCapture() {
+        val ic = imageCapture
+        if (ic == null) {
+            Toast.makeText(context, "Couldn't capture the document. Camera not ready.", Toast.LENGTH_SHORT).show()
+            captureTriggered = false
+            return
         }
+
+        isCapturingPhoto = true
+        currentScannerState = ScannerState.CAPTURING
+        statusText = "Capturing..."
+
+        val photoFile = File(context.cacheDir, "scan_raw_${System.currentTimeMillis()}.jpg")
+        val outputOptions = ImageCapture.OutputFileOptions.Builder(photoFile).build()
+
+        ic.takePicture(
+            outputOptions,
+            ContextCompat.getMainExecutor(context),
+            object : ImageCapture.OnImageSavedCallback {
+                override fun onImageSaved(output: ImageCapture.OutputFileResults) {
+                    statusText = "Cleaning document..."
+                    scope.launch(Dispatchers.IO) {
+                        try {
+                            val bitmap = BitmapFactory.decodeFile(photoFile.absolutePath)
+                            if (bitmap != null && bitmap.width > 0 && bitmap.height > 0) {
+                                Log.d("LipiScanner", "Captured real document photo: ${bitmap.width}x${bitmap.height}")
+                                val corners = detectedCorners
+                                val cropped = if (corners != null && corners.size == 4) {
+                                    PdfHelper.cropBitmapPerspective(bitmap, corners)
+                                } else bitmap
+
+                                val filtered = PdfHelper.applyScanFilter(cropped, "Auto")
+
+                                withContext(Dispatchers.Main) {
+                                    isCapturingPhoto = false
+                                    captureTriggered = false
+                                    currentScannerState = ScannerState.SEARCHING
+                                    onPageCaptured(filtered)
+                                }
+                            } else {
+                                withContext(Dispatchers.Main) {
+                                    isCapturingPhoto = false
+                                    captureTriggered = false
+                                    currentScannerState = ScannerState.SEARCHING
+                                    Toast.makeText(context, "Couldn't capture the document. Please try again.", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        } catch (e: Throwable) {
+                            Log.e("LipiScanner", "Error processing photo capture", e)
+                            withContext(Dispatchers.Main) {
+                                isCapturingPhoto = false
+                                captureTriggered = false
+                                currentScannerState = ScannerState.SEARCHING
+                                Toast.makeText(context, "Couldn't capture the document. Please try again.", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
+                }
+
+                override fun onError(exc: ImageCaptureException) {
+                    Log.e("LipiScanner", "Camera capture error", exc)
+                    isCapturingPhoto = false
+                    captureTriggered = false
+                    currentScannerState = ScannerState.SEARCHING
+                    Toast.makeText(context, "Couldn't capture the document. Please try again.", Toast.LENGTH_SHORT).show()
+                }
+            }
+        )
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // CameraX Preview View
+        // CameraX Preview View with ImageAnalysis
         AndroidView(
             factory = { ctx ->
                 val previewView = PreviewView(ctx).apply {
@@ -744,12 +1034,45 @@ private fun CameraScannerScreen(
                                     .build()
                                 imageCapture = capture
 
+                                val imageAnalysis = ImageAnalysis.Builder()
+                                    .setTargetResolution(android.util.Size(640, 480))
+                                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                                    .build()
+
+                                imageAnalysis.setAnalyzer(
+                                    ContextCompat.getMainExecutor(ctx),
+                                    DocumentImageAnalyzer { result ->
+                                        if (!isCapturingPhoto) {
+                                            currentScannerState = result.state
+                                            statusText = result.statusText
+                                            isDocumentDetected = (result.state != ScannerState.SEARCHING)
+                                            isStableForCapture = (result.state == ScannerState.READY_TO_CAPTURE)
+
+                                            if (result.corners.size == 4) {
+                                                detectedCorners = result.corners
+                                                scope.launch {
+                                                    animatedTopLeft.animateTo(result.corners[0], tween(100))
+                                                    animatedTopRight.animateTo(result.corners[1], tween(100))
+                                                    animatedBottomRight.animateTo(result.corners[2], tween(100))
+                                                    animatedBottomLeft.animateTo(result.corners[3], tween(100))
+                                                }
+                                            }
+
+                                            if (isAutoCapture && result.state == ScannerState.READY_TO_CAPTURE && !captureTriggered && cameraBindError == null) {
+                                                captureTriggered = true
+                                                performRealCapture()
+                                            }
+                                        }
+                                    }
+                                )
+
                                 cameraProvider.unbindAll()
                                 cameraProvider.bindToLifecycle(
                                     lifecycleOwner,
                                     cameraSelector,
                                     preview,
-                                    capture
+                                    capture,
+                                    imageAnalysis
                                 )
                             } else {
                                 cameraBindError = "Camera not available on this device"
@@ -956,11 +1279,7 @@ private fun CameraScannerScreen(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = when {
-                            isStableForCapture -> "Hold steady..."
-                            isDocumentDetected -> "Document detected"
-                            else -> "Searching for document..."
-                        },
+                        text = statusText,
                         color = Color.White,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 12.sp
@@ -1052,31 +1371,7 @@ private fun CameraScannerScreen(
                             .border(4.dp, Color(0xFF5B6DFF), CircleShape)
                             .clip(CircleShape)
                             .clickable {
-                                val ic = imageCapture
-                                if (ic != null) {
-                                    val photoFile = File(context.cacheDir, "scan_raw_${System.currentTimeMillis()}.jpg")
-                                    val outputOptions = ImageCapture.OutputFileOptions.Builder(photoFile).build()
-                                    ic.takePicture(
-                                        outputOptions,
-                                        ContextCompat.getMainExecutor(context),
-                                        object : ImageCapture.OnImageSavedCallback {
-                                            override fun onImageSaved(output: ImageCapture.OutputFileResults) {
-                                                val bitmap = BitmapFactory.decodeFile(photoFile.absolutePath)
-                                                if (bitmap != null) {
-                                                    onPageCaptured(bitmap)
-                                                } else {
-                                                    onPageCaptured(createSampleDocumentBitmap())
-                                                }
-                                            }
-
-                                            override fun onError(exc: ImageCaptureException) {
-                                                onPageCaptured(createSampleDocumentBitmap())
-                                            }
-                                        }
-                                    )
-                                } else {
-                                    onPageCaptured(createSampleDocumentBitmap())
-                                }
+                                performRealCapture()
                             }
                             .testTag("camera_shutter_capture_button")
                     ) {
@@ -1568,6 +1863,7 @@ private fun FinishDestinationScreen(
     onRunOcr: () -> Unit,
     onSaveToTarget: (NoteEntity?, String) -> Unit,
     onInsertPagesToCurrentNote: (List<Int>) -> Unit,
+    onEditPages: () -> Unit,
     onDismiss: () -> Unit
 ) {
     val activeNote = viewModel.selectedNote
@@ -1608,13 +1904,17 @@ private fun FinishDestinationScreen(
                 }
 
                 Text(
-                    "Scan Complete",
+                    "${scannedPages.size} Page${if (scannedPages.size > 1) "s" else ""} Scanned",
                     color = Color.White,
                     fontWeight = FontWeight.Bold,
                     fontSize = 18.sp
                 )
 
-                Spacer(modifier = Modifier.width(48.dp))
+                TextButton(onClick = onEditPages) {
+                    Icon(Icons.Default.Tune, contentDescription = null, tint = Color(0xFF4DA3FF), modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Edit Pages", color = Color(0xFF4DA3FF), fontWeight = FontWeight.Bold)
+                }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -1638,6 +1938,7 @@ private fun FinishDestinationScreen(
                                 modifier = Modifier
                                     .size(56.dp, 72.dp)
                                     .clip(RoundedCornerShape(8.dp))
+                                    .clickable { onEditPages() }
                             )
                         } else {
                             Surface(
@@ -1668,17 +1969,35 @@ private fun FinishDestinationScreen(
 
                             Spacer(modifier = Modifier.height(6.dp))
 
-                            Text(
-                                text = "${scannedPages.size} Page${if (scannedPages.size > 1) "s" else ""} • Ready to Insert",
-                                fontSize = 12.sp,
-                                color = Color.White.copy(alpha = 0.6f)
-                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "${scannedPages.size} Scanned Page(s)",
+                                    fontSize = 12.sp,
+                                    color = Color.White.copy(alpha = 0.6f)
+                                )
+
+                                OutlinedButton(
+                                    onClick = onEditPages,
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                    modifier = Modifier.height(28.dp),
+                                    shape = RoundedCornerShape(8.dp),
+                                    border = BorderStroke(1.dp, Color(0xFF4DA3FF).copy(alpha = 0.5f))
+                                ) {
+                                    Icon(Icons.Default.Edit, contentDescription = null, tint = Color(0xFF4DA3FF), modifier = Modifier.size(12.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Edit Pages", color = Color(0xFF4DA3FF), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                }
+                            }
                         }
                     }
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    // OCR Searchable Toggle
+                    // OCR Searchable Toggle ("Make Searchable")
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1712,7 +2031,7 @@ private fun FinishDestinationScreen(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // Destination Options
+            // Destination Actions: Add to Notebook / Save PDF
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1734,8 +2053,8 @@ private fun FinishDestinationScreen(
                             Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = null, tint = Color.White, modifier = Modifier.size(24.dp))
                             Spacer(modifier = Modifier.width(12.dp))
                             Column {
-                                Text("Insert into Active Notebook", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                                Text("Attach to '${activeNote.title}'", color = Color.White.copy(alpha = 0.8f), fontSize = 12.sp)
+                                Text("Add to Notebook", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                                Text("Attach PDF to '${activeNote.title}'", color = Color.White.copy(alpha = 0.8f), fontSize = 12.sp)
                             }
                         }
                     }
@@ -1753,11 +2072,11 @@ private fun FinishDestinationScreen(
                         modifier = Modifier.padding(16.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.AutoMirrored.Filled.NoteAdd, contentDescription = null, tint = Color(0xFF4DA3FF), modifier = Modifier.size(24.dp))
+                        Icon(Icons.Default.PictureAsPdf, contentDescription = null, tint = Color(0xFF4DA3FF), modifier = Modifier.size(24.dp))
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
-                            Text("Create New Scanned Notebook", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                            Text("Saves as a dedicated document in library", color = Color.White.copy(alpha = 0.6f), fontSize = 12.sp)
+                            Text("Save PDF & Create Notebook", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                            Text("Exports searchable multi-page PDF to library", color = Color.White.copy(alpha = 0.6f), fontSize = 12.sp)
                         }
                     }
                 }
@@ -1781,7 +2100,7 @@ private fun FinishDestinationScreen(
                             Spacer(modifier = Modifier.width(12.dp))
                             Column {
                                 Text("Insert Pages onto Note Canvas", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                                Text("Write & annotate over scanned images", color = Color.White.copy(alpha = 0.6f), fontSize = 12.sp)
+                                Text("Write & annotate over scanned page images", color = Color.White.copy(alpha = 0.6f), fontSize = 12.sp)
                             }
                         }
                     }
