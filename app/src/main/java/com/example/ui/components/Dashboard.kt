@@ -264,13 +264,15 @@ fun NovaDashboard(
             // 4. QUICK ACTIONS BAR
             QuickActionsRow(
                 onActionClick = { action ->
-                    when (action) {
-                        "New Notebook" -> showNotebookStudioModal = true
-                        "Handwritten Note" -> onNavigateToNotesWithFilter?.invoke("Handwritten") ?: onNavigateToNotes()
-                        "Voice Note" -> showVoiceNoteModal = true
-                        "Scan Document" -> viewModel.openDocumentScanner("home")
-                        "Import PDF" -> pdfPickerLauncher.launch("application/pdf")
-                        "Cornell Notes" -> {
+                    when {
+                        action in listOf("Scan Document", "Scan", "Document Scanner", "Scanned Documents", "Scan Doc") -> {
+                            viewModel.openDocumentScanner("home_card")
+                        }
+                        action == "New Notebook" -> showNotebookStudioModal = true
+                        action == "Handwritten Note" -> onNavigateToNotesWithFilter?.invoke("Handwritten") ?: onNavigateToNotes()
+                        action == "Voice Note" -> showVoiceNoteModal = true
+                        action == "Import PDF" -> pdfPickerLauncher.launch("application/pdf")
+                        action == "Cornell Notes" -> {
                             viewModel.createNewNoteWithDesign(
                                 title = "Cornell Notes",
                                 templateType = "cornell",
@@ -284,7 +286,7 @@ fun NovaDashboard(
                             )
                             onNavigateToNotesWithFilter?.invoke("Cornell Notes") ?: onNavigateToNotes()
                         }
-                        "Grid Canvas" -> {
+                        action == "Grid Canvas" -> {
                             viewModel.createNewNoteWithDesign(
                                 title = "Grid Notebook",
                                 templateType = "grid",
@@ -298,7 +300,7 @@ fun NovaDashboard(
                             )
                             onNavigateToNotesWithFilter?.invoke("Grid Notebook") ?: onNavigateToNotes()
                         }
-                        "Mind Map" -> showMindMapModal = true
+                        action == "Mind Map" -> showMindMapModal = true
                         else -> activeQuickActionModal = action
                     }
                 },
@@ -1406,10 +1408,10 @@ private fun QuickActionsRow(
     val textPrimary = if (isDark) Color.White else Color(0xFF1E293B)
 
     val actions = listOf(
+        QuickActionData("Scan Document", Icons.Default.DocumentScanner, LipiWarning),
         QuickActionData("New Notebook", Icons.Default.Book, LipiPrimary),
         QuickActionData("Handwritten Note", Icons.Default.Edit, LipiSuccess),
         QuickActionData("Voice Note", Icons.Default.MicNone, LipiError),
-        QuickActionData("Scan Document", Icons.Default.Scanner, LipiWarning),
         QuickActionData("Import PDF", Icons.Default.PictureAsPdf, LipiAccent),
         QuickActionData("Cornell Notes", Icons.Default.EditNote, LipiSecondary),
         QuickActionData("Grid Canvas", Icons.Default.GridOn, Color(0xFFF43F5E)),

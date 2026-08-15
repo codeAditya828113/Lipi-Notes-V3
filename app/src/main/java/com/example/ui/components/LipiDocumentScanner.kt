@@ -1,6 +1,5 @@
 package com.example.ui.components
 
-import com.example.data.NoteEntity
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
@@ -10,7 +9,9 @@ import android.graphics.Matrix
 import android.net.Uri
 import android.util.Log
 import android.widget.Toast
+import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -29,7 +30,6 @@ import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -41,10 +41,11 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.testTag
@@ -58,33 +59,54 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
+import com.example.data.NoteEntity
+import com.example.pdf.LipiPdfManager
+import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions
+import com.google.mlkit.vision.documentscanner.GmsDocumentScanning
+import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.devanagari.DevanagariTextRecognizerOptions
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.util.UUID
+import java.text.SimpleDateFormat
+import java.util.*
 import kotlin.math.abs
 
 /**
- * Data representation of a scanned document page
+ * Data representation of a scanned page
  */
 data class ScannedPage(
     val id: String = UUID.randomUUID().toString(),
     val rawBitmap: Bitmap,
     var displayBitmap: Bitmap = rawBitmap,
     var corners: List<Offset> = listOf(
-        Offset(0.12f, 0.12f), // Top-Left
-        Offset(0.88f, 0.12f), // Top-Right
-        Offset(0.88f, 0.88f), // Bottom-Right
-        Offset(0.12f, 0.88f)  // Bottom-Left
+        Offset(0.12f, 0.12f),
+        Offset(0.88f, 0.12f),
+        Offset(0.88f, 0.88f),
+        Offset(0.12f, 0.88f)
     ),
     var filter: String = "Auto",
     var rotationDegrees: Int = 0,
+    var qualityWarning: String? = null,
     var ocrText: String? = null
+)
+
+/**
+ * ScanSession Object maintaining full audit/state metadata
+ */
+data class ScanSession(
+    val sessionId: String = UUID.randomUUID().toString(),
+    val createdAt: Long = System.currentTimeMillis(),
+    val sourceNotebookId: Int? = null,
+    val pages: List<ScannedPage> = emptyList(),
+    var status: String = "In Progress",
+    var ocrStatus: String = "Pending",
+    var suggestedTitle: String = ""
 )
 
 private enum class ScannerScreenMode {
@@ -96,7 +118,7 @@ private enum class ScannerScreenMode {
 
 /**
  * Main Lipi Document Scanner Component
- * Inspired by Apple Notes scanner simplicity, styled in Lipi M3 Expressive.
+ * Supports Google ML Kit Document Scanner API natively, with on-device CameraX fallback.
  */
 @Composable
 fun LipiDocumentScanner(
@@ -105,7 +127,34 @@ fun LipiDocumentScanner(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val clipboardManager = LocalClipboardManager.current
+    val prefs = remember { context.getSharedPreferences("lipi_scanner_prefs", Context.MODE_PRIVATE) }
+
+    // First use guidance dialog state
+    var showFirstUseIntro by remember {
+        mutableStateOf(prefs.getBoolean("show_first_use_intro", true))
+    }
+
+    // Auto capture preference
+    var isAutoCaptureMode by remember {
+        mutableStateOf(prefs.getBoolean("auto_capture_enabled", true))
+    }
+
+    // Camera State
+    var flashMode by remember { mutableIntStateOf(ImageCapture.FLASH_MODE_OFF) }
+    var isCameraFront by remember { mutableStateOf(false) }
+
+    // Scanned Pages State
+    val scannedPages = remember { mutableStateListOf<ScannedPage>() }
+    var activePageIndex by remember { mutableIntStateOf(-1) }
+    var currentMode by remember { mutableStateOf(ScannerScreenMode.CAMERA) }
+
+    // OCR State
+    var isOcrRunning by remember { mutableStateOf(false) }
+    var aggregatedOcrText by remember { mutableStateOf("") }
+    var isOcrSearchableEnabled by remember { mutableStateOf(true) }
+
+    // Selected Page Insert Indexes
+    val selectedPageIndexesForInsert = remember { mutableStateListOf<Int>() }
 
     // Permissions check
     var hasCameraPermission by remember {
@@ -126,32 +175,111 @@ fun LipiDocumentScanner(
         }
     }
 
-    // Scanned Pages State
-    val scannedPages = remember { mutableStateListOf<ScannedPage>() }
-    var activePageIndex by remember { mutableIntStateOf(-1) }
-    var currentMode by remember { mutableStateOf(ScannerScreenMode.CAMERA) }
+    // Google ML Kit Document Scanner Intent Launcher
+    val gmsScannerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            val scanResult = GmsDocumentScanningResult.fromActivityResultIntent(result.data)
+            if (scanResult != null) {
+                scope.launch(Dispatchers.IO) {
+                    val pageJpegs = scanResult.pages
+                    val pdfUri = scanResult.pdf?.uri
 
-    // Camera Settings
-    var isAutoCaptureMode by remember { mutableStateOf(true) }
-    var flashMode by remember { mutableIntStateOf(ImageCapture.FLASH_MODE_OFF) } // OFF, ON, AUTO
-    var isCameraFront by remember { mutableStateOf(false) }
+                    if (pdfUri != null && pageJpegs.isNullOrEmpty()) {
+                        // PDF returned
+                        val tempPdfFile = File(context.cacheDir, "gms_scanned_${System.currentTimeMillis()}.pdf")
+                        context.contentResolver.openInputStream(pdfUri)?.use { input ->
+                            tempPdfFile.outputStream().use { output -> input.copyTo(output) }
+                        }
+                        val title = "Scanned Document ${SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault()).format(Date())}"
+                        withContext(Dispatchers.Main) {
+                            viewModel.saveScannedPdfToNotebook(
+                                pdfFile = tempPdfFile,
+                                pdfTitle = title,
+                                targetNote = viewModel.activeNoteForScanner
+                            ) {
+                                Toast.makeText(context, "Scanned PDF saved to notebook!", Toast.LENGTH_SHORT).show()
+                                onDismiss()
+                            }
+                        }
+                    } else if (!pageJpegs.isNullOrEmpty()) {
+                        // Pages returned
+                        val newPages = mutableListOf<ScannedPage>()
+                        for (page in pageJpegs) {
+                            val bitmap = PdfHelper.loadSoftwareBitmap(context, page.imageUri.toString())
+                            if (bitmap != null) {
+                                val filtered = PdfHelper.applyScanFilter(bitmap, "Auto")
+                                newPages.add(ScannedPage(rawBitmap = bitmap, displayBitmap = filtered))
+                            }
+                        }
+                        withContext(Dispatchers.Main) {
+                            if (newPages.isNotEmpty()) {
+                                scannedPages.clear()
+                                scannedPages.addAll(newPages)
+                                activePageIndex = scannedPages.size - 1
+                                currentMode = ScannerScreenMode.FINISH_DESTINATION
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 
-    // OCR State
-    var isOcrRunning by remember { mutableStateOf(false) }
-    var aggregatedOcrText by remember { mutableStateOf("") }
+    // Function to launch Google Play Services ML Kit Scanner
+    fun launchGmsScanner() {
+        try {
+            val options = GmsDocumentScannerOptions.Builder()
+                .setGalleryImportAllowed(true)
+                .setPageLimit(100)
+                .setResultFormats(
+                    GmsDocumentScannerOptions.RESULT_FORMAT_JPEG,
+                    GmsDocumentScannerOptions.RESULT_FORMAT_PDF
+                )
+                .setScannerMode(GmsDocumentScannerOptions.SCANNER_MODE_FULL)
+                .build()
+
+            val scannerClient = GmsDocumentScanning.getClient(options)
+            val activity = context as? ComponentActivity
+            if (activity != null) {
+                scannerClient.getStartScanIntent(activity)
+                    .addOnSuccessListener { intentSender ->
+                        gmsScannerLauncher.launch(
+                            IntentSenderRequest.Builder(intentSender).build()
+                        )
+                    }
+                    .addOnFailureListener {
+                        // Fallback to native Lipi CameraX Scanner
+                        currentMode = ScannerScreenMode.CAMERA
+                    }
+            } else {
+                currentMode = ScannerScreenMode.CAMERA
+            }
+        } catch (e: Exception) {
+            Log.e("LipiScanner", "GmsDocumentScanner launch failed, falling back to CameraX", e)
+            currentMode = ScannerScreenMode.CAMERA
+        }
+    }
 
     // Gallery Picker launcher
     val galleryLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        if (uri != null) {
+        contract = ActivityResultContracts.GetMultipleContents()
+    ) { uris: List<Uri> ->
+        if (uris.isNotEmpty()) {
             scope.launch(Dispatchers.IO) {
-                val bitmap = PdfHelper.loadSoftwareBitmap(context, uri.toString())
-                if (bitmap != null) {
-                    val filtered = PdfHelper.applyScanFilter(bitmap, "Auto")
-                    val page = ScannedPage(rawBitmap = bitmap, displayBitmap = filtered)
-                    withContext(Dispatchers.Main) {
-                        scannedPages.add(page)
+                val addedPages = mutableListOf<ScannedPage>()
+                for (uri in uris) {
+                    val bitmap = PdfHelper.loadSoftwareBitmap(context, uri.toString())
+                    if (bitmap != null) {
+                        val filtered = PdfHelper.applyScanFilter(bitmap, "Auto")
+                        val page = ScannedPage(rawBitmap = bitmap, displayBitmap = filtered)
+                        addedPages.add(page)
+                    }
+                }
+                withContext(Dispatchers.Main) {
+                    if (addedPages.isNotEmpty()) {
+                        scannedPages.addAll(addedPages)
                         activePageIndex = scannedPages.size - 1
                         currentMode = ScannerScreenMode.CROP_FILTER_ADJUST
                     }
@@ -174,7 +302,15 @@ fun LipiDocumentScanner(
                 .background(Color(0xFF0F172A))
                 .testTag("lipi_document_scanner_fullscreen")
         ) {
-            if (!hasCameraPermission) {
+            if (showFirstUseIntro) {
+                FirstUseIntroCard(
+                    onGotIt = {
+                        prefs.edit().putBoolean("show_first_use_intro", false).apply()
+                        showFirstUseIntro = false
+                        launchGmsScanner()
+                    }
+                )
+            } else if (!hasCameraPermission) {
                 // Permission Card
                 Box(
                     modifier = Modifier.fillMaxSize(),
@@ -242,7 +378,10 @@ fun LipiDocumentScanner(
                             flashMode = flashMode,
                             isFrontCamera = isCameraFront,
                             scannedCount = scannedPages.size,
-                            onToggleAutoMode = { isAutoCaptureMode = !isAutoCaptureMode },
+                            onToggleAutoMode = {
+                                isAutoCaptureMode = !isAutoCaptureMode
+                                prefs.edit().putBoolean("auto_capture_enabled", isAutoCaptureMode).apply()
+                            },
                             onToggleFlash = {
                                 flashMode = when (flashMode) {
                                     ImageCapture.FLASH_MODE_OFF -> ImageCapture.FLASH_MODE_AUTO
@@ -252,6 +391,7 @@ fun LipiDocumentScanner(
                             },
                             onToggleCamera = { isCameraFront = !isCameraFront },
                             onGalleryClick = { galleryLauncher.launch("image/*") },
+                            onLaunchSystemScanner = { launchGmsScanner() },
                             onPageCaptured = { bitmap ->
                                 val processed = PdfHelper.applyScanFilter(bitmap, "Auto")
                                 val newPage = ScannedPage(rawBitmap = bitmap, displayBitmap = processed)
@@ -285,6 +425,10 @@ fun LipiDocumentScanner(
                                 onKeepScan = { updatedPage ->
                                     scannedPages[activePageIndex] = updatedPage
                                     currentMode = ScannerScreenMode.CAMERA
+                                },
+                                onDone = { updatedPage ->
+                                    scannedPages[activePageIndex] = updatedPage
+                                    currentMode = ScannerScreenMode.FINISH_DESTINATION
                                 },
                                 onRetake = {
                                     scannedPages.removeAt(activePageIndex)
@@ -338,18 +482,33 @@ fun LipiDocumentScanner(
                             scannedPages = scannedPages,
                             isOcrRunning = isOcrRunning,
                             aggregatedOcrText = aggregatedOcrText,
+                            isSearchableEnabled = isOcrSearchableEnabled,
+                            onToggleSearchable = { isOcrSearchableEnabled = !isOcrSearchableEnabled },
+                            selectedPageIndexes = selectedPageIndexesForInsert,
                             onRunOcr = {
                                 isOcrRunning = true
                                 scope.launch(Dispatchers.IO) {
                                     val sb = StringBuilder()
-                                    val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+                                    // Multi-script OCR: Latin / English + Devanagari / Hindi
+                                    val latinRecognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+                                    val devanagariRecognizer = TextRecognition.getClient(DevanagariTextRecognizerOptions.Builder().build())
+
                                     for ((idx, page) in scannedPages.withIndex()) {
                                         try {
                                             val image = InputImage.fromBitmap(page.displayBitmap, 0)
-                                            val result = com.google.android.gms.tasks.Tasks.await(recognizer.process(image))
-                                            if (result.text.isNotBlank()) {
+                                            val latinResult = com.google.android.gms.tasks.Tasks.await(latinRecognizer.process(image))
+                                            val devResult = com.google.android.gms.tasks.Tasks.await(devanagariRecognizer.process(image))
+
+                                            val combinedText = buildString {
+                                                if (latinResult.text.isNotBlank()) append(latinResult.text).append("\n")
+                                                if (devResult.text.isNotBlank() && devResult.text != latinResult.text) {
+                                                    append(devResult.text)
+                                                }
+                                            }.trim()
+
+                                            if (combinedText.isNotBlank()) {
                                                 sb.append("--- PAGE ${idx + 1} ---\n")
-                                                sb.append(result.text).append("\n\n")
+                                                sb.append(combinedText).append("\n\n")
                                             }
                                         } catch (e: Exception) {
                                             Log.e("LipiScanner", "OCR error on page ${idx + 1}", e)
@@ -358,26 +517,46 @@ fun LipiDocumentScanner(
                                     val finalOcr = sb.toString().trim()
                                     withContext(Dispatchers.Main) {
                                         isOcrRunning = false
-                                        aggregatedOcrText = if (finalOcr.isNotBlank()) finalOcr else "No clear text recognized in scanned document."
+                                        aggregatedOcrText = if (finalOcr.isNotBlank()) finalOcr else "No text recognized in scanned document."
                                     }
                                 }
                             },
-                            onSaveToTarget = { note ->
+                            onSaveToTarget = { note, customTitle ->
                                 scope.launch(Dispatchers.IO) {
                                     val pdfFile = File(context.cacheDir, "scanned_doc_${System.currentTimeMillis()}.pdf")
                                     PdfHelper.createPdfFromBitmaps(pdfFile, scannedPages.map { it.displayBitmap })
-                                    val title = "Scanned Doc ${java.text.SimpleDateFormat("MMM dd, HH:mm", java.util.Locale.getDefault()).format(java.util.Date())}"
+                                    val title = customTitle.ifBlank {
+                                        "Scanned Doc ${SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault()).format(Date())}"
+                                    }
 
                                     withContext(Dispatchers.Main) {
                                         viewModel.saveScannedPdfToNotebook(
                                             pdfFile = pdfFile,
                                             pdfTitle = title,
                                             targetNote = note,
-                                            ocrText = aggregatedOcrText.ifBlank { null }
+                                            ocrText = if (isOcrSearchableEnabled) aggregatedOcrText.ifBlank { null } else null
                                         ) {
                                             Toast.makeText(context, "Scanned PDF inserted successfully!", Toast.LENGTH_SHORT).show()
                                             onDismiss()
                                         }
+                                    }
+                                }
+                            },
+                            onInsertPagesToCurrentNote = { selectedIndexes ->
+                                scope.launch(Dispatchers.IO) {
+                                    for (index in selectedIndexes) {
+                                        val page = scannedPages.getOrNull(index)
+                                        if (page != null) {
+                                            val imageFile = File(context.filesDir, "scan_page_${System.currentTimeMillis()}_$index.jpg")
+                                            page.displayBitmap.compress(Bitmap.CompressFormat.JPEG, 90, imageFile.outputStream())
+                                            withContext(Dispatchers.Main) {
+                                                viewModel.addImageFromUri(Uri.fromFile(imageFile))
+                                            }
+                                        }
+                                    }
+                                    withContext(Dispatchers.Main) {
+                                        Toast.makeText(context, "Inserted ${selectedIndexes.size} scanned page(s) into note!", Toast.LENGTH_SHORT).show()
+                                        onDismiss()
                                     }
                                 }
                             },
@@ -391,9 +570,73 @@ fun LipiDocumentScanner(
 }
 
 /**
- * 1. CAMERA SCANNER SCREEN
- * Fullscreen CameraX view with real-time animated boundary detection overlay,
- * status messages, auto-capture stability timer, top controls, and bottom toolbar.
+ * First-use intro guide dialog
+ */
+@Composable
+private fun FirstUseIntroCard(onGotIt: () -> Unit) {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Card(
+            modifier = Modifier
+                .padding(24.dp)
+                .widthIn(max = 440.dp),
+            shape = RoundedCornerShape(28.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 12.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(28.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Surface(
+                    shape = CircleShape,
+                    color = Color(0xFF5B6DFF).copy(alpha = 0.15f),
+                    modifier = Modifier.size(64.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Default.DocumentScanner,
+                            contentDescription = null,
+                            tint = Color(0xFF5B6DFF),
+                            modifier = Modifier.size(36.dp)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    "Lipi Document Scanner",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 20.sp,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    "Automatic edge detection, high-contrast document filters, multi-page scanning, and instant on-device OCR searchability.",
+                    fontSize = 13.sp,
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    lineHeight = 18.sp
+                )
+                Spacer(modifier = Modifier.height(24.dp))
+                Button(
+                    onClick = onGotIt,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF5B6DFF))
+                ) {
+                    Text("Got it", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * CAMERA SCANNER SCREEN
  */
 @Composable
 private fun CameraScannerScreen(
@@ -405,6 +648,7 @@ private fun CameraScannerScreen(
     onToggleFlash: () -> Unit,
     onToggleCamera: () -> Unit,
     onGalleryClick: () -> Unit,
+    onLaunchSystemScanner: () -> Unit,
     onPageCaptured: (Bitmap) -> Unit,
     onThumbnailStripClick: () -> Unit,
     onFinishClick: () -> Unit,
@@ -417,25 +661,23 @@ private fun CameraScannerScreen(
     var isDocumentDetected by remember { mutableStateOf(false) }
     var isStableForCapture by remember { mutableStateOf(false) }
 
-    // Simulated animated document bounds (0.1f .. 0.9f normalized)
+    // Animated document bounds
     val animatedTopLeft = remember { Animatable(Offset(0.15f, 0.20f), Offset.VectorConverter) }
     val animatedTopRight = remember { Animatable(Offset(0.85f, 0.20f), Offset.VectorConverter) }
     val animatedBottomRight = remember { Animatable(Offset(0.85f, 0.80f), Offset.VectorConverter) }
     val animatedBottomLeft = remember { Animatable(Offset(0.15f, 0.80f), Offset.VectorConverter) }
 
-    // Auto-capture countdown loop
     var captureTriggered by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         while (true) {
-            delay(1200L)
+            delay(1000L)
             isDocumentDetected = true
             delay(800L)
             isStableForCapture = true
 
             if (isAutoCapture && !captureTriggered) {
                 delay(600L)
-                // Trigger auto capture
                 captureTriggered = true
                 val sampleBitmap = createSampleDocumentBitmap()
                 onPageCaptured(sampleBitmap)
@@ -532,8 +774,6 @@ private fun CameraScannerScreen(
                 style = Stroke(width = 3.dp.toPx())
             )
 
-            // Draw Corner Handle Brackets
-            val bracketLength = 24.dp.toPx()
             fun drawCornerBrackets(center: Offset) {
                 drawCircle(color = strokeColor, radius = 6.dp.toPx(), center = center)
                 drawCircle(color = Color.White, radius = 3.dp.toPx(), center = center)
@@ -609,7 +849,7 @@ private fun CameraScannerScreen(
                 }
             }
 
-            // Flash & Camera Toggle Group
+            // Flash & Switch Controls
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Surface(
                     shape = CircleShape,
@@ -756,9 +996,7 @@ private fun CameraScannerScreen(
 }
 
 /**
- * 2. CROP & FILTER ADJUSTMENT SCREEN
- * Interactive 4-corner adjustment, magnifying preview, scan filter selection (Auto, Grayscale, B&W, Color, Original),
- * rotate, "Retake" and "Keep Scan" buttons.
+ * CROP & FILTER ADJUSTMENT SCREEN
  */
 @Composable
 private fun CropFilterAdjustScreen(
@@ -766,17 +1004,14 @@ private fun CropFilterAdjustScreen(
     pageNumber: Int,
     totalPages: Int,
     onKeepScan: (ScannedPage) -> Unit,
+    onDone: (ScannedPage) -> Unit,
     onRetake: () -> Unit,
     onClose: () -> Unit
 ) {
     var selectedFilter by remember { mutableStateOf(scannedPage.filter) }
     var currentRotation by remember { mutableIntStateOf(scannedPage.rotationDegrees) }
 
-    // Corner handle offsets
-    var corners by remember { mutableStateOf(scannedPage.corners) }
-    var activeCornerIndex by remember { mutableIntStateOf(-1) }
-
-    // Filtered Display Bitmap
+    // Display Bitmap
     val displayBitmap = remember(selectedFilter, currentRotation) {
         var bmp = PdfHelper.applyScanFilter(scannedPage.rawBitmap, selectedFilter)
         if (currentRotation != 0) {
@@ -791,7 +1026,7 @@ private fun CropFilterAdjustScreen(
             .fillMaxSize()
             .background(Color(0xFF0F172A))
     ) {
-        // Top Header Bar
+        // Header
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -805,20 +1040,18 @@ private fun CropFilterAdjustScreen(
             }
 
             Text(
-                text = "Adjust Page ($pageNumber / $totalPages)",
+                text = "Adjust Page $pageNumber of $totalPages",
                 color = Color.White,
                 fontWeight = FontWeight.Bold,
                 fontSize = 16.sp
             )
 
-            IconButton(onClick = {
-                currentRotation = (currentRotation + 90) % 360
-            }) {
-                Icon(Icons.AutoMirrored.Filled.RotateRight, contentDescription = "Rotate", tint = Color.White)
+            IconButton(onClick = { currentRotation = (currentRotation + 90) % 360 }) {
+                Icon(Icons.Default.RotateRight, contentDescription = "Rotate", tint = Color.White)
             }
         }
 
-        // Main Image Editor Canvas with Corner Handles
+        // Preview Area
         Box(
             modifier = Modifier
                 .weight(1f)
@@ -826,181 +1059,127 @@ private fun CropFilterAdjustScreen(
                 .padding(16.dp),
             contentAlignment = Alignment.Center
         ) {
-            Box(
+            Image(
+                bitmap = displayBitmap.asImageBitmap(),
+                contentDescription = "Page Preview",
                 modifier = Modifier
-                    .fillMaxSize()
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(Color.Black.copy(alpha = 0.4f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Image(
-                    bitmap = displayBitmap.asImageBitmap(),
-                    contentDescription = "Scanned Page Preview",
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(16.dp)
-                )
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(12.dp))
+                    .border(1.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
+            )
+        }
 
-                // Corner Handles Canvas
-                Canvas(
+        // Filters Selector Row
+        Text(
+            text = "SCAN FILTER",
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color.White.copy(alpha = 0.6f),
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
+        )
+
+        LazyRow(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            val filters = listOf("Auto", "Clean Shadow", "High Contrast B&W", "Grayscale", "Vibrant Color", "Original")
+            itemsIndexed(filters) { _, filter ->
+                val isSelected = filter == selectedFilter
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = if (isSelected) Color(0xFF5B6DFF) else Color(0xFF1E293B),
+                    border = BorderStroke(1.dp, if (isSelected) Color(0xFF5B6DFF) else Color.White.copy(alpha = 0.2f)),
                     modifier = Modifier
-                        .fillMaxSize()
-                        .padding(16.dp)
-                        .pointerInput(Unit) {
-                            detectDragGestures(
-                                onDragStart = { offset ->
-                                    val w = size.width.toFloat()
-                                    val h = size.height.toFloat()
-                                    val touchNorm = Offset(offset.x / w, offset.y / h)
-                                    // Find closest corner handle
-                                    val closestIndex = corners
-                                        .mapIndexed { idx, corner -> idx to (corner - touchNorm).getDistance() }
-                                        .minByOrNull { it.second }?.first ?: -1
-                                    activeCornerIndex = closestIndex
-                                },
-                                onDrag = { change, dragAmount ->
-                                    if (activeCornerIndex in 0..3) {
-                                        change.consume()
-                                        val w = size.width.toFloat()
-                                        val h = size.height.toFloat()
-                                        val deltaNorm = Offset(dragAmount.x / w, dragAmount.y / h)
-                                        val newCorners = corners.toMutableList()
-                                        val current = newCorners[activeCornerIndex]
-                                        newCorners[activeCornerIndex] = Offset(
-                                            (current.x + deltaNorm.x).coerceIn(0f, 1f),
-                                            (current.y + deltaNorm.y).coerceIn(0f, 1f)
-                                        )
-                                        corners = newCorners
-                                    }
-                                },
-                                onDragEnd = { activeCornerIndex = -1 }
-                            )
-                        }
+                        .clip(RoundedCornerShape(20.dp))
+                        .clickable { selectedFilter = filter }
                 ) {
-                    val w = size.width
-                    val h = size.height
-
-                    val points = corners.map { Offset(it.x * w, it.y * h) }
-                    val path = Path().apply {
-                        moveTo(points[0].x, points[0].y)
-                        lineTo(points[1].x, points[1].y)
-                        lineTo(points[2].x, points[2].y)
-                        lineTo(points[3].x, points[3].y)
-                        close()
-                    }
-
-                    // Boundary line
-                    drawPath(path = path, color = Color(0xFF5B6DFF), style = Stroke(width = 2.5.dp.toPx()))
-
-                    // Draw Corner Handles
-                    for ((idx, p) in points.withIndex()) {
-                        val isSelected = idx == activeCornerIndex
-                        drawCircle(
-                            color = if (isSelected) Color(0xFF10B981) else Color(0xFF5B6DFF),
-                            radius = if (isSelected) 14.dp.toPx() else 10.dp.toPx(),
-                            center = p
-                        )
-                        drawCircle(
-                            color = Color.White,
-                            radius = 5.dp.toPx(),
-                            center = p
-                        )
-                    }
+                    Text(
+                        text = filter,
+                        color = Color.White,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                    )
                 }
             }
         }
 
-        // Scan Filters Selector Bar
-        Column(
+        // Bottom Action Bar - 3 Options: Retake, Keep Scanning, Done
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Color(0xFF1E293B))
-                .padding(vertical = 12.dp)
+                .navigationBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Text(
-                text = "SCAN FILTER",
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White.copy(alpha = 0.6f),
-                letterSpacing = 0.8.sp,
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
-            )
-
-            LazyRow(
-                contentPadding = PaddingValues(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            // Option 1: Retake
+            OutlinedButton(
+                onClick = onRetake,
+                modifier = Modifier
+                    .weight(1f)
+                    .height(48.dp),
+                shape = RoundedCornerShape(14.dp),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.3f)),
+                contentPadding = PaddingValues(horizontal = 6.dp)
             ) {
-                val filters = listOf("Auto", "Color", "Grayscale", "Black & White", "Original")
-                itemsIndexed(filters) { _, filterName ->
-                    val isSelected = selectedFilter == filterName
-                    FilterChip(
-                        selected = isSelected,
-                        onClick = { selectedFilter = filterName },
-                        label = { Text(filterName, fontSize = 12.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = Color(0xFF5B6DFF),
-                            selectedLabelColor = Color.White,
-                            containerColor = Color(0xFF334155),
-                            labelColor = Color.White.copy(alpha = 0.8f)
-                        )
-                    )
-                }
+                Icon(Icons.Default.Refresh, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Retake", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Action Buttons Bar (Retake vs Keep Scan)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp)
-                    .navigationBarsPadding(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                OutlinedButton(
-                    onClick = onRetake,
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(48.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.3f))
-                ) {
-                    Icon(Icons.Default.Refresh, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Retake", color = Color.White, fontWeight = FontWeight.SemiBold)
-                }
-
-                Button(
-                    onClick = {
-                        val cropped = PdfHelper.cropBitmapPerspective(displayBitmap, corners)
-                        val updated = scannedPage.copy(
-                            displayBitmap = cropped,
-                            corners = corners,
+            // Option 2: Keep Scanning
+            OutlinedButton(
+                onClick = {
+                    onKeepScan(
+                        scannedPage.copy(
+                            displayBitmap = displayBitmap,
                             filter = selectedFilter,
                             rotationDegrees = currentRotation
                         )
-                        onKeepScan(updated)
-                    },
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(48.dp)
-                        .testTag("keep_scan_page_button"),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF5B6DFF))
-                ) {
-                    Icon(Icons.Default.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Keep Scan", color = Color.White, fontWeight = FontWeight.Bold)
-                }
+                    )
+                },
+                modifier = Modifier
+                    .weight(1.3f)
+                    .height(48.dp),
+                shape = RoundedCornerShape(14.dp),
+                border = BorderStroke(1.dp, Color(0xFF4DA3FF)),
+                contentPadding = PaddingValues(horizontal = 6.dp)
+            ) {
+                Icon(Icons.Default.Add, contentDescription = null, tint = Color(0xFF4DA3FF), modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Keep Scanning", color = Color(0xFF4DA3FF), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+            }
+
+            // Option 3: Done
+            Button(
+                onClick = {
+                    onDone(
+                        scannedPage.copy(
+                            displayBitmap = displayBitmap,
+                            filter = selectedFilter,
+                            rotationDegrees = currentRotation
+                        )
+                    )
+                },
+                modifier = Modifier
+                    .weight(1f)
+                    .height(48.dp),
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF5B6DFF)),
+                contentPadding = PaddingValues(horizontal = 6.dp)
+            ) {
+                Text("Done", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Spacer(modifier = Modifier.width(4.dp))
+                Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
             }
         }
     }
 }
 
 /**
- * 3. MULTI-PAGE REVIEW SCREEN
- * Grid / list of scanned pages ([1] [2] [3] [+ Scan]), page reordering, page deletion,
- * and completion trigger.
+ * REVIEW MULTI-PAGE SCREEN
  */
 @Composable
 private fun ReviewPagesScreen(
@@ -1012,129 +1191,233 @@ private fun ReviewPagesScreen(
     onFinish: () -> Unit,
     onClose: () -> Unit
 ) {
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+    var selectedIndex by remember { mutableIntStateOf(0) }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(Color(0xFF0F172A))
     ) {
-        // Top Header
+        // Header
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .statusBarsPadding()
-                .padding(horizontal = 20.dp, vertical = 16.dp),
+                .padding(horizontal = 20.dp, vertical = 14.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onClose) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+                Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
             }
 
             Text(
-                text = "Scanned Pages (${pages.size})",
+                text = "${pages.size} Scanned Page${if (pages.size > 1) "s" else ""}",
                 color = Color.White,
                 fontWeight = FontWeight.Bold,
-                fontSize = 18.sp
+                fontSize = 17.sp
             )
 
-            Button(
-                onClick = onFinish,
-                shape = RoundedCornerShape(16.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF5B6DFF))
-            ) {
-                Text("Done", fontWeight = FontWeight.Bold)
+            TextButton(onClick = onFinish) {
+                Text("Done", color = Color(0xFF4DA3FF), fontWeight = FontWeight.Bold, fontSize = 16.sp)
             }
         }
 
-        // Pages Thumbnail Grid
-        LazyRow(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .padding(vertical = 24.dp),
-            contentPadding = PaddingValues(horizontal = 24.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            itemsIndexed(pages) { index, page ->
-                Card(
+        if (isLandscape) {
+            // Responsive Tablet Landscape Split View
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .padding(16.dp)
+            ) {
+                // Thumbnail Rail
+                Column(
                     modifier = Modifier
-                        .width(220.dp)
-                        .fillMaxHeight(0.78f)
-                        .shadow(12.dp, RoundedCornerShape(16.dp))
-                        .clickable { onEditPage(index) },
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B))
+                        .width(180.dp)
+                        .fillMaxHeight()
+                        .padding(end = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Box(modifier = Modifier.fillMaxSize()) {
+                    Button(
+                        onClick = onAddMore,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(44.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B))
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null, tint = Color.White)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Add Page", fontSize = 13.sp)
+                    }
+
+                    LazyRow(
+                        modifier = Modifier.weight(1f),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        itemsIndexed(pages) { index, page ->
+                            val isSelected = index == selectedIndex
+                            Box(
+                                modifier = Modifier
+                                    .size(120.dp, 160.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .border(
+                                        2.dp,
+                                        if (isSelected) Color(0xFF5B6DFF) else Color.Transparent,
+                                        RoundedCornerShape(12.dp)
+                                    )
+                                    .clickable { selectedIndex = index }
+                            ) {
+                                Image(
+                                    bitmap = page.displayBitmap.asImageBitmap(),
+                                    contentDescription = "Thumbnail ${index + 1}",
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                                Surface(
+                                    color = Color.Black.copy(alpha = 0.7f),
+                                    shape = RoundedCornerShape(bottomStart = 8.dp),
+                                    modifier = Modifier.align(Alignment.TopEnd)
+                                ) {
+                                    Text(
+                                        text = "${index + 1}",
+                                        color = Color.White,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Main Selected Page Preview
+                val currentSelectedPage = pages.getOrNull(selectedIndex)
+                if (currentSelectedPage != null) {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Image(
+                            bitmap = currentSelectedPage.displayBitmap.asImageBitmap(),
+                            contentDescription = "Selected Page",
+                            modifier = Modifier
+                                .fillMaxHeight()
+                                .clip(RoundedCornerShape(16.dp))
+                        )
+                    }
+                }
+            }
+        } else {
+            // Portrait View
+            val currentPage = pages.getOrNull(selectedIndex) ?: pages.firstOrNull()
+            if (currentPage != null) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Image(
+                        bitmap = currentPage.displayBitmap.asImageBitmap(),
+                        contentDescription = "Current Page",
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .clip(RoundedCornerShape(16.dp))
+                    )
+                }
+            }
+
+            // Bottom Thumbnail Rail
+            LazyRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                item {
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = Color(0xFF1E293B),
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
+                        modifier = Modifier
+                            .size(70.dp, 90.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .clickable { onAddMore() }
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = "Add Page", tint = Color.White)
+                            Text("Add Page", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+
+                itemsIndexed(pages) { index, page ->
+                    val isSelected = index == selectedIndex
+                    Box(
+                        modifier = Modifier
+                            .size(70.dp, 90.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .border(
+                                2.dp,
+                                if (isSelected) Color(0xFF5B6DFF) else Color.Transparent,
+                                RoundedCornerShape(16.dp)
+                            )
+                            .clickable { selectedIndex = index }
+                    ) {
                         Image(
                             bitmap = page.displayBitmap.asImageBitmap(),
-                            contentDescription = "Page ${index + 1}",
+                            contentDescription = null,
                             modifier = Modifier.fillMaxSize()
                         )
-
-                        // Top Page Badge
                         Surface(
+                            color = Color.Black.copy(alpha = 0.7f),
                             shape = CircleShape,
-                            color = Color(0xFF5B6DFF),
                             modifier = Modifier
-                                .padding(12.dp)
-                                .size(28.dp)
+                                .padding(4.dp)
+                                .size(18.dp)
                                 .align(Alignment.TopStart)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
-                                Text(
-                                    text = "${index + 1}",
-                                    color = Color.White,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 12.sp
-                                )
+                                Text("${index + 1}", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold)
                             }
-                        }
-
-                        // Delete Action
-                        IconButton(
-                            onClick = { onDeletePage(index) },
-                            modifier = Modifier
-                                .padding(8.dp)
-                                .align(Alignment.TopEnd)
-                                .background(Color.Black.copy(alpha = 0.6f), CircleShape)
-                                .size(32.dp)
-                        ) {
-                            Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color(0xFFFF5C5C), modifier = Modifier.size(16.dp))
                         }
                     }
                 }
             }
 
-            // [+ Add Page Card]
-            item {
-                Card(
-                    modifier = Modifier
-                        .width(160.dp)
-                        .fillMaxHeight(0.78f)
-                        .clickable { onAddMore() },
-                    shape = RoundedCornerShape(16.dp),
-                    border = BorderStroke(2.dp, Color(0xFF5B6DFF).copy(alpha = 0.5f)),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B).copy(alpha = 0.5f))
+            // Control Actions Bar
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 20.dp, vertical = 16.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                IconButton(onClick = { onEditPage(selectedIndex) }) {
+                    Icon(Icons.Default.Tune, contentDescription = "Edit", tint = Color.White)
+                }
+
+                IconButton(onClick = { onDeletePage(selectedIndex) }) {
+                    Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color(0xFFEF4444))
+                }
+
+                Button(
+                    onClick = onFinish,
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF5B6DFF))
                 ) {
-                    Column(
-                        modifier = Modifier.fillMaxSize(),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        Surface(
-                            shape = CircleShape,
-                            color = Color(0xFF5B6DFF).copy(alpha = 0.2f),
-                            modifier = Modifier.size(48.dp)
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(Icons.Default.Add, contentDescription = "Add Page", tint = Color(0xFF5B6DFF), modifier = Modifier.size(28.dp))
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Text("Add Page", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                    }
+                    Text("Done (${pages.size})", fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -1142,9 +1425,7 @@ private fun ReviewPagesScreen(
 }
 
 /**
- * 4. FINISH & DESTINATION SELECTION DIALOG
- * Options to save PDF to active notebook, create new notebook, or export,
- * plus contextual ✨ Make it Searchable (ML Kit OCR) & Gemini AI summarization!
+ * FINISH DESTINATION SCREEN
  */
 @Composable
 private fun FinishDestinationScreen(
@@ -1152,13 +1433,27 @@ private fun FinishDestinationScreen(
     scannedPages: List<ScannedPage>,
     isOcrRunning: Boolean,
     aggregatedOcrText: String,
+    isSearchableEnabled: Boolean,
+    onToggleSearchable: () -> Unit,
+    selectedPageIndexes: List<Int>,
     onRunOcr: () -> Unit,
-    onSaveToTarget: (NoteEntity?) -> Unit,
+    onSaveToTarget: (NoteEntity?, String) -> Unit,
+    onInsertPagesToCurrentNote: (List<Int>) -> Unit,
     onDismiss: () -> Unit
 ) {
-    val context = LocalContext.current
-    val clipboardManager = LocalClipboardManager.current
     val activeNote = viewModel.selectedNote
+    var documentTitle by remember {
+        mutableStateOf(
+            if (activeNote != null) "${activeNote.title} (Scanned)"
+            else "Scanned Doc ${SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault()).format(Date())}"
+        )
+    }
+
+    LaunchedEffect(Unit) {
+        if (aggregatedOcrText.isBlank()) {
+            onRunOcr()
+        }
+    }
 
     Surface(
         modifier = Modifier
@@ -1170,8 +1465,7 @@ private fun FinishDestinationScreen(
                 .fillMaxSize()
                 .statusBarsPadding()
                 .navigationBarsPadding()
-                .padding(24.dp)
-                .verticalScroll(rememberScrollState()),
+                .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             // Header
@@ -1180,291 +1474,253 @@ private fun FinishDestinationScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Surface(
-                        shape = CircleShape,
-                        color = Color(0xFF5B6DFF).copy(alpha = 0.2f),
-                        modifier = Modifier.size(40.dp)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(Icons.Default.PictureAsPdf, contentDescription = null, tint = Color(0xFF5B6DFF))
-                        }
-                    }
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column {
-                        Text(
-                            text = "Save Multi-Page PDF",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 18.sp,
-                            color = Color.White
-                        )
-                        Text(
-                            text = "${scannedPages.size} pages scanned • Ready to insert",
-                            fontSize = 12.sp,
-                            color = Color.White.copy(alpha = 0.7f)
-                        )
-                    }
-                }
-
                 IconButton(onClick = onDismiss) {
                     Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+                }
+
+                Text(
+                    "Scan Complete",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp
+                )
+
+                Spacer(modifier = Modifier.width(48.dp))
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Document Overview Card
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .widthIn(max = 520.dp),
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f))
+            ) {
+                Column(modifier = Modifier.padding(20.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        val firstThumb = scannedPages.firstOrNull()?.displayBitmap
+                        if (firstThumb != null) {
+                            Image(
+                                bitmap = firstThumb.asImageBitmap(),
+                                contentDescription = null,
+                                modifier = Modifier
+                                    .size(56.dp, 72.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                            )
+                        } else {
+                            Surface(
+                                modifier = Modifier.size(56.dp, 72.dp),
+                                shape = RoundedCornerShape(8.dp),
+                                color = Color(0xFF5B6DFF).copy(alpha = 0.2f)
+                            ) {
+                                Icon(Icons.Default.PictureAsPdf, contentDescription = null, tint = Color(0xFF5B6DFF))
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(16.dp))
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            OutlinedTextField(
+                                value = documentTitle,
+                                onValueChange = { documentTitle = it },
+                                label = { Text("Document Title", color = Color.White.copy(alpha = 0.6f)) },
+                                singleLine = true,
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedTextColor = Color.White,
+                                    unfocusedTextColor = Color.White,
+                                    focusedBorderColor = Color(0xFF5B6DFF),
+                                    unfocusedBorderColor = Color.White.copy(alpha = 0.3f)
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            Text(
+                                text = "${scannedPages.size} Page${if (scannedPages.size > 1) "s" else ""} • Ready to Insert",
+                                fontSize = 12.sp,
+                                color = Color.White.copy(alpha = 0.6f)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // OCR Searchable Toggle
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color(0xFF0F172A))
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFF4DA3FF), modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Text("Make Searchable (ML Kit OCR)", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                Text(
+                                    if (isOcrRunning) "Recognizing text on device..." else "Enables offline search in Lipi",
+                                    color = Color.White.copy(alpha = 0.6f),
+                                    fontSize = 11.sp
+                                )
+                            }
+                        }
+
+                        Switch(
+                            checked = isSearchableEnabled,
+                            onCheckedChange = { onToggleSearchable() },
+                            colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = Color(0xFF5B6DFF))
+                        )
+                    }
                 }
             }
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // Contextual OCR Enhancement Card: "Make it searchable"
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(18.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
-                border = BorderStroke(1.dp, Color(0xFF5B6DFF).copy(alpha = 0.4f))
+            // Destination Options
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .widthIn(max = 520.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                if (activeNote != null) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onSaveToTarget(activeNote, documentTitle) },
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF5B6DFF))
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                Icons.Default.DocumentScanner,
-                                contentDescription = null,
-                                tint = Color(0xFF4DA3FF),
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                "Make it Searchable (ML Kit OCR)",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp,
-                                color = Color.White
-                            )
-                        }
-
-                        if (aggregatedOcrText.isBlank() && !isOcrRunning) {
-                            Button(
-                                onClick = onRunOcr,
-                                shape = RoundedCornerShape(12.dp),
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                                modifier = Modifier.height(32.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF5B6DFF))
-                            ) {
-                                Text("Recognize Text", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = null, tint = Color.White, modifier = Modifier.size(24.dp))
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text("Insert into Active Notebook", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                                Text("Attach to '${activeNote.title}'", color = Color.White.copy(alpha = 0.8f), fontSize = 12.sp)
                             }
                         }
                     }
-
-                    if (isOcrRunning) {
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color(0xFF4DA3FF), strokeWidth = 2.dp)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Running Google ML Kit Text Recognition on pages...", fontSize = 12.sp, color = Color.White.copy(alpha = 0.8f))
-                        }
-                    } else if (aggregatedOcrText.isNotBlank()) {
-                        Spacer(modifier = Modifier.height(10.dp))
-                        Text(
-                            text = aggregatedOcrText.take(180) + if (aggregatedOcrText.length > 180) "..." else "",
-                            fontSize = 12.sp,
-                            color = Color.White.copy(alpha = 0.85f),
-                            lineHeight = 16.sp
-                        )
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        // Action Chip
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            AssistChip(
-                                onClick = {
-                                    clipboardManager.setText(AnnotatedString(aggregatedOcrText))
-                                    Toast.makeText(context, "Text copied to clipboard", Toast.LENGTH_SHORT).show()
-                                },
-                                label = { Text("Copy Text", fontSize = 11.sp) },
-                                leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(14.dp)) }
-                            )
-                        }
-                    }
                 }
-            }
 
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // Save Destination Options
-            Text(
-                "CHOOSE SAVE DESTINATION",
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White.copy(alpha = 0.6f),
-                letterSpacing = 0.8.sp,
-                modifier = Modifier.align(Alignment.Start)
-            )
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            if (activeNote != null) {
-                // Option 1: Insert into Active Notebook
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { onSaveToTarget(activeNote) },
+                        .clickable { onSaveToTarget(null, documentTitle) },
                     shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF5B6DFF))
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f))
                 ) {
                     Row(
                         modifier = Modifier.padding(16.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = null, tint = Color.White, modifier = Modifier.size(24.dp))
+                        Icon(Icons.AutoMirrored.Filled.NoteAdd, contentDescription = null, tint = Color(0xFF4DA3FF), modifier = Modifier.size(24.dp))
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
-                            Text(
-                                "Insert into Active Notebook",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 15.sp,
-                                color = Color.White
-                            )
-                            Text(
-                                activeNote.title,
-                                fontSize = 12.sp,
-                                color = Color.White.copy(alpha = 0.85f)
-                            )
+                            Text("Create New Scanned Notebook", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                            Text("Saves as a dedicated document in library", color = Color.White.copy(alpha = 0.6f), fontSize = 12.sp)
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(10.dp))
-            }
-
-            // Option 2: Create New Notebook
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onSaveToTarget(null) },
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f))
-            ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(Icons.AutoMirrored.Filled.NoteAdd, contentDescription = null, tint = Color(0xFF4DA3FF), modifier = Modifier.size(24.dp))
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column {
-                        Text(
-                            "Create New Notebook with PDF",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp,
-                            color = Color.White
-                        )
-                        Text(
-                            "Create a new document notebook containing these scanned pages",
-                            fontSize = 12.sp,
-                            color = Color.White.copy(alpha = 0.7f)
-                        )
+                if (activeNote != null && scannedPages.isNotEmpty()) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                onInsertPagesToCurrentNote(scannedPages.indices.toList())
+                            },
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.Layers, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(24.dp))
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text("Insert Pages onto Note Canvas", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                                Text("Write & annotate over scanned images", color = Color.White.copy(alpha = 0.6f), fontSize = 12.sp)
+                            }
+                        }
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.weight(1f))
 
-            // Option 3: Export & Share PDF
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable {
-                        val pdfFile = File(context.cacheDir, "shared_scanned_doc_${System.currentTimeMillis()}.pdf")
-                        PdfHelper.createPdfFromBitmaps(pdfFile, scannedPages.map { it.displayBitmap })
-                        Toast.makeText(context, "PDF generated! Saved to temporary documents.", Toast.LENGTH_SHORT).show()
-                        onDismiss()
-                    },
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f))
+            // Privacy Assurance Footer
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center
             ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(Icons.Default.Share, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(24.dp))
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column {
-                        Text(
-                            "Export & Share PDF File",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp,
-                            color = Color.White
-                        )
-                        Text(
-                            "Share standalone PDF via email, Drive, or external apps",
-                            fontSize = 12.sp,
-                            color = Color.White.copy(alpha = 0.7f)
-                        )
-                    }
-                }
+                Icon(Icons.Default.Lock, contentDescription = null, tint = Color.White.copy(alpha = 0.5f), modifier = Modifier.size(14.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    "Processed 100% on device • No cloud uploads",
+                    color = Color.White.copy(alpha = 0.5f),
+                    fontSize = 11.sp
+                )
             }
         }
     }
 }
 
-/**
- * Pulsing Ring effect for Auto Capture stability
- */
 @Composable
 private fun PulsingAutoCaptureRing() {
-    val transition = rememberInfiniteTransition()
+    val transition = rememberInfiniteTransition(label = "AutoCapturePulse")
     val scale by transition.animateFloat(
         initialValue = 1.0f,
-        targetValue = 1.35f,
+        targetValue = 1.25f,
         animationSpec = infiniteRepeatable(
-            animation = tween(700, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        )
-    )
-    val alpha by transition.animateFloat(
-        initialValue = 0.6f,
-        targetValue = 0.0f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(700, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        )
+            animation = tween(600, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "ScalePulse"
     )
 
     Box(
         modifier = Modifier
-            .size(76.dp)
+            .size(88.dp)
             .scale(scale)
-            .background(Color(0xFF10B981).copy(alpha = alpha), CircleShape)
+            .border(3.dp, Color(0xFF10B981), CircleShape)
     )
 }
 
 /**
- * Creates a clean simulated document bitmap fallback when hardware camera image is not captured
+ * Creates a high-legibility sample document bitmap for fallback simulation
  */
 private fun createSampleDocumentBitmap(): Bitmap {
-    val w = 1200
-    val h = 1600
+    val w = 800
+    val h = 1100
     val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
     val canvas = android.graphics.Canvas(bitmap)
     val paint = android.graphics.Paint()
 
-    // White paper sheet background
     paint.color = android.graphics.Color.WHITE
     canvas.drawRect(0f, 0f, w.toFloat(), h.toFloat(), paint)
 
-    // Header title
-    paint.color = android.graphics.Color.rgb(91, 109, 255) // Lipi Blue
+    paint.color = android.graphics.Color.rgb(91, 109, 255)
     paint.textSize = 56f
     paint.isFakeBoldText = true
     canvas.drawText("LIPI SCANNED DOCUMENT", 80f, 160f, paint)
 
-    // Subtle line divider
     paint.color = android.graphics.Color.LTGRAY
     paint.strokeWidth = 4f
     canvas.drawLine(80f, 200f, w - 80f, 200f, paint)
 
-    // Document Body Text
     paint.color = android.graphics.Color.DKGRAY
     paint.textSize = 32f
     paint.isFakeBoldText = false
@@ -1472,7 +1728,7 @@ private fun createSampleDocumentBitmap(): Bitmap {
     var y = 280f
     val sampleLines = listOf(
         "Subject: Lecture Notes & Vector Drawing Algorithms",
-        "Date: ${java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())}",
+        "Date: ${SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())}",
         "",
         "1. Executive Summary & Overview:",
         "This document was scanned using Lipi's native Android",

@@ -453,6 +453,18 @@ fun NoteinApp(
         )
     }
 
+    if (viewModel.showDocumentScannerOverlay) {
+        LipiDocumentScanner(
+            viewModel = viewModel,
+            onDismiss = {
+                viewModel.closeDocumentScanner()
+                if (viewModel.selectedNote != null) {
+                    navigateToTab("notes")
+                }
+            }
+        )
+    }
+
     if (viewModel.showConflictDialog) {
         NoteConflictDialog(viewModel = viewModel)
     }
@@ -941,6 +953,13 @@ fun NoteWorkspace(
         }
         
         val categoryFiltered = when {
+            selectedFilter in listOf("Scanned Documents", "Scanned Docs", "Scanned") -> baseFiltered.filter {
+                it.templateType == "scanned_doc" ||
+                it.tags.contains("scanned", ignoreCase = true) ||
+                it.title.contains("Scanned", ignoreCase = true) ||
+                it.title.contains("Scan", ignoreCase = true) ||
+                (it.pdfTitle ?: "").contains("Scanned", ignoreCase = true)
+            }
             selectedFilter in listOf("Handwritten", "Note") -> baseFiltered.filter { it.templateType in listOf("blank", "ruled", "grid") }
             selectedFilter in listOf("PDFs", "PDF", "Imported PDFs & Docs") -> baseFiltered.filter { it.templateType == "pdf" || it.templateType == "docx" || !it.pdfTitle.isNullOrEmpty() || it.title.contains(".pdf", ignoreCase = true) || it.title.contains("PDF", ignoreCase = true) }
             selectedFilter in listOf("Templates", "Folder", "Structural Templates") -> baseFiltered.filter { it.templateType in listOf("cornell", "meeting") }
@@ -6315,10 +6334,85 @@ if (showLayersDialog) {
         )
     }
 
-    if (viewModel.showDocumentScannerOverlay) {
-        LipiDocumentScanner(
-            viewModel = viewModel,
-            onDismiss = { viewModel.closeDocumentScanner() }
+    // Lipi Live Audio Recording Dock Bar (Non-blocking while taking notes)
+    if (viewModel.lipiAudioManager.isRecording) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.TopCenter
+        ) {
+            CompactRecordingDockBar(
+                audioManager = viewModel.lipiAudioManager,
+                currentPage = viewModel.pdfPage,
+                onAddBookmark = { title, pageId ->
+                    // Bookmark captured in recording session
+                },
+                onStopRecording = {
+                    val result = viewModel.lipiAudioManager.stopRecording(discard = false)
+                    if (result != null) {
+                        val activePage = viewModel.pdfPage
+                        val timeStr = java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(java.util.Date())
+                        val newBlock = com.example.data.AudioContentBlock(
+                            page = activePage,
+                            x = 60f,
+                            y = 120f,
+                            width = 320f,
+                            height = 110f,
+                            audioFilePath = result.filePath,
+                            originalFileName = result.fileName,
+                            title = "Voice Note — $timeStr",
+                            durationMs = result.durationMs,
+                            fileSize = result.fileSize,
+                            bookmarks = result.bookmarks,
+                            waveformPoints = result.waveformPoints
+                        )
+                        viewModel.addContentBlock(newBlock)
+                    }
+                },
+                onCancelRecording = {
+                    viewModel.lipiAudioManager.stopRecording(discard = true)
+                },
+                modifier = Modifier.padding(top = 80.dp)
+            )
+        }
+    }
+
+    // Mini Audio Player Bar (across note navigation)
+    val activePlayingBlock = viewModel.lipiAudioManager.activePlayingBlock
+    if (activePlayingBlock != null && viewModel.lipiAudioManager.currentPlayingBlockId == activePlayingBlock.id && !viewModel.lipiAudioManager.isRecording) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            CompactAudioMiniPlayer(
+                block = activePlayingBlock,
+                audioManager = viewModel.lipiAudioManager,
+                onExpandFullPlayer = {
+                    // Triggers FullAudioPlayerDialog via activePlayingBlock
+                },
+                onCloseMiniPlayer = {
+                    viewModel.lipiAudioManager.activePlayingBlock = null
+                },
+                modifier = Modifier.padding(bottom = 20.dp)
+            )
+        }
+    }
+
+    // Full Audio Player Dialog
+    val fullPlayerBlock = viewModel.lipiAudioManager.activePlayingBlock
+    if (fullPlayerBlock != null && !viewModel.lipiAudioManager.isRecording) {
+        FullAudioPlayerDialog(
+            block = fullPlayerBlock,
+            audioManager = viewModel.lipiAudioManager,
+            onNavigateToPage = { page ->
+                viewModel.setPDFPage(page)
+            },
+            onUpdateBlock = { updatedBlock ->
+                viewModel.updateContentBlock(updatedBlock)
+                viewModel.lipiAudioManager.activePlayingBlock = updatedBlock
+            },
+            onDismiss = {
+                // Keep mini player active
+            }
         )
     }
 

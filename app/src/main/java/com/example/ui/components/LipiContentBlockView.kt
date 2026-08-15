@@ -211,28 +211,34 @@ fun AudioBlockView(
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
+    val context = LocalContext.current
     val isCurrentPlaying = audioManager.currentPlayingBlockId == block.id && audioManager.isPlaying
     val position = if (audioManager.currentPlayingBlockId == block.id) audioManager.playbackPositionMs else 0L
     val totalDuration = if (block.durationMs > 0) block.durationMs else audioManager.playbackDurationMs
 
+    var showMenu by remember { mutableStateOf(false) }
+
     Card(
         modifier = Modifier
             .fillMaxSize()
-            .shadow(4.dp, RoundedCornerShape(14.dp)),
-        shape = RoundedCornerShape(14.dp),
+            .shadow(6.dp, RoundedCornerShape(16.dp))
+            .clickable {
+                audioManager.activePlayingBlock = block
+            },
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
-            containerColor = Color(0xFF1E293B),
+            containerColor = Color(0xFF0F172A),
             contentColor = Color.White
         ),
-        border = BorderStroke(1.dp, Color(0xFF334155))
+        border = BorderStroke(1.dp, if (isCurrentPlaying) Color(0xFF3B82F6) else Color(0xFF334155))
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 10.dp, vertical = 6.dp),
+                .padding(horizontal = 12.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            // Header Row: Title & Action
+            // Header Row: Title, Format Tag, Bookmarks Badge & Overflow Menu
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -245,7 +251,7 @@ fun AudioBlockView(
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(24.dp)
+                            .size(26.dp)
                             .background(Color(0xFF3B82F6), CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
@@ -253,17 +259,48 @@ fun AudioBlockView(
                             imageVector = Icons.Default.Mic,
                             contentDescription = null,
                             tint = Color.White,
-                            modifier = Modifier.size(14.dp)
+                            modifier = Modifier.size(15.dp)
                         )
                     }
-                    Text(
-                        text = block.title.ifBlank { block.originalFileName },
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+
+                    Column {
+                        Text(
+                            text = block.title.ifBlank { block.originalFileName },
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = block.fileFormat,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color(0xFF60A5FA)
+                            )
+
+                            if (block.bookmarks.isNotEmpty()) {
+                                Surface(
+                                    shape = CircleShape,
+                                    color = Color(0xFF1E293B)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                    ) {
+                                        Icon(Icons.Default.Star, contentDescription = null, tint = Color(0xFFFBBF24), modifier = Modifier.size(10.dp))
+                                        Text("${block.bookmarks.size}", fontSize = 9.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -272,41 +309,74 @@ fun AudioBlockView(
                         Surface(
                             onClick = {
                                 val nextSpeed = when (audioManager.playbackSpeed) {
-                                    1.0f -> 1.5f
+                                    1.0f -> 1.25f
+                                    1.25f -> 1.5f
                                     1.5f -> 2.0f
                                     else -> 1.0f
                                 }
                                 audioManager.setSpeed(nextSpeed)
                             },
                             shape = CircleShape,
-                            color = Color(0xFF334155),
+                            color = Color(0xFF1E293B),
                             modifier = Modifier.padding(end = 4.dp)
                         ) {
                             Text(
                                 text = "${audioManager.playbackSpeed}x",
-                                fontSize = 9.sp,
+                                fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color(0xFF93C5FD),
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                             )
                         }
                     }
 
-                    IconButton(
-                        onClick = onEdit,
-                        modifier = Modifier.size(22.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.MoreVert,
-                            contentDescription = "Options",
-                            tint = Color(0xFF94A3B8),
-                            modifier = Modifier.size(16.dp)
-                        )
+                    Box {
+                        IconButton(
+                            onClick = { showMenu = true },
+                            modifier = Modifier.size(26.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.MoreVert,
+                                contentDescription = "Options",
+                                tint = Color(0xFF94A3B8),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+
+                        DropdownMenu(
+                            expanded = showMenu,
+                            onDismissRequest = { showMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Open Full Player") },
+                                leadingIcon = { Icon(Icons.Default.OpenInFull, contentDescription = null) },
+                                onClick = {
+                                    showMenu = false
+                                    audioManager.activePlayingBlock = block
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Edit / Rename") },
+                                leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) },
+                                onClick = {
+                                    showMenu = false
+                                    onEdit()
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Delete Audio") },
+                                leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+                                onClick = {
+                                    showMenu = false
+                                    onDelete()
+                                }
+                            )
+                        }
                     }
                 }
             }
 
-            // Controls & Waveform Scrubber
+            // Controls & Scrubber Row
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -318,11 +388,12 @@ fun AudioBlockView(
                         if (isCurrentPlaying) {
                             audioManager.pausePlayback()
                         } else {
+                            audioManager.activePlayingBlock = block
                             audioManager.playAudio(block.id, block.audioFilePath)
                         }
                     },
                     modifier = Modifier
-                        .size(34.dp)
+                        .size(36.dp)
                         .background(
                             Brush.linearGradient(listOf(Color(0xFF3B82F6), Color(0xFF2563EB))),
                             CircleShape
@@ -332,7 +403,7 @@ fun AudioBlockView(
                         imageVector = if (isCurrentPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                         contentDescription = if (isCurrentPlaying) "Pause" else "Play",
                         tint = Color.White,
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(22.dp)
                     )
                 }
 
@@ -348,7 +419,7 @@ fun AudioBlockView(
                         colors = SliderDefaults.colors(
                             thumbColor = Color(0xFF60A5FA),
                             activeTrackColor = Color(0xFF3B82F6),
-                            inactiveTrackColor = Color(0xFF475569)
+                            inactiveTrackColor = Color(0xFF334155)
                         ),
                         modifier = Modifier.height(20.dp)
                     )

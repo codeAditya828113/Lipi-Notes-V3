@@ -441,7 +441,7 @@ object PdfHelper {
                 val canvas = page.canvas
 
                 // 1. Draw base page layout or original PDF page
-                if (templateType == "pdf" && pdfFile != null && pdfFile.exists()) {
+                if ((templateType == "pdf" || templateType == "scanned_doc") && pdfFile != null && pdfFile.exists()) {
                     val originalBitmap = renderPdfPageToBitmap(pdfFile, pageIndex - 1, 600, 800)
                     if (originalBitmap != null) {
                         canvas.drawBitmap(originalBitmap, 0f, 0f, paint)

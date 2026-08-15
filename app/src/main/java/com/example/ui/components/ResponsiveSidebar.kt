@@ -94,6 +94,13 @@ fun ResponsiveSidebar(
     val allCount = notes.size
     val handwrittenCount = notes.count { it.templateType in listOf("blank", "ruled", "grid") }
     val pdfCount = notes.count { it.templateType in listOf("pdf", "docx") }
+    val scannedCount = notes.count { 
+        it.templateType == "scanned_doc" || 
+        it.tags.contains("scanned", ignoreCase = true) || 
+        it.title.contains("Scanned", ignoreCase = true) || 
+        it.title.contains("Scan", ignoreCase = true) || 
+        (it.pdfTitle ?: "").contains("Scanned", ignoreCase = true) 
+    }
     val templatesCount = notes.count { it.templateType in listOf("cornell", "meeting") }
     val plannerCount = notes.count { it.tags.contains("planner", ignoreCase = true) || it.tags.contains("calendar", ignoreCase = true) }
     val mindMapsCount = notes.count { it.tags.contains("mindmap", ignoreCase = true) || it.templateType == "grid" }
@@ -392,9 +399,27 @@ fun ResponsiveSidebar(
                 item {
                     ExpressiveNavItem(
                         icon = Icons.Default.DocumentScanner,
+                        label = "Scanned Documents",
+                        count = scannedCount,
+                        isSelected = activeTab == "notes" && (selectedFilter == "Scanned Documents" || selectedFilter == "Scanned Docs"),
+                        isRailMode = isRailMode,
+                        onClick = {
+                            onTabChange("notes")
+                            onFilterChange("Scanned Documents")
+                            viewModel.selectNote(null)
+                            viewModel.openDocumentScanner("sidebar_section")
+                        }
+                    )
+                }
+
+                item {
+                    ExpressiveNavItem(
+                        icon = Icons.Default.CameraAlt,
                         label = "Scan Document",
                         isRailMode = isRailMode,
                         onClick = {
+                            onTabChange("notes")
+                            onFilterChange("Scanned Documents")
                             viewModel.openDocumentScanner("sidebar")
                         }
                     )

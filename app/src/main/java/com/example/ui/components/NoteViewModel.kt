@@ -2838,7 +2838,7 @@ Here is your complete guide to all features and capabilities available in the ap
             val maxImagePage = currentImages.maxOfOrNull { it.page } ?: 1
             val maxBlockPage = currentContentBlocks.maxOfOrNull { it.page } ?: 1
             
-            if (note.templateType == "pdf" || note.templateType == "docx") {
+            if (note.templateType == "pdf" || note.templateType == "scanned_doc" || note.templateType == "docx") {
                 val pdfFile = File(application.filesDir, "note_${note.id}.pdf")
                 if (!pdfFile.exists()) {
                     PdfHelper.createSamplePdf(pdfFile)
@@ -3195,7 +3195,7 @@ Here is your complete guide to all features and capabilities available in the ap
     fun exportActiveNoteToPdf(outputStream: java.io.OutputStream) {
         val note = selectedNote ?: return
         try {
-            val pdfFile = if (note.templateType == "pdf" || note.templateType == "docx") {
+            val pdfFile = if (note.templateType == "pdf" || note.templateType == "scanned_doc" || note.templateType == "docx") {
                 File(application.filesDir, "note_${note.id}.pdf")
             } else {
                 null
@@ -4123,10 +4123,18 @@ Here is your complete guide to all features and capabilities available in the ap
                 } else noteToUpdate.content
 
                 val originalCount = PdfHelper.getPdfPageCount(destination)
+                val updatedTags = if (noteToUpdate.tags.contains("scanned", ignoreCase = true)) {
+                    noteToUpdate.tags
+                } else if (noteToUpdate.tags.isBlank()) {
+                    "scanned"
+                } else {
+                    "${noteToUpdate.tags},scanned"
+                }
                 val updated = noteToUpdate.copy(
-                    templateType = "pdf",
+                    templateType = "scanned_doc",
                     pdfTitle = pdfTitle,
                     content = updatedContent,
+                    tags = updatedTags,
                     lastModifiedTime = System.currentTimeMillis(),
                     isSynced = false
                 )
@@ -4147,8 +4155,9 @@ Here is your complete guide to all features and capabilities available in the ap
                     id = newNoteId,
                     title = pdfTitle.ifBlank { "Scanned Document" },
                     content = if (!ocrText.isNullOrBlank()) "[Scanned Document OCR]:\n$ocrText" else "",
-                    templateType = "pdf",
+                    templateType = "scanned_doc",
                     pdfTitle = pdfTitle,
+                    tags = "scanned",
                     createdTime = System.currentTimeMillis(),
                     lastModifiedTime = System.currentTimeMillis()
                 )

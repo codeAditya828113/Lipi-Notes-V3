@@ -171,6 +171,13 @@ fun RedesignedAllNotesView(
         }
 
         val categoryFiltered = when {
+            selectedFilter in listOf("Scanned Documents", "Scanned Docs", "Scanned") -> baseFiltered.filter {
+                it.templateType == "scanned_doc" ||
+                it.tags.contains("scanned", ignoreCase = true) ||
+                it.title.contains("Scanned", ignoreCase = true) ||
+                it.title.contains("Scan", ignoreCase = true) ||
+                (it.pdfTitle ?: "").contains("Scanned", ignoreCase = true)
+            }
             selectedFilter in listOf("Handwritten", "Note") -> baseFiltered.filter { it.templateType in listOf("blank", "ruled", "grid") }
             selectedFilter in listOf("PDFs", "PDF", "Imported PDFs & Docs") -> baseFiltered.filter { it.templateType == "pdf" || it.templateType == "docx" || !it.pdfTitle.isNullOrEmpty() || it.title.contains(".pdf", ignoreCase = true) || it.title.contains("PDF", ignoreCase = true) }
             selectedFilter in listOf("Voice Note", "Voice Notes") -> baseFiltered.filter { it.tags.contains("voicenote", ignoreCase = true) || it.title.contains("Voice Note", ignoreCase = true) || !it.audioPath.isNullOrEmpty() || !it.audioTranscription.isNullOrEmpty() }
@@ -296,18 +303,36 @@ fun RedesignedAllNotesView(
         )
     }
 
-    Box(
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
             .background(LipiBgLight)
     ) {
+        val availableWidthDp = maxWidth
+        val availableHeightDp = maxHeight
+
+        val gridColumns = when {
+            !isGridView -> GridCells.Fixed(1)
+            availableWidthDp < 420.dp -> GridCells.Fixed(1)
+            availableWidthDp < 680.dp -> GridCells.Fixed(2)
+            availableWidthDp < 1020.dp -> GridCells.Fixed(3)
+            availableWidthDp < 1380.dp -> GridCells.Fixed(4)
+            else -> GridCells.Fixed(5)
+        }
+
+        val horizontalPadding = when {
+            availableWidthDp > 1000.dp -> 32.dp
+            availableWidthDp > 600.dp -> 20.dp
+            else -> 12.dp
+        }
+
         Row(modifier = Modifier.fillMaxSize()) {
             // Main Content Area (Header + Filters + Notebook Grid)
             Column(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight()
-                    .padding(horizontal = if (isTablet) 24.dp else 16.dp, vertical = 16.dp)
+                    .padding(horizontal = horizontalPadding, vertical = 16.dp)
             ) {
                 // Header Bar & AI Search
                 AllNotesHeaderSection(
@@ -323,7 +348,8 @@ fun RedesignedAllNotesView(
                     onToggleGridView = { isGridView = !isGridView },
                     selectedSortOption = selectedSortOption,
                     onSortOptionSelected = { selectedSortOption = it },
-                    isTablet = isTablet
+                    isTablet = isTablet,
+                    containerWidthDp = availableWidthDp
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -390,8 +416,10 @@ fun RedesignedAllNotesView(
                 // Notebook Cards Grid
                 if (filteredNotes.isEmpty()) {
                     AllNotesEmptyState(
+                        selectedFilter = selectedFilter,
                         onCreateNoteClick = onCreateNoteClick,
-                        onImportPdfClick = { pdfPickerLauncher.launch("application/pdf") }
+                        onImportPdfClick = { pdfPickerLauncher.launch("application/pdf") },
+                        onScanDocumentClick = { viewModel.openDocumentScanner("all_notes_empty") }
                     )
                 } else {
                     AnimatedContent(
@@ -409,14 +437,10 @@ fun RedesignedAllNotesView(
                         modifier = Modifier.weight(1f)
                     ) { _ ->
                         LazyVerticalGrid(
-                            columns = if (isGridView) {
-                                if (isTablet) GridCells.Adaptive(minSize = 220.dp) else GridCells.Fixed(2)
-                            } else {
-                                GridCells.Fixed(1)
-                            },
-                            contentPadding = PaddingValues(bottom = 80.dp),
-                            horizontalArrangement = Arrangement.spacedBy(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(16.dp),
+                            columns = gridColumns,
+                            contentPadding = PaddingValues(bottom = 90.dp),
+                            horizontalArrangement = Arrangement.spacedBy(if (availableWidthDp < 480.dp) 12.dp else 16.dp),
+                            verticalArrangement = Arrangement.spacedBy(if (availableWidthDp < 480.dp) 12.dp else 16.dp),
                             modifier = Modifier.fillMaxSize()
                         ) {
                             items(filteredNotes, key = { it.id }) { note ->
@@ -599,7 +623,8 @@ private fun AllNotesHeaderSection(
     onToggleGridView: () -> Unit,
     selectedSortOption: String,
     onSortOptionSelected: (String) -> Unit,
-    isTablet: Boolean
+    isTablet: Boolean,
+    containerWidthDp: androidx.compose.ui.unit.Dp = 800.dp
 ) {
     var showSortMenu by remember { mutableStateOf(false) }
     var showDriveBackupDialog by remember { mutableStateOf(false) }
@@ -611,6 +636,8 @@ private fun AllNotesHeaderSection(
         )
     }
 
+    val isCompactWidth = containerWidthDp < 520.dp
+
     Column(modifier = Modifier.fillMaxWidth()) {
         // Top Navigation & Sync Status
         Row(
@@ -618,12 +645,12 @@ private fun AllNotesHeaderSection(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (!isTablet) {
                     IconButton(
                         onClick = onMenuClick,
                         modifier = Modifier
-                            .size(40.dp)
+                            .size(38.dp)
                             .clip(CircleShape)
                             .background(LipiCardWhite)
                     ) {
@@ -633,7 +660,7 @@ private fun AllNotesHeaderSection(
                 IconButton(
                     onClick = onHomeClick,
                     modifier = Modifier
-                        .size(40.dp)
+                        .size(38.dp)
                         .clip(CircleShape)
                         .background(LipiCardWhite)
                 ) {
@@ -651,19 +678,19 @@ private fun AllNotesHeaderSection(
                         .clickable { showDriveBackupDialog = true }
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
                     ) {
                         if (viewModel.isSyncing) {
                             CircularProgressIndicator(
-                                modifier = Modifier.size(14.dp),
+                                modifier = Modifier.size(12.dp),
                                 strokeWidth = 2.dp,
                                 color = LipiPrimary
                             )
                             Text(
-                                text = "Syncing Drive...",
-                                fontSize = 12.sp,
+                                text = "Syncing...",
+                                fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = LipiPrimary
                             )
@@ -672,11 +699,11 @@ private fun AllNotesHeaderSection(
                                 imageVector = Icons.Default.CloudDone,
                                 contentDescription = "Cloud Saved",
                                 tint = LipiSuccess,
-                                modifier = Modifier.size(16.dp)
+                                modifier = Modifier.size(14.dp)
                             )
                             Text(
-                                text = "Cloud Saved",
-                                fontSize = 12.sp,
+                                text = "Saved",
+                                fontSize = 11.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = LipiSuccess
                             )
@@ -685,12 +712,12 @@ private fun AllNotesHeaderSection(
                 }
             }
 
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 // Batch Selection Toggle
                 IconButton(
                     onClick = { viewModel.toggleSelectionMode() },
                     modifier = Modifier
-                        .size(40.dp)
+                        .size(38.dp)
                         .clip(CircleShape)
                         .background(if (viewModel.isSelectionMode) LipiPrimary.copy(alpha = 0.15f) else LipiCardWhite)
                 ) {
@@ -705,7 +732,7 @@ private fun AllNotesHeaderSection(
                 IconButton(
                     onClick = { viewModel.openDocumentScanner("all_notes") },
                     modifier = Modifier
-                        .size(40.dp)
+                        .size(38.dp)
                         .clip(CircleShape)
                         .background(LipiCardWhite)
                         .testTag("all_notes_scan_document_button")
@@ -717,7 +744,7 @@ private fun AllNotesHeaderSection(
                 IconButton(
                     onClick = onImportPdfClick,
                     modifier = Modifier
-                        .size(40.dp)
+                        .size(38.dp)
                         .clip(CircleShape)
                         .background(LipiCardWhite)
                 ) {
@@ -726,46 +753,90 @@ private fun AllNotesHeaderSection(
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(14.dp))
 
-        // Title Header: 👋 All Notes & Subtitle
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "👋 All Notes",
-                    style = MaterialTheme.typography.headlineLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = LipiTextPrimary,
-                    fontSize = 30.sp
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "Find and organize your notebooks, PDFs, handwritten notes and projects.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = LipiTextSecondary,
-                    fontSize = 14.sp
-                )
-            }
-
-            // Primary + New Notebook Action Button
-            Button(
-                onClick = onCreateNoteClick,
-                shape = RoundedCornerShape(16.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = LipiPrimary,
-                    contentColor = Color.White
-                ),
-                elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp),
-                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 14.dp),
-                modifier = Modifier.testTag("create_new_notebook_button")
+        // Title Header & New Notebook Action Button
+        if (isCompactWidth) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(20.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("New Notebook", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "👋 All Notes",
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = LipiTextPrimary,
+                        fontSize = 24.sp
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "Find and organize your notebooks, PDFs, and handwritten notes.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = LipiTextSecondary,
+                        fontSize = 12.sp
+                    )
+                }
+
+                Button(
+                    onClick = onCreateNoteClick,
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = LipiPrimary,
+                        contentColor = Color.White
+                    ),
+                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 3.dp),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("create_new_notebook_button")
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("New Notebook", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                }
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "👋 All Notes",
+                        style = MaterialTheme.typography.headlineLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = LipiTextPrimary,
+                        fontSize = 30.sp
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Find and organize your notebooks, PDFs, handwritten notes and projects.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = LipiTextSecondary,
+                        fontSize = 14.sp
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                // Primary + New Notebook Action Button
+                Button(
+                    onClick = onCreateNoteClick,
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = LipiPrimary,
+                        contentColor = Color.White
+                    ),
+                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp),
+                    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 14.dp),
+                    modifier = Modifier.testTag("create_new_notebook_button")
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(20.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("New Notebook", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                }
             }
         }
 
@@ -970,7 +1041,7 @@ private fun AllNotesFilterChipsRow(
 ) {
     var isShrunk by remember { mutableStateOf(false) }
 
-    val baseFilters = listOf("All", "Recent", "Favorites", "Handwritten", "PDF", "Projects", "Templates", "Personal", "School")
+    val baseFilters = listOf("All", "Recent", "Favorites", "Scanned Docs", "Handwritten", "PDF", "Projects", "Templates", "Personal", "School")
     val customDirs = viewModel.customDirectories.map { it.name }
     val allChipLabels = baseFilters + customDirs
 
@@ -1051,6 +1122,7 @@ private fun AllNotesFilterChipsRow(
                         "All" -> selectedFilter == "All Notes" || selectedFilter == "All"
                         "Recent" -> selectedFilter == "Recent"
                         "Favorites" -> selectedFilter == "Favorites" || selectedFilter == "Starred"
+                        "Scanned Docs" -> selectedFilter == "Scanned Docs" || selectedFilter == "Scanned Documents" || selectedFilter == "Scanned"
                         "Handwritten" -> selectedFilter == "Handwritten" || selectedFilter == "Note"
                         "PDF" -> selectedFilter == "PDFs" || selectedFilter == "PDF"
                         "Projects" -> selectedFilter == "Projects" || selectedFilter == "Work/Projects"
@@ -1069,6 +1141,7 @@ private fun AllNotesFilterChipsRow(
                         "All" -> "All Notes"
                         "Recent" -> "Recent"
                         "Favorites" -> "Favorites"
+                        "Scanned Docs" -> "Scanned Documents"
                         "Handwritten" -> "Handwritten"
                         "PDF" -> "PDFs"
                         "Projects" -> "Projects"
@@ -1116,6 +1189,7 @@ private fun AllNotesFilterChipsRow(
                                 label == "All" -> Icons.Default.AllInclusive
                                 label == "Recent" -> Icons.Default.Schedule
                                 label == "Favorites" -> Icons.Default.Star
+                                label == "Scanned Docs" -> Icons.Default.DocumentScanner
                                 label == "Handwritten" -> Icons.Default.Draw
                                 label == "PDF" -> Icons.Default.PictureAsPdf
                                 label == "Projects" -> Icons.Default.FolderSpecial
@@ -1859,16 +1933,62 @@ fun MoveToFolderDialog(
 }
 
 @Composable
-fun AllNotesEmptyState(onCreateNoteClick: () -> Unit, onImportPdfClick: () -> Unit) {
+fun AllNotesEmptyState(
+    selectedFilter: String = "",
+    onCreateNoteClick: () -> Unit,
+    onImportPdfClick: () -> Unit,
+    onScanDocumentClick: () -> Unit = {}
+) {
+    val isScannedFilter = selectedFilter in listOf("Scanned Documents", "Scanned Docs", "Scanned")
+
     androidx.compose.foundation.layout.Column(
-        modifier = androidx.compose.ui.Modifier.fillMaxWidth().padding(32.dp),
+        modifier = androidx.compose.ui.Modifier
+            .fillMaxWidth()
+            .padding(32.dp),
         horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
         verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center
     ) {
-        androidx.compose.material3.Text("No notebooks found", style = androidx.compose.material3.MaterialTheme.typography.titleLarge)
-        androidx.compose.foundation.layout.Spacer(modifier = androidx.compose.ui.Modifier.height(16.dp))
-        androidx.compose.material3.Button(onClick = onCreateNoteClick) {
-            androidx.compose.material3.Text("Create Note")
+        if (isScannedFilter) {
+            androidx.compose.material3.Icon(
+                imageVector = Icons.Default.DocumentScanner,
+                contentDescription = null,
+                modifier = androidx.compose.ui.Modifier.size(64.dp),
+                tint = LipiPrimary
+            )
+            androidx.compose.foundation.layout.Spacer(modifier = androidx.compose.ui.Modifier.height(16.dp))
+            androidx.compose.material3.Text(
+                text = "No scanned documents yet",
+                style = androidx.compose.material3.MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = LipiPrimary
+            )
+            androidx.compose.foundation.layout.Spacer(modifier = androidx.compose.ui.Modifier.height(8.dp))
+            androidx.compose.material3.Text(
+                text = "Scan physical documents using your camera with automatic corner detection, edge cropping, and OCR text extraction.",
+                style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
+                color = LipiTextSecondary,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                modifier = androidx.compose.ui.Modifier.padding(horizontal = 24.dp)
+            )
+            androidx.compose.foundation.layout.Spacer(modifier = androidx.compose.ui.Modifier.height(20.dp))
+            androidx.compose.material3.Button(
+                onClick = onScanDocumentClick,
+                colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = LipiPrimary)
+            ) {
+                androidx.compose.material3.Icon(
+                    imageVector = Icons.Default.CameraAlt,
+                    contentDescription = null,
+                    modifier = androidx.compose.ui.Modifier.size(18.dp)
+                )
+                androidx.compose.foundation.layout.Spacer(modifier = androidx.compose.ui.Modifier.width(8.dp))
+                androidx.compose.material3.Text("Scan Document")
+            }
+        } else {
+            androidx.compose.material3.Text("No notebooks found", style = androidx.compose.material3.MaterialTheme.typography.titleLarge)
+            androidx.compose.foundation.layout.Spacer(modifier = androidx.compose.ui.Modifier.height(16.dp))
+            androidx.compose.material3.Button(onClick = onCreateNoteClick) {
+                androidx.compose.material3.Text("Create Note")
+            }
         }
     }
 }

@@ -236,6 +236,7 @@ fun NotebookStudioDialog(
 
     // Live 3D Preview State
     var isPreviewFlipped by remember { mutableStateOf(false) } // false = cover, true = paper page
+    var compactTabState by remember { mutableStateOf(0) } // 0 = Edit Settings, 1 = Live 3D Preview
 
     // Step 4 Toggles
     var isFavorite by remember { mutableStateOf(false) }
@@ -257,36 +258,57 @@ fun NotebookStudioDialog(
         0xFFE3F2FD to "Sky Pastel"
     )
 
-    val isLargeScreen = LocalConfiguration.current.screenWidthDp >= 600
-
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
-        Surface(
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color(0xFFF7F8FC)),
-            color = Color(0xFFF7F8FC)
+                .background(Color(0xFFF7F8FC))
         ) {
-            Column(
+            val availableWidthDp = maxWidth
+            val availableHeightDp = maxHeight
+
+            val isCompactWidth = availableWidthDp < 720.dp
+            val isUltraCompact = availableWidthDp < 480.dp
+            val isShortHeight = availableHeightDp < 550.dp
+
+            val outerPadding = when {
+                isShortHeight -> 6.dp
+                isUltraCompact -> 8.dp
+                isCompactWidth -> 12.dp
+                else -> 16.dp
+            }
+
+            Surface(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(if (isLargeScreen) 20.dp else 12.dp)
+                    .background(Color(0xFFF7F8FC)),
+                color = Color(0xFFF7F8FC)
             ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .systemBarsPadding()
+                        .padding(outerPadding)
+                ) {
                 // ==========================================
                 // 1. STUDIO HEADER & STEP INDICATOR
                 // ==========================================
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(24.dp),
+                    shape = RoundedCornerShape(20.dp),
                     colors = CardDefaults.cardColors(containerColor = Color.White),
                     elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
                 ) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 20.dp, vertical = 14.dp)
+                            .padding(
+                                horizontal = if (isUltraCompact) 12.dp else 18.dp,
+                                vertical = if (isShortHeight || isUltraCompact) 8.dp else 12.dp
+                            )
                     ) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -295,16 +317,16 @@ fun NotebookStudioDialog(
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                horizontalArrangement = Arrangement.spacedBy(if (isUltraCompact) 8.dp else 12.dp)
                             ) {
                                 Box(
                                     modifier = Modifier
-                                        .size(44.dp)
+                                        .size(if (isUltraCompact) 36.dp else 42.dp)
                                         .background(
                                             Brush.linearGradient(
                                                 colors = listOf(LipiStudioPrimary, Color(0xFF8B5CF6))
                                             ),
-                                            shape = RoundedCornerShape(14.dp)
+                                            shape = RoundedCornerShape(12.dp)
                                         ),
                                     contentAlignment = Alignment.Center
                                 ) {
@@ -312,7 +334,7 @@ fun NotebookStudioDialog(
                                         imageVector = Icons.Default.Book,
                                         contentDescription = "Lipi Studio",
                                         tint = Color.White,
-                                        modifier = Modifier.size(24.dp)
+                                        modifier = Modifier.size(if (isUltraCompact) 20.dp else 22.dp)
                                     )
                                 }
                                 Column {
@@ -320,7 +342,7 @@ fun NotebookStudioDialog(
                                         Text(
                                             text = "Notebook Studio",
                                             fontWeight = FontWeight.ExtraBold,
-                                            fontSize = 20.sp,
+                                            fontSize = if (isUltraCompact) 17.sp else 19.sp,
                                             color = Color(0xFF0F172A)
                                         )
                                         Surface(
@@ -328,19 +350,23 @@ fun NotebookStudioDialog(
                                             color = LipiStudioPrimary.copy(alpha = 0.1f)
                                         ) {
                                             Text(
-                                                text = "PRO STUDIO",
-                                                fontSize = 10.sp,
+                                                text = "PRO",
+                                                fontSize = 9.sp,
                                                 fontWeight = FontWeight.Bold,
                                                 color = LipiStudioPrimary,
-                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                                             )
                                         }
                                     }
-                                    Text(
-                                        text = "Craft bespoke notebooks with realistic 3D covers and paper patterns",
-                                        fontSize = 12.sp,
-                                        color = Color(0xFF64748B)
-                                    )
+                                    if (!isShortHeight) {
+                                        Text(
+                                            text = if (isUltraCompact) "Bespoke 3D notebooks & paper patterns" else "Craft bespoke notebooks with realistic 3D covers and paper patterns",
+                                            fontSize = 11.sp,
+                                            color = Color(0xFF64748B),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
                                 }
                             }
 
@@ -348,26 +374,25 @@ fun NotebookStudioDialog(
                                 onClick = onDismiss,
                                 modifier = Modifier
                                     .background(Color(0xFFF1F5F9), CircleShape)
-                                    .size(36.dp)
+                                    .size(34.dp)
                             ) {
-                                Icon(Icons.Default.Close, contentDescription = "Close", tint = Color(0xFF334155))
+                                Icon(Icons.Default.Close, contentDescription = "Close", tint = Color(0xFF334155), modifier = Modifier.size(18.dp))
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(14.dp))
+                        Spacer(modifier = Modifier.height(if (isShortHeight || isUltraCompact) 8.dp else 12.dp))
 
                         // Step Wizard Progress Bar
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(if (isUltraCompact) 4.dp else 8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            val steps = listOf(
-                                "① Details",
-                                "② Paper Type",
-                                "③ Cover Design",
-                                "④ Review"
-                            )
+                            val steps = if (isUltraCompact) {
+                                listOf("1. Details", "2. Paper", "3. Cover", "4. Review")
+                            } else {
+                                listOf("① Details", "② Paper Type", "③ Cover Design", "④ Review")
+                            }
                             steps.forEachIndexed { index, title ->
                                 val isSelected = currentStep == index
                                 val isDone = currentStep > index
@@ -376,7 +401,7 @@ fun NotebookStudioDialog(
                                     modifier = Modifier
                                         .weight(1f)
                                         .clickable { currentStep = index },
-                                    shape = RoundedCornerShape(16.dp),
+                                    shape = RoundedCornerShape(14.dp),
                                     color = when {
                                         isSelected -> LipiStudioPrimary
                                         isDone -> LipiStudioPrimary.copy(alpha = 0.15f)
@@ -386,7 +411,10 @@ fun NotebookStudioDialog(
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .padding(vertical = 10.dp, horizontal = 10.dp),
+                                            .padding(
+                                                vertical = if (isShortHeight || isUltraCompact) 6.dp else 9.dp,
+                                                horizontal = if (isUltraCompact) 4.dp else 8.dp
+                                            ),
                                         horizontalArrangement = Arrangement.Center,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
@@ -395,13 +423,13 @@ fun NotebookStudioDialog(
                                                 imageVector = Icons.Default.Check,
                                                 contentDescription = null,
                                                 tint = LipiStudioPrimary,
-                                                modifier = Modifier.size(16.dp)
+                                                modifier = Modifier.size(14.dp)
                                             )
-                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Spacer(modifier = Modifier.width(3.dp))
                                         }
                                         Text(
                                             text = title,
-                                            fontSize = 12.sp,
+                                            fontSize = if (isUltraCompact) 10.sp else 12.sp,
                                             fontWeight = if (isSelected || isDone) FontWeight.Bold else FontWeight.Medium,
                                             color = when {
                                                 isSelected -> Color.White
@@ -418,7 +446,7 @@ fun NotebookStudioDialog(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(if (isShortHeight || isUltraCompact) 8.dp else 12.dp))
 
                 // ==========================================
                 // 2. MAIN TWO-PANEL CONTENT (LEFT: WIZARD, RIGHT: LIVE PREVIEW)
@@ -774,7 +802,7 @@ fun NotebookStudioDialog(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(if (isShortHeight || isUltraCompact) 6.dp else 12.dp))
 
                 // ==========================================
                 // 3. BOTTOM ACTION BAR
@@ -788,40 +816,45 @@ fun NotebookStudioDialog(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 20.dp, vertical = 12.dp),
+                            .padding(
+                                horizontal = if (isUltraCompact) 10.dp else 16.dp,
+                                vertical = if (isShortHeight || isUltraCompact) 6.dp else 10.dp
+                            ),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(if (isUltraCompact) 4.dp else 8.dp)) {
                             if (currentStep > 0) {
                                 OutlinedButton(
                                     onClick = { currentStep -= 1 },
-                                    shape = RoundedCornerShape(14.dp)
+                                    shape = RoundedCornerShape(14.dp),
+                                    contentPadding = PaddingValues(horizontal = if (isUltraCompact) 10.dp else 14.dp, vertical = 6.dp)
                                 ) {
                                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Back")
+                                    if (!isUltraCompact) {
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Back")
+                                    }
                                 }
                             }
 
-                            TextButton(
+                            IconButton(
                                 onClick = {
-                                    // Reset settings
                                     notebookName = "Physics Lecture Notes"
                                     currentTemplateType = "ruled"
                                     currentCoverType = "3d_academic"
                                     currentPageColor = 0xFFFFFFFF
                                 }
                             ) {
-                                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Reset")
+                                Icon(Icons.Default.Refresh, contentDescription = "Reset", tint = Color(0xFF64748B), modifier = Modifier.size(18.dp))
                             }
 
-                            TextButton(onClick = { /* Save custom template preset */ }) {
-                                Icon(Icons.Default.BookmarkBorder, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Save Template")
+                            if (!isUltraCompact) {
+                                TextButton(onClick = { /* Save custom template preset */ }) {
+                                    Icon(Icons.Default.BookmarkBorder, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Save")
+                                }
                             }
                         }
 
@@ -857,26 +890,29 @@ fun NotebookStudioDialog(
                                 }
                             },
                             shape = RoundedCornerShape(14.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = LipiStudioPrimary),
-                            modifier = Modifier.height(44.dp)
+                            colors = ButtonDefaults.buttonColors(containerColor = LipiStudioPrimary, contentColor = Color.White),
+                            contentPadding = PaddingValues(horizontal = if (isUltraCompact) 14.dp else 20.dp, vertical = 10.dp)
                         ) {
                             Text(
-                                text = if (currentStep < 3) "Continue to Step ${currentStep + 2}" else "Create Notebook ✨",
+                                text = if (currentStep < 3) "Next Step" else "Create Notebook",
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp
+                                fontSize = 13.sp
                             )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Icon(
-                                imageVector = if (currentStep < 3) Icons.AutoMirrored.Filled.ArrowForward else Icons.Default.Check,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
+                            if (currentStep < 3) {
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Icon(
+                                    imageVector = Icons.Default.ChevronRight,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
                         }
                     }
                 }
             }
         }
     }
+}
 }
 
 /**

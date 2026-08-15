@@ -217,7 +217,7 @@ fun DrawingCanvas(
 
     // Reset translation if switched back to fixed page mode (unless it's a PDF note, which scrolls)
     LaunchedEffect(canvasMode) {
-        if (canvasMode == "fixed" && templateType != "pdf" && templateType != "docx") {
+        if (canvasMode == "fixed" && templateType != "pdf" && templateType != "scanned_doc" && templateType != "docx") {
             scale = 1f
             offset = Offset.Zero
         }
@@ -236,7 +236,7 @@ fun DrawingCanvas(
         var pdfBitmaps by remember { mutableStateOf<Map<Int, android.graphics.Bitmap>>(emptyMap()) }
 
         LaunchedEffect(pdfFile) {
-            if (pdfFile != null && pdfFile.exists() && (templateType == "pdf" || templateType == "docx")) {
+            if (pdfFile != null && pdfFile.exists() && (templateType == "pdf" || templateType == "scanned_doc" || templateType == "docx")) {
                 withContext(Dispatchers.IO) {
                     try {
                         val input = ParcelFileDescriptor.open(pdfFile, ParcelFileDescriptor.MODE_READ_ONLY)
@@ -295,7 +295,7 @@ fun DrawingCanvas(
 
         // Lazy render/load visible pages, retain rendered bitmaps in memory up to 25 pages
         LaunchedEffect(visiblePages, pdfFile, widthPx, heightPx) {
-            if (pdfFile == null || !pdfFile.exists() || (templateType != "pdf" && templateType != "docx")) {
+            if (pdfFile == null || !pdfFile.exists() || (templateType != "pdf" && templateType != "scanned_doc" && templateType != "docx")) {
                 pdfBitmaps = emptyMap()
                 return@LaunchedEffect
             }
@@ -542,7 +542,7 @@ fun DrawingCanvas(
                     val y = motionEvent.getY(activePointerIndex)
                     
                     val action = motionEvent.actionMasked
-                    val isMultiPage = templateType == "pdf" || templateType == "docx" || pdfPageCount > 1
+                    val isMultiPage = templateType == "pdf" || templateType == "scanned_doc" || templateType == "docx" || pdfPageCount > 1
                     val isNormalizedCoords = true
 
                     // Palm Rejection: If stylus is active, ignore finger touches when stylusOnlyDrawing is enabled
@@ -1325,7 +1325,7 @@ fun DrawingCanvas(
         ) {
             Canvas(modifier = Modifier.fillMaxSize().graphicsLayer { clip = true }) {
             // Apply canvas panning and zooming transformations if infinite mode is active, hand scroll is enabled, or scrollable PDF is shown
-            val isMultiPage = templateType == "pdf" || templateType == "docx" || pdfPageCount > 1
+            val isMultiPage = templateType == "pdf" || templateType == "scanned_doc" || templateType == "docx" || pdfPageCount > 1
             val isNormalizedCoords = true
             withTransform({
                 translate(offset.x, offset.y)
@@ -1382,7 +1382,7 @@ fun DrawingCanvas(
                         }
 
                         // Paper Surface Background
-                        val paperBg = if (templateType == "pdf" || templateType == "docx") Color.White else actualBgColor
+                        val paperBg = if (templateType == "pdf" || templateType == "scanned_doc" || templateType == "docx") Color.White else actualBgColor
                         drawRoundRect(
                             color = paperBg,
                             topLeft = Offset(pageL, topOffset),
@@ -1391,7 +1391,7 @@ fun DrawingCanvas(
                         )
 
                         // PDF/DOCX or Template grid content
-                        if (templateType == "pdf" || templateType == "docx") {
+                        if (templateType == "pdf" || templateType == "scanned_doc" || templateType == "docx") {
                             val bitmap = pdfBitmaps[p]
                             if (bitmap != null && !bitmap.isRecycled) {
                                 drawImage(
@@ -1784,7 +1784,7 @@ fun DrawingCanvas(
         } // End of first Canvas (background and completed strokes)
 
         Canvas(modifier = Modifier.fillMaxSize().graphicsLayer { clip = true }) {
-            val isMultiPage = templateType == "pdf" || templateType == "docx" || pdfPageCount > 1
+            val isMultiPage = templateType == "pdf" || templateType == "scanned_doc" || templateType == "docx" || pdfPageCount > 1
             val isNormalizedCoords = true
             val pivotY = heightPx / 2f
             val visibleTop = pivotY + (-offset.y - pivotY) / scale - 300f

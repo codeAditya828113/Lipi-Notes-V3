@@ -35,22 +35,42 @@ sealed class LipiContentBlock(
 }
 
 /**
- * Audio Recording or Imported Audio File (MP3, M4A, WAV, AAC, etc.)
+ * Audio Bookmark / Timestamp Marker
+ */
+data class AudioBookmark(
+    val bookmarkId: String = UUID.randomUUID().toString(),
+    val audioId: String = "",
+    val timestampMs: Long = 0L,
+    val title: String = "Bookmark",
+    val pageId: Int = 1,
+    val colorHex: String = "#5B6DFF",
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+/**
+ * Audio Recording or Imported Audio File (MP3, M4A, WAV, AAC, OGG, FLAC)
  */
 data class AudioContentBlock(
     override val id: String = UUID.randomUUID().toString(),
     override val page: Int = 1,
     override val x: Float = 50f,
     override val y: Float = 50f,
-    override val width: Float = 280f,
-    override val height: Float = 80f,
+    override val width: Float = 320f,
+    override val height: Float = 110f,
     val audioFilePath: String = "",
     val originalFileName: String = "audio_recording.m4a",
     val title: String = "Voice Note",
     val durationMs: Long = 0L,
+    val fileSize: Long = 0L,
+    val fileFormat: String = "M4A",
     val sampleRate: Int = 44100,
+    val channelCount: Int = 1,
+    val recordingSource: String = "Lipi Mic",
     val transcription: String = "",
     val isRecording: Boolean = false,
+    val isLocked: Boolean = false,
+    val bookmarks: List<AudioBookmark> = emptyList(),
+    val waveformPoints: List<Float> = emptyList(),
     override val zIndex: Int = 1,
     override val createdAt: Long = System.currentTimeMillis()
 ) : LipiContentBlock(id, page, x, y, width, height, zIndex, createdAt) {
@@ -203,8 +223,34 @@ object LipiContentBlockSerializer {
                         put("originalFileName", block.originalFileName)
                         put("title", block.title)
                         put("durationMs", block.durationMs)
+                        put("fileSize", block.fileSize)
+                        put("fileFormat", block.fileFormat)
                         put("sampleRate", block.sampleRate)
+                        put("channelCount", block.channelCount)
+                        put("recordingSource", block.recordingSource)
                         put("transcription", block.transcription)
+                        put("isLocked", block.isLocked)
+
+                        val bmArr = JSONArray()
+                        for (bm in block.bookmarks) {
+                            val bmObj = JSONObject().apply {
+                                put("bookmarkId", bm.bookmarkId)
+                                put("audioId", bm.audioId)
+                                put("timestampMs", bm.timestampMs)
+                                put("title", bm.title)
+                                put("pageId", bm.pageId)
+                                put("colorHex", bm.colorHex)
+                                put("createdAt", bm.createdAt)
+                            }
+                            bmArr.put(bmObj)
+                        }
+                        put("bookmarks", bmArr)
+
+                        val wfArr = JSONArray()
+                        for (wf in block.waveformPoints) {
+                            wfArr.put(wf.toDouble())
+                        }
+                        put("waveformPoints", wfArr)
                     }
                     is WebLinkContentBlock -> {
                         put("url", block.url)
@@ -264,6 +310,33 @@ object LipiContentBlockSerializer {
 
                 when (type) {
                     "audio" -> {
+                        val bmList = mutableListOf<AudioBookmark>()
+                        val bmArr = obj.optJSONArray("bookmarks")
+                        if (bmArr != null) {
+                            for (bIdx in 0 until bmArr.length()) {
+                                val bObj = bmArr.optJSONObject(bIdx) ?: continue
+                                bmList.add(
+                                    AudioBookmark(
+                                        bookmarkId = bObj.optString("bookmarkId", UUID.randomUUID().toString()),
+                                        audioId = bObj.optString("audioId", id),
+                                        timestampMs = bObj.optLong("timestampMs", 0L),
+                                        title = bObj.optString("title", "Bookmark"),
+                                        pageId = bObj.optInt("pageId", page),
+                                        colorHex = bObj.optString("colorHex", "#5B6DFF"),
+                                        createdAt = bObj.optLong("createdAt", System.currentTimeMillis())
+                                    )
+                                )
+                            }
+                        }
+
+                        val wfList = mutableListOf<Float>()
+                        val wfArr = obj.optJSONArray("waveformPoints")
+                        if (wfArr != null) {
+                            for (wIdx in 0 until wfArr.length()) {
+                                wfList.add(wfArr.optDouble(wIdx, 0.0).toFloat())
+                            }
+                        }
+
                         list.add(
                             AudioContentBlock(
                                 id = id,
@@ -276,8 +349,15 @@ object LipiContentBlockSerializer {
                                 originalFileName = obj.optString("originalFileName", "audio.m4a"),
                                 title = obj.optString("title", "Voice Note"),
                                 durationMs = obj.optLong("durationMs", 0L),
+                                fileSize = obj.optLong("fileSize", 0L),
+                                fileFormat = obj.optString("fileFormat", "M4A"),
                                 sampleRate = obj.optInt("sampleRate", 44100),
+                                channelCount = obj.optInt("channelCount", 1),
+                                recordingSource = obj.optString("recordingSource", "Lipi Mic"),
                                 transcription = obj.optString("transcription", ""),
+                                isLocked = obj.optBoolean("isLocked", false),
+                                bookmarks = bmList,
+                                waveformPoints = wfList,
                                 zIndex = zIndex,
                                 createdAt = createdAt
                             )
