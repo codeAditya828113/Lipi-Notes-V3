@@ -29,9 +29,11 @@ object LipiPdfManager {
         override fun entryRemoved(evicted: Boolean, key: String?, oldValue: Bitmap?, newValue: Bitmap?) {
             super.entryRemoved(evicted, key, oldValue, newValue)
             if (evicted && oldValue != null && oldValue != newValue && !oldValue.isRecycled) {
-                try {
-                    oldValue.recycle()
-                } catch (_: Exception) {}
+                if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.Q) {
+                    try {
+                        oldValue.recycle()
+                    } catch (_: Exception) {}
+                }
             }
         }
     }

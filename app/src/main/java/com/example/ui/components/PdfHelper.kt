@@ -54,7 +54,9 @@ object PdfHelper {
             }
             if (bitmap != null && bitmap!!.config == Bitmap.Config.HARDWARE) {
                 val copy = bitmap!!.copy(Bitmap.Config.ARGB_8888, false)
-                bitmap!!.recycle()
+                if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.Q && !bitmap!!.isRecycled) {
+                    try { bitmap!!.recycle() } catch (_: Exception) {}
+                }
                 bitmap = copy
             }
             bitmap
@@ -493,7 +495,9 @@ object PdfHelper {
                                     imageElem.y + imageElem.height
                                 )
                                 canvas.drawBitmap(bitmap, srcRect, dstRect, paint)
-                                bitmap.recycle()
+                                if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.Q && !bitmap.isRecycled) {
+                                    try { bitmap.recycle() } catch (_: Exception) {}
+                                }
                             }
                         } catch (e: Exception) {
                             Log.e("PdfHelper", "Error drawing image in PDF page $pageIndex", e)

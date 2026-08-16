@@ -623,10 +623,26 @@ class NoteViewModel(
 
     fun moveContentBlock(blockId: String, deltaX: Float, deltaY: Float) {
         saveToUndoStack()
-        currentContentBlocks = currentContentBlocks.map {
-            if (it.id == blockId) {
-                it.copyWith(x = (it.x + deltaX).coerceAtLeast(0f), y = (it.y + deltaY).coerceAtLeast(0f))
-            } else it
+        val totalPages = pdfPageCount.coerceAtLeast(1)
+        currentContentBlocks = currentContentBlocks.map { block ->
+            if (block.id == blockId) {
+                var newX = (block.x + deltaX).coerceIn(0f, 540f)
+                var newY = block.y + deltaY
+                var newPage = block.page
+
+                if (newY > 750f && newPage < totalPages) {
+                    newPage += 1
+                    newY -= 800f
+                } else if (newY < 0f && newPage > 1) {
+                    newPage -= 1
+                    newY += 800f
+                }
+
+                newX = newX.coerceIn(0f, 540f)
+                newY = newY.coerceIn(0f, 750f)
+
+                block.copyWith(x = newX, y = newY, page = newPage)
+            } else block
         }
         saveActiveCanvasStrokes()
     }

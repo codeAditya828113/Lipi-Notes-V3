@@ -635,17 +635,29 @@ fun DrawingCanvas(
                         }
 
                         if (touchedImageIndex != null) {
-                            selectedImageIndex = touchedImageIndex
-                            if (isResize) {
-                                activeImageInteraction = "resize"
-                                activeImageCorner = touchedCorner
-                                lastFingerDragPoint = Offset(x, y)
-                                return@pointerInteropFilter true
+                            if (selectedImageIndex == touchedImageIndex) {
+                                if (isResize) {
+                                    activeImageInteraction = "resize"
+                                    activeImageCorner = touchedCorner
+                                    lastFingerDragPoint = Offset(x, y)
+                                    return@pointerInteropFilter true
+                                } else {
+                                    activeImageInteraction = "drag"
+                                    activeImageCorner = null
+                                    lastFingerDragPoint = Offset(x, y)
+                                    return@pointerInteropFilter true
+                                }
                             } else {
-                                activeImageInteraction = "drag"
-                                activeImageCorner = null
-                                lastFingerDragPoint = Offset(x, y)
-                                return@pointerInteropFilter true
+                                downTouchX = x
+                                downTouchY = y
+                                potentialImageIndex = touchedImageIndex
+                                longPressJob?.cancel()
+                                longPressJob = coroutineScope.launch {
+                                    delay(400)
+                                    selectedImageIndex = touchedImageIndex
+                                    activeImageInteraction = "drag"
+                                    lastFingerDragPoint = Offset(x, y)
+                                }
                             }
                         } else if (lassoSelectedStrokes.isEmpty()) {
                             selectedImageIndex = null
@@ -2504,7 +2516,13 @@ fun DrawingCanvas(
                                 onDuplicateBlock = { onDuplicateBlock(block.id) },
                                 onNavigateToNotePage = onNavigateToNotePage,
                                 onOpenPdf = onOpenPdfViewer,
-                                onEditBlock = { editingContentBlock = it },
+                                onEditBlock = { block ->
+                                    if (block is com.example.data.AudioContentBlock) {
+                                        audioManager.activePlayingBlock = block
+                                    } else {
+                                        editingContentBlock = block
+                                    }
+                                },
                                 onDeleteBlock = { onBlockDeleted(it) }
                             )
                         }

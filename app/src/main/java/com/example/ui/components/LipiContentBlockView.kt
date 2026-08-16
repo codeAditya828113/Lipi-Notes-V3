@@ -88,17 +88,27 @@ fun LipiContentBlockItem(
                     )
                 } else Modifier
             )
-            .pointerInput(block.id, isSelected) {
-                detectDragGestures { change, dragAmount ->
-                    change.consume()
-                    val worldDeltaX = (dragAmount.x / (600f * scale)) * 600f
-                    val worldDeltaY = (dragAmount.y / (800f * scale)) * 800f
-                    onMoveBlock(worldDeltaX, worldDeltaY)
-                }
-            }
+            .then(
+                if (isSelected) {
+                    Modifier.pointerInput(block.id) {
+                        detectDragGestures { change, dragAmount ->
+                            change.consume()
+                            val worldDeltaX = (dragAmount.x / (600f * scale)) * 600f
+                            val worldDeltaY = (dragAmount.y / (800f * scale)) * 800f
+                            onMoveBlock(worldDeltaX, worldDeltaY)
+                        }
+                    }
+                } else Modifier
+            )
             .combinedClickable(
-                onClick = { onSelect() },
-                onLongClick = { onEditBlock(block) }
+                onClick = {
+                    // Single click on unselected block keeps it fixed in place
+                },
+                onLongClick = {
+                    if (!isSelected) {
+                        onSelect()
+                    }
+                }
             )
     ) {
         when (block) {
@@ -217,6 +227,12 @@ fun LipiContentBlockItem(
                     ) {
                         Icon(Icons.Default.Delete, contentDescription = "Delete Block", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
                     }
+                    IconButton(
+                        onClick = { onSelect() },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(Icons.Default.Close, contentDescription = "Deselect", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                    }
                 }
             }
 
@@ -291,10 +307,7 @@ fun AudioBlockView(
     Card(
         modifier = Modifier
             .fillMaxSize()
-            .shadow(6.dp, RoundedCornerShape(16.dp))
-            .clickable {
-                audioManager.activePlayingBlock = block
-            },
+            .shadow(6.dp, RoundedCornerShape(16.dp)),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
             containerColor = Color(0xFF0F172A),

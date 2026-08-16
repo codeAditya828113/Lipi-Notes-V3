@@ -6410,7 +6410,7 @@ if (showLayersDialog) {
                 viewModel.lipiAudioManager.activePlayingBlock = updatedBlock
             },
             onDismiss = {
-                // Keep mini player active
+                viewModel.lipiAudioManager.activePlayingBlock = null
             }
         )
     }
