@@ -102,9 +102,56 @@ fun LipiContentBlockItem(
             )
             .combinedClickable(
                 onClick = {
-                    // Single click on unselected block keeps it fixed in place
+                    if (isSelected) {
+                        onEditBlock(block)
+                    } else {
+                        // Single click performs natural action without entering move/selected state
+                        when (block) {
+                            is TextContentBlock -> onEditBlock(block)
+                            is WebLinkContentBlock -> {
+                                try {
+                                    var targetUrl = block.url.trim()
+                                    if (!targetUrl.startsWith("http://") && !targetUrl.startsWith("https://")) {
+                                        targetUrl = "https://$targetUrl"
+                                    }
+                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(targetUrl))
+                                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    context.startActivity(intent)
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "Could not open URL: ${e.message}", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                            is InternalLinkContentBlock -> {
+                                if (block.targetNoteId != -1) {
+                                    onNavigateToNotePage(block.targetNoteId, block.targetPage)
+                                } else {
+                                    Toast.makeText(context, "Link destination not set", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                            is PdfAttachmentContentBlock -> {
+                                if (block.pdfFilePath.isNotBlank()) {
+                                    onOpenPdf(block.pdfFilePath, 1)
+                                } else {
+                                    Toast.makeText(context, "PDF file missing", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                            is PdfPageContentBlock -> {
+                                if (block.pdfFilePath.isNotBlank()) {
+                                    onOpenPdf(block.pdfFilePath, block.pdfPageIndex + 1)
+                                }
+                            }
+                            is AudioContentBlock -> {
+                                if (audioManager.currentPlayingBlockId == block.id && audioManager.isPlaying) {
+                                    audioManager.pausePlayback()
+                                } else {
+                                    audioManager.playAudio(block.id, block.audioFilePath)
+                                }
+                            }
+                        }
+                    }
                 },
                 onLongClick = {
+                    // LONG PRESS is the exclusive trigger to enter move mode and reveal options
                     if (!isSelected) {
                         onSelect()
                     }
@@ -198,63 +245,100 @@ fun LipiContentBlockItem(
             Surface(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
-                    .offset(y = (-44).dp),
+                    .offset(y = (-48).dp),
                 shape = RoundedCornerShape(20.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant,
+                color = MaterialTheme.colorScheme.surface,
                 shadowElevation = 8.dp,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f))
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    IconButton(
+                    // Edit Option Button
+                    FilledTonalButton(
                         onClick = { onEditBlock(block) },
-                        modifier = Modifier.size(32.dp)
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                        modifier = Modifier.height(32.dp)
                     ) {
-                        Icon(Icons.Default.Edit, contentDescription = "Edit Block", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                        Icon(Icons.Default.Edit, contentDescription = "Edit", modifier = Modifier.size(14.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Edit", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
+
+                    // Duplicate
                     IconButton(
                         onClick = { onDuplicateBlock(block) },
                         modifier = Modifier.size(32.dp)
                     ) {
-                        Icon(Icons.Default.ContentCopy, contentDescription = "Duplicate Block", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                        Icon(Icons.Default.ContentCopy, contentDescription = "Duplicate Block", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
                     }
+
+                    // Delete
                     IconButton(
                         onClick = { onDeleteBlock(block) },
                         modifier = Modifier.size(32.dp)
                     ) {
-                        Icon(Icons.Default.Delete, contentDescription = "Delete Block", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+                        Icon(Icons.Default.Delete, contentDescription = "Delete Block", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
                     }
+
+                    // Close / Done
                     IconButton(
                         onClick = { onSelect() },
                         modifier = Modifier.size(32.dp)
                     ) {
-                        Icon(Icons.Default.Close, contentDescription = "Deselect", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                        Icon(Icons.Default.Close, contentDescription = "Deselect", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
                     }
                 }
             }
 
-            // Bottom-Right Corner Resize Handle
+            // Bottom-Right Corner Easy Drag Resize Handle
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .offset(x = 8.dp, y = 8.dp)
-                    .size(24.dp)
+                    .offset(x = 10.dp, y = 10.dp)
+                    .size(32.dp)
                     .background(MaterialTheme.colorScheme.primary, CircleShape)
                     .border(2.dp, Color.White, CircleShape)
                     .pointerInput(block.id) {
                         detectDragGestures { change, dragAmount ->
                             change.consume()
-                            val dw = (dragAmount.x / scale).coerceIn(-20f, 50f)
-                            val dh = (dragAmount.y / scale).coerceIn(-20f, 50f)
-                            onResizeBlock((block.width + dw).coerceAtLeast(80f), (block.height + dh).coerceAtLeast(50f))
+                            val dw = (dragAmount.x / scale).coerceIn(-30f, 60f)
+                            val dh = (dragAmount.y / scale).coerceIn(-30f, 60f)
+                            onResizeBlock(
+                                (block.width + dw).coerceAtLeast(80f),
+                                (block.height + dh).coerceAtLeast(40f)
+                            )
                         }
                     },
                 contentAlignment = Alignment.Center
             ) {
-                Icon(Icons.Default.OpenInFull, contentDescription = "Resize", tint = Color.White, modifier = Modifier.size(12.dp))
+                Icon(Icons.Default.OpenInFull, contentDescription = "Resize Handle", tint = Color.White, modifier = Modifier.size(16.dp))
+            }
+
+            // Bottom-Left Corner Easy Drag Resize Handle
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .offset(x = (-10).dp, y = 10.dp)
+                    .size(28.dp)
+                    .background(MaterialTheme.colorScheme.primary, CircleShape)
+                    .border(2.dp, Color.White, CircleShape)
+                    .pointerInput(block.id) {
+                        detectDragGestures { change, dragAmount ->
+                            change.consume()
+                            val dw = (-dragAmount.x / scale).coerceIn(-30f, 60f)
+                            val dh = (dragAmount.y / scale).coerceIn(-30f, 60f)
+                            onResizeBlock(
+                                (block.width + dw).coerceAtLeast(80f),
+                                (block.height + dh).coerceAtLeast(40f)
+                            )
+                        }
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Default.AspectRatio, contentDescription = "Resize Handle Left", tint = Color.White, modifier = Modifier.size(14.dp))
             }
 
             // Top-Left Corner Handle
@@ -288,7 +372,7 @@ fun LipiContentBlockItem(
 }
 
 /**
- * Audio Content Block Card UI
+ * Audio Content Block Small Pill-Shaped Audio Player UI
  */
 @Composable
 fun AudioBlockView(
@@ -304,226 +388,157 @@ fun AudioBlockView(
 
     var showMenu by remember { mutableStateOf(false) }
 
-    Card(
+    Surface(
         modifier = Modifier
             .fillMaxSize()
-            .shadow(6.dp, RoundedCornerShape(16.dp)),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color(0xFF0F172A),
-            contentColor = Color.White
-        ),
-        border = BorderStroke(1.dp, if (isCurrentPlaying) Color(0xFF3B82F6) else Color(0xFF334155))
+            .shadow(6.dp, CircleShape),
+        shape = CircleShape,
+        color = Color(0xFF0F172A),
+        contentColor = Color.White,
+        border = BorderStroke(1.5.dp, if (isCurrentPlaying) Color(0xFF3B82F6) else Color(0xFF334155))
     ) {
-        Column(
+        Row(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.SpaceBetween
+                .padding(horizontal = 10.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // Header Row: Title, Format Tag, Bookmarks Badge & Overflow Menu
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+            // Play / Pause Circle Button
+            IconButton(
+                onClick = {
+                    if (isCurrentPlaying) {
+                        audioManager.pausePlayback()
+                    } else {
+                        audioManager.playAudio(block.id, block.audioFilePath)
+                    }
+                },
+                modifier = Modifier
+                    .size(32.dp)
+                    .background(
+                        Brush.linearGradient(listOf(Color(0xFF3B82F6), Color(0xFF2563EB))),
+                        CircleShape
+                    )
             ) {
+                Icon(
+                    imageVector = if (isCurrentPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    contentDescription = if (isCurrentPlaying) "Pause" else "Play",
+                    tint = Color.White,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+
+            // Title and Duration / Progress Column
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.Center
+            ) {
+                Text(
+                    text = block.title.ifBlank { block.originalFileName },
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier.weight(1f)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(26.dp)
-                            .background(Color(0xFF3B82F6), CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Mic,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(15.dp)
-                        )
-                    }
+                    Text(
+                        text = if (isCurrentPlaying) {
+                            "${audioManager.formatDuration(position)} / ${audioManager.formatDuration(totalDuration)}"
+                        } else {
+                            audioManager.formatDuration(totalDuration)
+                        },
+                        fontSize = 9.sp,
+                        fontFamily = FontFamily.Monospace,
+                        color = Color(0xFF94A3B8)
+                    )
 
-                    Column {
-                        Text(
-                            text = block.title.ifBlank { block.originalFileName },
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Text(
-                                text = block.fileFormat,
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = Color(0xFF60A5FA)
-                            )
-
-                            if (block.bookmarks.isNotEmpty()) {
-                                Surface(
-                                    shape = CircleShape,
-                                    color = Color(0xFF1E293B)
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(2.dp)
-                                    ) {
-                                        Icon(Icons.Default.Star, contentDescription = null, tint = Color(0xFFFBBF24), modifier = Modifier.size(10.dp))
-                                        Text("${block.bookmarks.size}", fontSize = 9.sp, color = Color.White, fontWeight = FontWeight.Bold)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    // Playback speed pill
                     if (isCurrentPlaying) {
-                        Surface(
-                            onClick = {
-                                val nextSpeed = when (audioManager.playbackSpeed) {
-                                    1.0f -> 1.25f
-                                    1.25f -> 1.5f
-                                    1.5f -> 2.0f
-                                    else -> 1.0f
-                                }
-                                audioManager.setSpeed(nextSpeed)
-                            },
-                            shape = CircleShape,
-                            color = Color(0xFF1E293B),
-                            modifier = Modifier.padding(end = 4.dp)
-                        ) {
-                            Text(
-                                text = "${audioManager.playbackSpeed}x",
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF93C5FD),
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                            )
-                        }
-                    }
-
-                    Box {
-                        IconButton(
-                            onClick = { showMenu = true },
-                            modifier = Modifier.size(26.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.MoreVert,
-                                contentDescription = "Options",
-                                tint = Color(0xFF94A3B8),
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-
-                        DropdownMenu(
-                            expanded = showMenu,
-                            onDismissRequest = { showMenu = false }
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("Open Full Player") },
-                                leadingIcon = { Icon(Icons.Default.OpenInFull, contentDescription = null) },
-                                onClick = {
-                                    showMenu = false
-                                    audioManager.activePlayingBlock = block
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Edit / Rename") },
-                                leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) },
-                                onClick = {
-                                    showMenu = false
-                                    onEdit()
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Delete Audio") },
-                                leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
-                                onClick = {
-                                    showMenu = false
-                                    onDelete()
-                                }
-                            )
-                        }
+                        val progress = if (totalDuration > 0) (position.toFloat() / totalDuration.toFloat()).coerceIn(0f, 1f) else 0f
+                        LinearProgressIndicator(
+                            progress = { progress },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(3.dp)
+                                .clip(CircleShape),
+                            color = Color(0xFF3B82F6),
+                            trackColor = Color(0xFF334155)
+                        )
                     }
                 }
             }
 
-            // Controls & Scrubber Row
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                // Play / Pause Button
-                IconButton(
+            // Optional Speed Badge when playing
+            if (isCurrentPlaying) {
+                Surface(
                     onClick = {
-                        if (isCurrentPlaying) {
-                            audioManager.pausePlayback()
-                        } else {
-                            audioManager.activePlayingBlock = block
-                            audioManager.playAudio(block.id, block.audioFilePath)
+                        val nextSpeed = when (audioManager.playbackSpeed) {
+                            1.0f -> 1.25f
+                            1.25f -> 1.5f
+                            1.5f -> 2.0f
+                            else -> 1.0f
                         }
+                        audioManager.setSpeed(nextSpeed)
                     },
-                    modifier = Modifier
-                        .size(36.dp)
-                        .background(
-                            Brush.linearGradient(listOf(Color(0xFF3B82F6), Color(0xFF2563EB))),
-                            CircleShape
-                        )
+                    shape = CircleShape,
+                    color = Color(0xFF1E293B)
+                ) {
+                    Text(
+                        text = "${audioManager.playbackSpeed}x",
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF93C5FD),
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
+            }
+
+            // Overflow Options Menu
+            Box {
+                IconButton(
+                    onClick = { showMenu = true },
+                    modifier = Modifier.size(24.dp)
                 ) {
                     Icon(
-                        imageVector = if (isCurrentPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                        contentDescription = if (isCurrentPlaying) "Pause" else "Play",
-                        tint = Color.White,
-                        modifier = Modifier.size(22.dp)
+                        imageVector = Icons.Default.MoreVert,
+                        contentDescription = "Options",
+                        tint = Color(0xFF94A3B8),
+                        modifier = Modifier.size(16.dp)
                     )
                 }
 
-                // Slider / Scrubber
-                Column(modifier = Modifier.weight(1f)) {
-                    val progress = if (totalDuration > 0) (position.toFloat() / totalDuration.toFloat()).coerceIn(0f, 1f) else 0f
-                    Slider(
-                        value = progress,
-                        onValueChange = { newProgress ->
-                            val targetMs = (newProgress * totalDuration).toLong()
-                            audioManager.seekTo(targetMs)
-                        },
-                        colors = SliderDefaults.colors(
-                            thumbColor = Color(0xFF60A5FA),
-                            activeTrackColor = Color(0xFF3B82F6),
-                            inactiveTrackColor = Color(0xFF334155)
-                        ),
-                        modifier = Modifier.height(20.dp)
+                DropdownMenu(
+                    expanded = showMenu,
+                    onDismissRequest = { showMenu = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Open Full Player") },
+                        leadingIcon = { Icon(Icons.Default.OpenInFull, contentDescription = null) },
+                        onClick = {
+                            showMenu = false
+                            audioManager.editingAudioBlock = block
+                        }
                     )
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            text = audioManager.formatDuration(position),
-                            fontSize = 10.sp,
-                            fontFamily = FontFamily.Monospace,
-                            color = Color(0xFF94A3B8)
-                        )
-                        Text(
-                            text = audioManager.formatDuration(totalDuration),
-                            fontSize = 10.sp,
-                            fontFamily = FontFamily.Monospace,
-                            color = Color(0xFF94A3B8)
-                        )
-                    }
+                    DropdownMenuItem(
+                        text = { Text("Edit / Rename") },
+                        leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) },
+                        onClick = {
+                            showMenu = false
+                            onEdit()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Delete Audio") },
+                        leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+                        onClick = {
+                            showMenu = false
+                            onDelete()
+                        }
+                    )
                 }
             }
         }

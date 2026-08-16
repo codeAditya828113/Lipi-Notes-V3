@@ -30,6 +30,7 @@ import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
@@ -931,6 +932,7 @@ class NoteViewModel(
         private set
     var lastRecordedFilePath by mutableStateOf<String?>(null)
         private set
+    val savedAudioRecordings = mutableStateListOf<com.example.data.RecordedAudioItem>()
     var transcriptionResult by mutableStateOf<String?>(null)
         private set
     var liveSpeechText by mutableStateOf("")
@@ -939,6 +941,16 @@ class NoteViewModel(
         private set
     var showAudioRecordingOverlay by mutableStateOf(false)
         private set
+
+    var showAudioPlayerLibraryDialog by mutableStateOf(false)
+
+    fun openAudioPlayerLibrary() {
+        showAudioPlayerLibraryDialog = true
+    }
+
+    fun closeAudioPlayerLibrary() {
+        showAudioPlayerLibraryDialog = false
+    }
 
     var showDocumentScannerOverlay by mutableStateOf(false)
         private set
@@ -4138,6 +4150,32 @@ Here is your complete guide to all features and capabilities available in the ap
                         val fallbackText = if (liveSpeechText.isNotBlank()) liveSpeechText else "Audio transcript recorded."
                         transcriptionResult = fallbackText
                         saveAudioTranscriptionResult(fallbackText)
+                    } finally {
+                        val file = File(path)
+                        val timeStr = java.text.SimpleDateFormat("MMM dd, HH:mm", java.util.Locale.US).format(java.util.Date())
+                        var finalPath = path
+                        if (file.exists() && file.length() > 0) {
+                            val storageDir = lipiAudioManager.getAudioStorageDir()
+                            if (file.parentFile?.absolutePath != storageDir.absolutePath) {
+                                try {
+                                    val destFile = File(storageDir, "rec_${System.currentTimeMillis()}_${file.name}")
+                                    file.copyTo(destFile, overwrite = true)
+                                    finalPath = destFile.absolutePath
+                                } catch (e: Exception) {
+                                    Log.e("NoteViewModel", "Copy audio file failed", e)
+                                }
+                            }
+                        }
+                        val finalFile = File(finalPath)
+                        val item = com.example.data.RecordedAudioItem(
+                            filePath = finalPath,
+                            fileName = if (finalFile.exists()) finalFile.name else "VoiceNote.m4a",
+                            title = "Voice Recording — $timeStr",
+                            timestamp = System.currentTimeMillis()
+                        )
+                        if (savedAudioRecordings.none { rec -> rec.filePath == finalPath }) {
+                            savedAudioRecordings.add(0, item)
+                        }
                     }
                 }
             }
@@ -4157,6 +4195,29 @@ Here is your complete guide to all features and capabilities available in the ap
                 selectedNote = updated
             }
         }
+    }
+
+    fun insertAudioBlockFromLastRecording(targetPath: String? = null, customTitle: String? = null): Boolean {
+        val path = targetPath ?: lastRecordedFilePath ?: savedAudioRecordings.firstOrNull()?.filePath ?: return false
+        val file = File(path)
+        if (!file.exists() && path != "SIMULATED_MIC") return false
+
+        val timeStr = java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(java.util.Date())
+        val activePage = pdfPage
+        val newBlock = com.example.data.AudioContentBlock(
+            page = activePage,
+            x = 60f,
+            y = 120f,
+            width = 240f,
+            height = 48f,
+            audioFilePath = path,
+            originalFileName = if (file.exists()) file.name else "Voice Note.3gp",
+            title = customTitle?.ifBlank { null } ?: "Voice Note — $timeStr",
+            durationMs = 0L,
+            fileSize = if (file.exists()) file.length() else 0L
+        )
+        addContentBlock(newBlock)
+        return true
     }
 
     fun appendTextToSelectedNote(additionalText: String) {

@@ -86,8 +86,8 @@ fun LipiInsertMenuSheet(
                         page = activePage,
                         x = 60f,
                         y = 100f,
-                        width = 280f,
-                        height = 84f,
+                        width = 240f,
+                        height = 48f,
                         audioFilePath = imported.localFilePath,
                         originalFileName = imported.originalFileName,
                         title = imported.title,
@@ -346,16 +346,18 @@ fun LipiInsertMenuSheet(
                     page = activePage,
                     x = 60f,
                     y = 100f,
-                    width = 280f,
-                    height = 84f,
+                    width = 240f,
+                    height = 48f,
                     audioFilePath = result.filePath,
                     originalFileName = result.fileName,
                     title = title.ifBlank { "Voice Note" },
                     durationMs = result.durationMs
                 )
                 viewModel.addContentBlock(newBlock)
+                Toast.makeText(context, "Voice recording saved to Audio Player section!", Toast.LENGTH_SHORT).show()
                 showRecordAudioDialog = false
                 onDismiss()
+                viewModel.openAudioPlayerLibrary()
             }
         )
     }
@@ -366,14 +368,16 @@ fun LipiInsertMenuSheet(
             onDismiss = { showWebLinkDialog = false },
             onConfirm = { url, title ->
                 val activePage = viewModel.pdfPage
+                val displayTitle = title.ifBlank { url }
+                val (autoW, autoH) = calculateAutoBlockDimensions(url = url, title = displayTitle, isWebLink = true)
                 val newBlock = WebLinkContentBlock(
                     page = activePage,
                     x = 60f,
                     y = 120f,
-                    width = 260f,
-                    height = 70f,
+                    width = autoW,
+                    height = autoH,
                     url = url,
-                    title = title.ifBlank { url }
+                    title = displayTitle
                 )
                 viewModel.addContentBlock(newBlock)
                 showWebLinkDialog = false
@@ -391,16 +395,18 @@ fun LipiInsertMenuSheet(
             onDismiss = { showInternalLinkDialog = false },
             onConfirm = { targetNoteId, targetNoteTitle, page, label ->
                 val activePage = viewModel.pdfPage
+                val displayLabel = label.ifBlank { "$targetNoteTitle (P$page)" }
+                val (autoW, autoH) = calculateAutoBlockDimensions(title = displayLabel, isInternalLink = true)
                 val newBlock = InternalLinkContentBlock(
                     page = activePage,
                     x = 60f,
                     y = 120f,
-                    width = 250f,
-                    height = 68f,
+                    width = autoW,
+                    height = autoH,
                     targetNoteId = targetNoteId,
                     targetNoteTitle = targetNoteTitle,
                     targetPage = page,
-                    label = label.ifBlank { "$targetNoteTitle (P$page)" }
+                    label = displayLabel
                 )
                 viewModel.addContentBlock(newBlock)
                 showInternalLinkDialog = false
@@ -415,12 +421,13 @@ fun LipiInsertMenuSheet(
             onDismiss = { showTextBoxDialog = false },
             onConfirm = { text ->
                 val activePage = viewModel.pdfPage
+                val (autoW, autoH) = calculateAutoBlockDimensions(text = text, isTextBox = true)
                 val newBlock = TextContentBlock(
                     page = activePage,
                     x = 60f,
                     y = 120f,
-                    width = 240f,
-                    height = 120f,
+                    width = autoW,
+                    height = autoH,
                     text = text,
                     backgroundColor = 0xFFFFFFFFL,
                     textColor = 0xFF1E293BL,
@@ -439,12 +446,13 @@ fun LipiInsertMenuSheet(
             onDismiss = { showStickyTextDialog = false },
             onConfirm = { text, bgColor, textColor ->
                 val activePage = viewModel.pdfPage
+                val (autoW, autoH) = calculateAutoBlockDimensions(text = text, isStickyNote = true)
                 val newBlock = TextContentBlock(
                     page = activePage,
                     x = 60f,
                     y = 120f,
-                    width = 220f,
-                    height = 140f,
+                    width = autoW,
+                    height = autoH,
                     text = text,
                     backgroundColor = bgColor,
                     textColor = textColor,
@@ -1289,7 +1297,15 @@ fun LipiContentBlockEditDialog(
                 confirmButton = {
                     Button(
                         onClick = {
-                            onSave(block.copy(url = url.trim(), title = title.trim()))
+                            val trimmedUrl = url.trim()
+                            val trimmedTitle = title.trim()
+                            val (autoW, autoH) = calculateAutoBlockDimensions(url = trimmedUrl, title = trimmedTitle, isWebLink = true)
+                            onSave(block.copy(
+                                url = trimmedUrl,
+                                title = trimmedTitle,
+                                width = autoW,
+                                height = autoH
+                            ))
                         },
                         enabled = url.isNotBlank()
                     ) {
@@ -1347,7 +1363,14 @@ fun LipiContentBlockEditDialog(
                 },
                 confirmButton = {
                     Button(onClick = {
-                        onSave(block.copy(label = label.trim(), targetPage = targetPage))
+                        val trimmedLabel = label.trim()
+                        val (autoW, autoH) = calculateAutoBlockDimensions(title = trimmedLabel, isInternalLink = true)
+                        onSave(block.copy(
+                            label = trimmedLabel,
+                            targetPage = targetPage,
+                            width = autoW,
+                            height = autoH
+                        ))
                     }) {
                         Text("Save")
                     }
@@ -1372,19 +1395,31 @@ fun LipiContentBlockEditDialog(
 
             AlertDialog(
                 onDismissRequest = onDismiss,
-                title = { Text("Edit Sticky Note", fontWeight = FontWeight.Bold) },
+                title = { Text(if (block.isStickyNote) "Edit Sticky Note" else "Edit Text Box", fontWeight = FontWeight.Bold) },
                 text = {
                     OutlinedTextField(
                         value = text,
                         onValueChange = { text = it },
                         minLines = 4,
-                        maxLines = 6,
+                        maxLines = 8,
                         modifier = Modifier.fillMaxWidth()
                     )
                 },
                 confirmButton = {
                     Button(
-                        onClick = { onSave(block.copy(text = text.trim())) },
+                        onClick = {
+                            val trimmedText = text.trim()
+                            val (autoW, autoH) = calculateAutoBlockDimensions(
+                                text = trimmedText,
+                                isStickyNote = block.isStickyNote,
+                                isTextBox = !block.isStickyNote
+                            )
+                            onSave(block.copy(
+                                text = trimmedText,
+                                width = autoW,
+                                height = autoH
+                            ))
+                        },
                         enabled = text.isNotBlank()
                     ) {
                         Text("Save")

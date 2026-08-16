@@ -847,10 +847,56 @@ private class DocumentImageAnalyzer(
                     )
                 )
             } else {
-                val normTL = Offset(minX.toFloat() / sampleW, minY.toFloat() / sampleH)
-                val normTR = Offset(maxX.toFloat() / sampleW, minY.toFloat() / sampleH)
-                val normBR = Offset(maxX.toFloat() / sampleW, maxY.toFloat() / sampleH)
-                val normBL = Offset(minX.toFloat() / sampleW, maxY.toFloat() / sampleH)
+                var bestTLX = minX
+                var bestTLY = minY
+                var minSum = Int.MAX_VALUE
+
+                var bestTRX = maxX
+                var bestTRY = minY
+                var maxDiff = Int.MIN_VALUE
+
+                var bestBRX = maxX
+                var bestBRY = maxY
+                var maxSum = Int.MIN_VALUE
+
+                var bestBLX = minX
+                var bestBLY = maxY
+                var minDiff = Int.MAX_VALUE
+
+                for (y in minY..maxY) {
+                    for (x in minX..maxX) {
+                        if (edgeMag[y * sampleW + x] >= edgeThreshold) {
+                            val sum = x + y
+                            val diff = x - y
+
+                            if (sum < minSum) {
+                                minSum = sum
+                                bestTLX = x
+                                bestTLY = y
+                            }
+                            if (diff > maxDiff) {
+                                maxDiff = diff
+                                bestTRX = x
+                                bestTRY = y
+                            }
+                            if (sum > maxSum) {
+                                maxSum = sum
+                                bestBRX = x
+                                bestBRY = y
+                            }
+                            if (diff < minDiff) {
+                                minDiff = diff
+                                bestBLX = x
+                                bestBLY = y
+                            }
+                        }
+                    }
+                }
+
+                val normTL = Offset((bestTLX.toFloat() / sampleW).coerceIn(0.02f, 0.98f), (bestTLY.toFloat() / sampleH).coerceIn(0.02f, 0.98f))
+                val normTR = Offset((bestTRX.toFloat() / sampleW).coerceIn(0.02f, 0.98f), (bestTRY.toFloat() / sampleH).coerceIn(0.02f, 0.98f))
+                val normBR = Offset((bestBRX.toFloat() / sampleW).coerceIn(0.02f, 0.98f), (bestBRY.toFloat() / sampleH).coerceIn(0.02f, 0.98f))
+                val normBL = Offset((bestBLX.toFloat() / sampleW).coerceIn(0.02f, 0.98f), (bestBLY.toFloat() / sampleH).coerceIn(0.02f, 0.98f))
                 val currentCorners = listOf(normTL, normTR, normBR, normBL)
 
                 val prev = previousCorners
@@ -962,8 +1008,29 @@ private fun CameraScannerScreen(
                     statusText = "Cleaning document..."
                     scope.launch(Dispatchers.IO) {
                         try {
-                            val bitmap = BitmapFactory.decodeFile(photoFile.absolutePath)
-                            if (bitmap != null && bitmap.width > 0 && bitmap.height > 0) {
+                            val rawBitmap = BitmapFactory.decodeFile(photoFile.absolutePath)
+                            var bitmap = rawBitmap
+                            if (rawBitmap != null && rawBitmap.width > 0 && rawBitmap.height > 0) {
+                                try {
+                                    val exif = android.media.ExifInterface(photoFile.absolutePath)
+                                    val orientation = exif.getAttributeInt(
+                                        android.media.ExifInterface.TAG_ORIENTATION,
+                                        android.media.ExifInterface.ORIENTATION_UNDEFINED
+                                    )
+                                    val rotationDegrees = when (orientation) {
+                                        android.media.ExifInterface.ORIENTATION_ROTATE_90 -> 90
+                                        android.media.ExifInterface.ORIENTATION_ROTATE_180 -> 180
+                                        android.media.ExifInterface.ORIENTATION_ROTATE_270 -> 270
+                                        else -> 0
+                                    }
+                                    if (rotationDegrees != 0) {
+                                        val matrix = Matrix().apply { postRotate(rotationDegrees.toFloat()) }
+                                        bitmap = Bitmap.createBitmap(rawBitmap, 0, 0, rawBitmap.width, rawBitmap.height, matrix, true)
+                                    }
+                                } catch (e: Exception) {
+                                    Log.w("LipiScanner", "Exif read failed: ${e.message}")
+                                }
+
                                 Log.d("LipiScanner", "Captured real document photo: ${bitmap.width}x${bitmap.height}")
                                 val corners = detectedCorners
                                 val cropped = if (corners != null && corners.size == 4) {
@@ -1009,6 +1076,13 @@ private fun CameraScannerScreen(
         )
     }
 
+    var boundCameraProvider by remember { mutableStateOf<ProcessCameraProvider?>(null) }
+    DisposableEffect(Unit) {
+        onDispose {
+            boundCameraProvider?.unbindAll()
+        }
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
         // CameraX Preview View with ImageAnalysis
         AndroidView(
@@ -1021,6 +1095,7 @@ private fun CameraScannerScreen(
                     cameraProviderFuture.addListener({
                         try {
                             val cameraProvider = cameraProviderFuture.get()
+                            boundCameraProvider = cameraProvider
                             val cameraSelector = if (isFrontCamera) CameraSelector.DEFAULT_FRONT_CAMERA else CameraSelector.DEFAULT_BACK_CAMERA
 
                             if (cameraProvider.hasCamera(cameraSelector)) {

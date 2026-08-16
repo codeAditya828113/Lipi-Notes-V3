@@ -354,6 +354,133 @@ fun AudioRecordingOverlay(
 
                         Spacer(modifier = Modifier.height(16.dp))
 
+                        // 3.5. Recorded Audio File Preview & Direct Insertion Card
+                        val recordedPath = viewModel.lastRecordedFilePath
+                        if (!viewModel.isRecording && !recordedPath.isNullOrBlank()) {
+                            val audioManager = viewModel.lipiAudioManager
+                            val isOverlayPlaying = audioManager.currentPlayingBlockId == "overlay_preview" && audioManager.isPlaying
+                            val overlayPos = if (audioManager.currentPlayingBlockId == "overlay_preview") audioManager.playbackPositionMs else 0L
+                            val overlayDur = if (audioManager.currentPlayingBlockId == "overlay_preview") audioManager.playbackDurationMs else 0L
+
+                            Surface(
+                                shape = RoundedCornerShape(16.dp),
+                                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 6.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(14.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(32.dp)
+                                                    .background(MaterialTheme.colorScheme.primary, CircleShape),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.GraphicEq,
+                                                    contentDescription = null,
+                                                    tint = MaterialTheme.colorScheme.onPrimary,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                            }
+                                            Column {
+                                                Text(
+                                                    text = "Recorded Audio File Saved",
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 13.sp,
+                                                    color = MaterialTheme.colorScheme.onSurface
+                                                )
+                                                Text(
+                                                    text = if (isOverlayPlaying) {
+                                                        "${audioManager.formatDuration(overlayPos)} / ${audioManager.formatDuration(overlayDur)}"
+                                                    } else {
+                                                        "Play to listen or insert directly into note"
+                                                    },
+                                                    fontSize = 11.sp,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                        }
+
+                                        // Play / Pause Preview Button
+                                        IconButton(
+                                            onClick = {
+                                                if (isOverlayPlaying) {
+                                                    audioManager.pausePlayback()
+                                                } else {
+                                                    audioManager.playAudio("overlay_preview", recordedPath)
+                                                }
+                                            },
+                                            modifier = Modifier
+                                                .size(36.dp)
+                                                .background(MaterialTheme.colorScheme.primary, CircleShape)
+                                        ) {
+                                            Icon(
+                                                imageVector = if (isOverlayPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                                contentDescription = if (isOverlayPlaying) "Pause" else "Play",
+                                                tint = MaterialTheme.colorScheme.onPrimary,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(10.dp))
+
+                                    // Action Buttons Row
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Button(
+                                            onClick = {
+                                                val inserted = viewModel.insertAudioBlockFromLastRecording()
+                                                if (inserted) {
+                                                    Toast.makeText(context, "Inserted audio player card into Notes page", Toast.LENGTH_SHORT).show()
+                                                    onDismiss()
+                                                    viewModel.openAudioPlayerLibrary()
+                                                } else {
+                                                    Toast.makeText(context, "No audio recording available", Toast.LENGTH_SHORT).show()
+                                                }
+                                            },
+                                            modifier = Modifier.weight(1.2f),
+                                            shape = RoundedCornerShape(16.dp),
+                                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                                        ) {
+                                            Icon(Icons.Default.AudioFile, contentDescription = null, modifier = Modifier.size(16.dp))
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text("Insert into Note", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                        }
+
+                                        OutlinedButton(
+                                            onClick = {
+                                                onDismiss()
+                                                viewModel.openAudioPlayerLibrary()
+                                            },
+                                            modifier = Modifier.weight(1f),
+                                            shape = RoundedCornerShape(16.dp)
+                                        ) {
+                                            Icon(Icons.Default.Headphones, contentDescription = null, modifier = Modifier.size(16.dp))
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text("Player Section", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                        }
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(12.dp))
+                        }
+
                         // 4. Realtime Speech Preview or Final Transcription Box
                         val currentText = when {
                             viewModel.isRecording && viewModel.liveSpeechText.isNotBlank() -> viewModel.liveSpeechText

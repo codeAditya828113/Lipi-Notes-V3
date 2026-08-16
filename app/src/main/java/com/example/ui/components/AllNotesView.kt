@@ -303,10 +303,15 @@ fun RedesignedAllNotesView(
         )
     }
 
+    var rootWindowBounds by remember { mutableStateOf(Rect.Zero) }
+
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
             .background(LipiBgLight)
+            .onGloballyPositioned { coordinates ->
+                rootWindowBounds = coordinates.boundsInWindow()
+            }
     ) {
         val availableWidthDp = maxWidth
         val availableHeightDp = maxHeight
@@ -470,7 +475,15 @@ fun RedesignedAllNotesView(
                                     isHoveredForSwap = isHoveredForSwap,
                                     onDragStart = { localOffset ->
                                         draggedNote = note
-                                        dragTouchPosition = localOffset
+                                        val bounds = noteBoundsMap[note.id]
+                                        if (bounds != null) {
+                                            dragTouchPosition = Offset(
+                                                bounds.left + localOffset.x,
+                                                bounds.top + localOffset.y
+                                            )
+                                        } else {
+                                            dragTouchPosition = localOffset
+                                        }
                                     },
                                     onDrag = { dragAmount ->
                                         dragTouchPosition += dragAmount
@@ -541,13 +554,19 @@ fun RedesignedAllNotesView(
 
         // Floating Drag Overlay / Ghost Card Preview
         if (draggedNote != null) {
+            val density = androidx.compose.ui.platform.LocalDensity.current
+            val overlayWidthPx = with(density) { 220.dp.toPx() }
+            val overlayHeightPx = with(density) { 140.dp.toPx() }
+            val relativeX = dragTouchPosition.x - rootWindowBounds.left
+            val relativeY = dragTouchPosition.y - rootWindowBounds.top
+
             Box(modifier = Modifier.fillMaxSize()) {
                 Surface(
                     modifier = Modifier
                         .offset {
                             IntOffset(
-                                (dragTouchPosition.x - 110.dp.toPx()).roundToInt(),
-                                (dragTouchPosition.y - 70.dp.toPx()).roundToInt()
+                                (relativeX - overlayWidthPx / 2f).roundToInt(),
+                                (relativeY - overlayHeightPx / 2f).roundToInt()
                             )
                         }
                         .width(220.dp)
@@ -560,14 +579,18 @@ fun RedesignedAllNotesView(
                         .shadow(24.dp, RoundedCornerShape(24.dp)),
                     shape = RoundedCornerShape(24.dp),
                     color = LipiCardWhite,
-                    border = BorderStroke(2.dp, if (activeHoveredFolder != null) LipiSuccess else LipiPrimary)
+                    border = BorderStroke(
+                        width = 2.dp,
+                        color = if (activeHoveredFolder != null) LipiSuccess else if (activeHoveredSwapNoteId != null) LipiAccent else LipiPrimary
+                    )
                 ) {
                     Box(modifier = Modifier.fillMaxSize()) {
                         NoteCardPreview(note = draggedNote!!, modifier = Modifier.fillMaxSize())
                         
+                        val hoverSwapNote = filteredNotes.find { it.id == activeHoveredSwapNoteId }
                         Surface(
                             shape = RoundedCornerShape(12.dp),
-                            color = if (activeHoveredFolder != null) LipiSuccess else LipiPrimary,
+                            color = if (activeHoveredFolder != null) LipiSuccess else if (hoverSwapNote != null) LipiAccent else LipiPrimary,
                             modifier = Modifier
                                 .align(Alignment.BottomCenter)
                                 .padding(bottom = 10.dp)
@@ -578,13 +601,17 @@ fun RedesignedAllNotesView(
                                 horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 Icon(
-                                    imageVector = if (activeHoveredFolder != null) Icons.Default.Folder else Icons.Default.DragIndicator,
+                                    imageVector = if (activeHoveredFolder != null) Icons.Default.Folder else if (hoverSwapNote != null) Icons.Default.SwapVert else Icons.Default.DragIndicator,
                                     contentDescription = null,
                                     tint = Color.White,
                                     modifier = Modifier.size(14.dp)
                                 )
                                 Text(
-                                    text = if (activeHoveredFolder != null) "Drop to move to $activeHoveredFolder" else "Moving '${draggedNote!!.title}'",
+                                    text = when {
+                                        activeHoveredFolder != null -> "Move to folder: $activeHoveredFolder"
+                                        hoverSwapNote != null -> "Reorder before '${hoverSwapNote.title}'"
+                                        else -> "Moving '${draggedNote!!.title}'"
+                                    },
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = Color.White

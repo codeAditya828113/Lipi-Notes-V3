@@ -3911,6 +3911,13 @@ fun NoteEditorCanvas(
         )
     }
 
+    if (viewModel.showAudioPlayerLibraryDialog) {
+        AudioPlayerLibraryDialog(
+            viewModel = viewModel,
+            onDismiss = { viewModel.closeAudioPlayerLibrary() }
+        )
+    }
+
     if (showHyperlinkDialog) {
         val allNotesList by viewModel.allNotes.collectAsState()
         var linkTypeTab by remember { mutableStateOf(0) }
@@ -4840,6 +4847,21 @@ if (showLayersDialog) {
                             imageVector = if (viewModel.isRecording) Icons.Default.MicOff else Icons.Default.Mic,
                             contentDescription = "Audio Transcription",
                             tint = if (viewModel.isRecording) Color(0xFFEF4444) else Color(0xFF475569),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+
+                    // Audio Player & Library Hub (Just beside mic icon)
+                    IconButton(
+                        onClick = { viewModel.openAudioPlayerLibrary() },
+                        modifier = Modifier
+                            .size(32.dp)
+                            .testTag("action_bar_audio_player_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Headphones,
+                            contentDescription = "Audio Player & Library",
+                            tint = if (viewModel.showAudioPlayerLibraryDialog) Color(0xFF3B82F6) else Color(0xFF475569),
                             modifier = Modifier.size(18.dp)
                         )
                     }
@@ -6354,8 +6376,8 @@ if (showLayersDialog) {
                             page = activePage,
                             x = 60f,
                             y = 120f,
-                            width = 320f,
-                            height = 110f,
+                            width = 240f,
+                            height = 48f,
                             audioFilePath = result.filePath,
                             originalFileName = result.fileName,
                             title = "Voice Note — $timeStr",
@@ -6365,6 +6387,8 @@ if (showLayersDialog) {
                             waveformPoints = result.waveformPoints
                         )
                         viewModel.addContentBlock(newBlock)
+                        android.widget.Toast.makeText(context, "Voice recording saved to Audio Player section!", android.widget.Toast.LENGTH_SHORT).show()
+                        viewModel.openAudioPlayerLibrary()
                     }
                 },
                 onCancelRecording = {
@@ -6386,7 +6410,7 @@ if (showLayersDialog) {
                 block = activePlayingBlock,
                 audioManager = viewModel.lipiAudioManager,
                 onExpandFullPlayer = {
-                    // Triggers FullAudioPlayerDialog via activePlayingBlock
+                    viewModel.lipiAudioManager.editingAudioBlock = activePlayingBlock
                 },
                 onCloseMiniPlayer = {
                     viewModel.lipiAudioManager.activePlayingBlock = null
@@ -6397,20 +6421,20 @@ if (showLayersDialog) {
     }
 
     // Full Audio Player Dialog
-    val fullPlayerBlock = viewModel.lipiAudioManager.activePlayingBlock
-    if (fullPlayerBlock != null && !viewModel.lipiAudioManager.isRecording) {
+    val editingAudioBlock = viewModel.lipiAudioManager.editingAudioBlock
+    if (editingAudioBlock != null && !viewModel.lipiAudioManager.isRecording) {
         FullAudioPlayerDialog(
-            block = fullPlayerBlock,
+            block = editingAudioBlock,
             audioManager = viewModel.lipiAudioManager,
             onNavigateToPage = { page ->
                 viewModel.setPDFPage(page)
             },
             onUpdateBlock = { updatedBlock ->
                 viewModel.updateContentBlock(updatedBlock)
-                viewModel.lipiAudioManager.activePlayingBlock = updatedBlock
+                viewModel.lipiAudioManager.editingAudioBlock = updatedBlock
             },
             onDismiss = {
-                viewModel.lipiAudioManager.activePlayingBlock = null
+                viewModel.lipiAudioManager.editingAudioBlock = null
             }
         )
     }

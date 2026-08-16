@@ -2518,7 +2518,7 @@ fun DrawingCanvas(
                                 onOpenPdf = onOpenPdfViewer,
                                 onEditBlock = { block ->
                                     if (block is com.example.data.AudioContentBlock) {
-                                        audioManager.activePlayingBlock = block
+                                        audioManager.editingAudioBlock = block
                                     } else {
                                         editingContentBlock = block
                                     }

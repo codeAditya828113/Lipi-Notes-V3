@@ -48,6 +48,19 @@ data class AudioBookmark(
 )
 
 /**
+ * Recorded Audio Item stored in user's audio recordings history
+ */
+data class RecordedAudioItem(
+    val id: String = UUID.randomUUID().toString(),
+    val filePath: String,
+    val fileName: String,
+    val title: String = "Recording",
+    val timestamp: Long = System.currentTimeMillis(),
+    val durationMs: Long = 0L,
+    val transcription: String = ""
+)
+
+/**
  * Audio Recording or Imported Audio File (MP3, M4A, WAV, AAC, OGG, FLAC)
  */
 data class AudioContentBlock(
@@ -462,4 +475,58 @@ object LipiContentBlockSerializer {
         }
         return list
     }
+}
+
+/**
+ * Dynamic sizing calculation for Sticky Notes, Text Boxes, and Hyperlinks based on content length.
+ */
+fun calculateAutoBlockDimensions(
+    text: String = "",
+    url: String = "",
+    title: String = "",
+    isStickyNote: Boolean = false,
+    isTextBox: Boolean = false,
+    isWebLink: Boolean = false,
+    isInternalLink: Boolean = false
+): Pair<Float, Float> {
+    if (isWebLink) {
+        val display = title.ifBlank { url }.trim()
+        val maxLen = maxOf(display.length, url.trim().length, 14)
+        val w = (maxLen * 9.5f + 95f).coerceIn(200f, 420f)
+        return Pair(w, 72f)
+    }
+    if (isInternalLink) {
+        val display = title.ifBlank { "Note Link" }.trim()
+        val w = (display.length * 10f + 90f).coerceIn(180f, 380f)
+        return Pair(w, 64f)
+    }
+    if (isStickyNote) {
+        val cleanText = text.trim().ifBlank { "Sticky Note" }
+        val linesList = cleanText.split("\n")
+        var estimatedLines = 0
+        var maxLineLen = 10
+        linesList.forEach { line ->
+            val len = line.length
+            if (len > maxLineLen) maxLineLen = len
+            estimatedLines += maxOf(1, Math.ceil(len / 22.0).toInt())
+        }
+        val w = (maxLineLen * 9.5f + 50f).coerceIn(160f, 360f)
+        val h = (estimatedLines * 24f + 48f).coerceIn(100f, 380f)
+        return Pair(w, h)
+    }
+    if (isTextBox) {
+        val cleanText = text.trim().ifBlank { "Text Box" }
+        val linesList = cleanText.split("\n")
+        var estimatedLines = 0
+        var maxLineLen = 8
+        linesList.forEach { line ->
+            val len = line.length
+            if (len > maxLineLen) maxLineLen = len
+            estimatedLines += maxOf(1, Math.ceil(len / 24.0).toInt())
+        }
+        val w = (maxLineLen * 9.5f + 40f).coerceIn(140f, 380f)
+        val h = (estimatedLines * 22f + 32f).coerceIn(50f, 360f)
+        return Pair(w, h)
+    }
+    return Pair(220f, 120f)
 }

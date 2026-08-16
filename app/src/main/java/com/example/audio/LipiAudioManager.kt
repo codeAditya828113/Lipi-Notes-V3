@@ -86,6 +86,7 @@ class LipiAudioManager(private val context: Context) {
     var currentPlayingBlockId by mutableStateOf<String?>(null)
         private set
     var activePlayingBlock by mutableStateOf<com.example.data.AudioContentBlock?>(null)
+    var editingAudioBlock by mutableStateOf<com.example.data.AudioContentBlock?>(null)
     var playbackPositionMs by mutableLongStateOf(0L)
         private set
     var playbackDurationMs by mutableLongStateOf(0L)
@@ -508,7 +509,7 @@ class LipiAudioManager(private val context: Context) {
 
     fun getAudioStorageStats(): AudioStorageStats {
         val dir = getAudioStorageDir()
-        val files = dir.listFiles()?.filter { it.isFile && (it.extension in listOf("m4a", "mp3", "wav", "aac", "ogg", "flac")) } ?: emptyList()
+        val files = dir.listFiles()?.filter { it.isFile && (it.extension.lowercase() in listOf("m4a", "mp3", "wav", "aac", "ogg", "flac")) } ?: emptyList()
         val total = files.sumOf { it.length() }
         return AudioStorageStats(
             totalBytes = total,

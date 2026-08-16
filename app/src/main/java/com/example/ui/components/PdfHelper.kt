@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
+import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.RectF
@@ -702,7 +703,7 @@ object PdfHelper {
     }
 
     /**
-     * Applies document scan enhancement filters: Auto, Grayscale, Black & White, Color, Original
+     * Applies high-legibility document scan enhancement filters: Auto, Grayscale, Black & White, Color, Original
      */
     fun applyScanFilter(bitmap: Bitmap, filterName: String): Bitmap {
         if (filterName.equals("Original", ignoreCase = true)) return bitmap
@@ -711,38 +712,52 @@ object PdfHelper {
         val height = bitmap.height
         val result = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(result)
-        val paint = Paint().apply { isAntiAlias = true; isFilterBitmap = true }
+        val paint = Paint().apply {
+            isAntiAlias = true
+            isFilterBitmap = true
+            isDither = true
+        }
 
         when (filterName.lowercase()) {
             "grayscale" -> {
-                val cm = android.graphics.ColorMatrix()
-                cm.setSaturation(0f)
-                paint.colorFilter = android.graphics.ColorMatrixColorFilter(cm)
-                canvas.drawBitmap(bitmap, 0f, 0f, paint)
-            }
-            "black & white", "bw" -> {
-                // High contrast b&w filter matrix
+                // High contrast grayscale filter whitening paper background and clarifying text
                 val cm = android.graphics.ColorMatrix(floatArrayOf(
-                    1.5f, 1.5f, 1.5f, 0f, -160f,
-                    1.5f, 1.5f, 1.5f, 0f, -160f,
-                    1.5f, 1.5f, 1.5f, 0f, -160f,
+                    0.35f, 0.55f, 0.10f, 0f, 15f,
+                    0.35f, 0.55f, 0.10f, 0f, 15f,
+                    0.35f, 0.55f, 0.10f, 0f, 15f,
                     0f, 0f, 0f, 1f, 0f
                 ))
                 paint.colorFilter = android.graphics.ColorMatrixColorFilter(cm)
                 canvas.drawBitmap(bitmap, 0f, 0f, paint)
             }
-            "color" -> {
-                val cm = android.graphics.ColorMatrix()
-                cm.setSaturation(1.4f)
+            "black & white", "bw" -> {
+                // Professional document binarization filter (crisp dark text, pure white paper background)
+                val cm = android.graphics.ColorMatrix(floatArrayOf(
+                    1.8f, 1.8f, 1.8f, 0f, -180f,
+                    1.8f, 1.8f, 1.8f, 0f, -180f,
+                    1.8f, 1.8f, 1.8f, 0f, -180f,
+                    0f, 0f, 0f, 1f, 0f
+                ))
+                paint.colorFilter = android.graphics.ColorMatrixColorFilter(cm)
+                canvas.drawBitmap(bitmap, 0f, 0f, paint)
+            }
+            "color", "magic color" -> {
+                // Vibrant color enhancement preserving ink, highlighters and stamps while whitening background
+                val cm = android.graphics.ColorMatrix(floatArrayOf(
+                    1.30f, -0.10f, -0.10f, 0f, 18f,
+                    -0.10f, 1.30f, -0.10f, 0f, 18f,
+                    -0.10f, -0.10f, 1.30f, 0f, 18f,
+                    0f, 0f, 0f, 1f, 0f
+                ))
                 paint.colorFilter = android.graphics.ColorMatrixColorFilter(cm)
                 canvas.drawBitmap(bitmap, 0f, 0f, paint)
             }
             "auto", "enhanced" -> {
-                // Auto document enhancement matrix: improves contrast, lightens paper background
+                // Smart auto document scan filter: lightens shadows/yellowing, boosts text contrast
                 val cm = android.graphics.ColorMatrix(floatArrayOf(
-                    1.25f, 0.1f, 0.1f, 0f, 10f,
-                    0.1f, 1.25f, 0.1f, 0f, 10f,
-                    0.1f, 0.1f, 1.25f, 0f, 10f,
+                    1.22f, 0.05f, 0.05f, 0f, 22f,
+                    0.05f, 1.22f, 0.05f, 0f, 22f,
+                    0.05f, 0.05f, 1.22f, 0f, 22f,
                     0f, 0f, 0f, 1f, 0f
                 ))
                 paint.colorFilter = android.graphics.ColorMatrixColorFilter(cm)
@@ -756,25 +771,82 @@ object PdfHelper {
     }
 
     /**
-     * Crops bitmap according to normalized corner points [TL, TR, BR, BL] (0.0 .. 1.0)
+     * Performs true 4-point perspective warp and un-skewing for normalized corner points [TL, TR, BR, BL] (0.0 .. 1.0)
      */
     fun cropBitmapPerspective(bitmap: Bitmap, corners: List<androidx.compose.ui.geometry.Offset>): Bitmap {
         if (corners.size < 4) return bitmap
-        val width = bitmap.width.toFloat()
-        val height = bitmap.height.toFloat()
+        val w = bitmap.width.toFloat()
+        val h = bitmap.height.toFloat()
 
-        val minX = (corners.minOf { it.x } * width).coerceIn(0f, width - 10f)
-        val maxX = (corners.maxOf { it.x } * width).coerceIn(minX + 10f, width)
-        val minY = (corners.minOf { it.y } * height).coerceIn(0f, height - 10f)
-        val maxY = (corners.maxOf { it.y } * height).coerceIn(minY + 10f, height)
+        // Calculate source corner coordinates in pixel space
+        val tlX = (corners[0].x * w).coerceIn(0f, w)
+        val tlY = (corners[0].y * h).coerceIn(0f, h)
+        val trX = (corners[1].x * w).coerceIn(0f, w)
+        val trY = (corners[1].y * h).coerceIn(0f, h)
+        val brX = (corners[2].x * w).coerceIn(0f, w)
+        val brY = (corners[2].y * h).coerceIn(0f, h)
+        val blX = (corners[3].x * w).coerceIn(0f, w)
+        val blY = (corners[3].y * h).coerceIn(0f, h)
 
-        val cropW = (maxX - minX).toInt().coerceAtLeast(100)
-        val cropH = (maxY - minY).toInt().coerceAtLeast(100)
+        val src = floatArrayOf(
+            tlX, tlY,
+            trX, trY,
+            brX, brY,
+            blX, blY
+        )
+
+        // Calculate output dimensions based on actual edge lengths
+        val topW = kotlin.math.hypot(trX - tlX, trY - tlY)
+        val botW = kotlin.math.hypot(brX - blX, brY - blY)
+        val leftH = kotlin.math.hypot(blX - tlX, blY - tlY)
+        val rightH = kotlin.math.hypot(brX - trX, brY - trY)
+
+        val targetWidth = maxOf(topW, botW).toInt().coerceIn(200, 4000)
+        val targetHeight = maxOf(leftH, rightH).toInt().coerceIn(200, 4000)
+
+        val dst = floatArrayOf(
+            0f, 0f,
+            targetWidth.toFloat(), 0f,
+            targetWidth.toFloat(), targetHeight.toFloat(),
+            0f, targetHeight.toFloat()
+        )
+
+        val matrix = Matrix()
+        val success = matrix.setPolyToPoly(src, 0, dst, 0, 4)
+
+        if (!success) {
+            // Fallback to bounding box crop if matrix generation fails
+            val minX = corners.minOf { it.x } * w
+            val maxX = corners.maxOf { it.x } * w
+            val minY = corners.minOf { it.y } * h
+            val maxY = corners.maxOf { it.y } * h
+            val cropW = (maxX - minX).toInt().coerceAtLeast(100)
+            val cropH = (maxY - minY).toInt().coerceAtLeast(100)
+            return try {
+                Bitmap.createBitmap(
+                    bitmap,
+                    minX.toInt().coerceIn(0, (bitmap.width - 10).coerceAtLeast(0)),
+                    minY.toInt().coerceIn(0, (bitmap.height - 10).coerceAtLeast(0)),
+                    cropW.coerceAtMost(bitmap.width - minX.toInt()),
+                    cropH.coerceAtMost(bitmap.height - minY.toInt())
+                )
+            } catch (_: Exception) {
+                bitmap
+            }
+        }
 
         return try {
-            Bitmap.createBitmap(bitmap, minX.toInt(), minY.toInt(), cropW, cropH)
+            val output = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(output)
+            val paint = Paint().apply {
+                isAntiAlias = true
+                isFilterBitmap = true
+                isDither = true
+            }
+            canvas.drawBitmap(bitmap, matrix, paint)
+            output
         } catch (e: Exception) {
-            Log.e("PdfHelper", "Error cropping bitmap", e)
+            Log.e("PdfHelper", "Error performing perspective crop", e)
             bitmap
         }
     }
