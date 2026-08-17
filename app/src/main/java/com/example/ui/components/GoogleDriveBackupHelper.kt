@@ -195,6 +195,109 @@ object GoogleDriveBackupHelper {
     }
 
     /**
+     * Data class holding actual Google Drive / Account storage quota usage.
+     */
+    data class DriveStorageQuota(
+        val usageBytes: Long,
+        val limitBytes: Long,
+        val usageInDriveBytes: Long = 0L,
+        val usageInDriveTrashBytes: Long = 0L,
+        val isFetched: Boolean = false
+    ) {
+        val usagePercentage: Float
+            get() = if (limitBytes > 0L) (usageBytes.toFloat() / limitBytes.toFloat()).coerceIn(0f, 1f) else 0f
+
+        val formattedUsage: String
+            get() = formatBytes(usageBytes)
+
+        val formattedLimit: String
+            get() = if (limitBytes > 0L) formatBytes(limitBytes) else "15.0 GB"
+
+        private fun formatBytes(bytes: Long): String {
+            return when {
+                bytes <= 0L -> "0 B"
+                bytes < 1024L -> "$bytes B"
+                bytes < 1024L * 1024L -> String.format(java.util.Locale.US, "%.1f KB", bytes / 1024f)
+                bytes < 1024L * 1024L * 1024L -> String.format(java.util.Locale.US, "%.1f MB", bytes / (1024f * 1024f))
+                else -> String.format(java.util.Locale.US, "%.1f GB", bytes / (1024f * 1024f * 1024f))
+            }
+        }
+    }
+
+    /**
+     * Fetches real-time Google Drive storage quota info.
+     */
+    suspend fun fetchDriveStorageQuota(context: Context): DriveStorageQuota? {
+        return withContext(Dispatchers.IO) {
+            val drive = getDriveService(context) ?: return@withContext null
+            try {
+                val about = drive.about().get().setFields("storageQuota, user").execute()
+                val quota = about.storageQuota
+                if (quota != null) {
+                    val usage = quota.usage ?: 0L
+                    val limit = quota.limit ?: (15L * 1024L * 1024L * 1024L)
+                    val inDrive = quota.usageInDrive ?: 0L
+                    val inTrash = quota.usageInDriveTrash ?: 0L
+                    DriveStorageQuota(
+                        usageBytes = usage,
+                        limitBytes = limit,
+                        usageInDriveBytes = inDrive,
+                        usageInDriveTrashBytes = inTrash,
+                        isFetched = true
+                    )
+                } else null
+            } catch (e: Exception) {
+                Log.w(TAG, "Notice fetching real-time Drive quota: ${e.message}")
+                null
+            }
+        }
+    }
+
+    /**
+     * Checks real-time network connectivity and latency to Google services.
+     */
+    suspend fun checkConnectionHealth(context: Context): Pair<String, Long> {
+        return withContext(Dispatchers.IO) {
+            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
+            val activeNetwork = cm?.activeNetwork
+            val caps = cm?.getNetworkCapabilities(activeNetwork)
+            val isConnected = caps?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+
+            if (!isConnected) {
+                return@withContext Pair("Offline", -1L)
+            }
+
+            val startTime = System.currentTimeMillis()
+            var reachable = false
+            try {
+                val url = java.net.URL("https://www.google.com/generate_204")
+                val connection = (url.openConnection() as java.net.HttpURLConnection).apply {
+                    connectTimeout = 3000
+                    readTimeout = 3000
+                    requestMethod = "GET"
+                }
+                val code = connection.responseCode
+                reachable = (code == 204 || code == 200)
+                connection.disconnect()
+            } catch (_: Exception) {
+                reachable = false
+            }
+
+            val latency = (System.currentTimeMillis() - startTime).coerceAtLeast(1L)
+            if (reachable) {
+                val healthStatus = when {
+                    latency < 100 -> "Excellent"
+                    latency < 300 -> "Good"
+                    else -> "Fair"
+                }
+                Pair(healthStatus, latency)
+            } else {
+                Pair("Limited", latency)
+            }
+        }
+    }
+
+    /**
      * Checks if the active Google account has been granted Google Drive file permissions.
      */
     fun hasDrivePermission(context: Context): Boolean {

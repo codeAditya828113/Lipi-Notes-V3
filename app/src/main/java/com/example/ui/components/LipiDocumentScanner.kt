@@ -55,10 +55,15 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import com.example.data.NoteEntity
 import com.example.pdf.LipiPdfManager
 import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions
@@ -257,6 +262,13 @@ fun LipiDocumentScanner(
     // Function to launch Google Play Services ML Kit Scanner
     fun launchGmsScanner() {
         try {
+            val activity = context as? ComponentActivity
+            if (activity == null) {
+                Toast.makeText(context, "Using built-in Lipi camera scanner", Toast.LENGTH_SHORT).show()
+                currentMode = ScannerScreenMode.CAMERA
+                return
+            }
+
             val options = GmsDocumentScannerOptions.Builder()
                 .setGalleryImportAllowed(true)
                 .setPageLimit(100)
@@ -268,29 +280,27 @@ fun LipiDocumentScanner(
                 .build()
 
             val scannerClient = GmsDocumentScanning.getClient(options)
-            val activity = context as? ComponentActivity
-            if (activity != null) {
-                scannerClient.getStartScanIntent(activity)
-                    .addOnSuccessListener { intentSender ->
-                        try {
-                            gmsScannerLauncher.launch(
-                                IntentSenderRequest.Builder(intentSender).build()
-                            )
-                        } catch (e: Throwable) {
-                            Log.e("LipiScanner", "Failed to launch GMS scanner intent", e)
-                            currentMode = ScannerScreenMode.CAMERA
-                        }
-                    }
-                    .addOnFailureListener { e ->
-                        Log.w("LipiScanner", "GmsDocumentScanner launch failed, falling back to Camera", e)
+            scannerClient.getStartScanIntent(activity)
+                .addOnSuccessListener { intentSender ->
+                    try {
+                        gmsScannerLauncher.launch(
+                            IntentSenderRequest.Builder(intentSender).build()
+                        )
+                    } catch (e: Throwable) {
+                        Log.e("LipiScanner", "Failed to launch GMS scanner intent", e)
                         currentMode = ScannerScreenMode.CAMERA
+                        Toast.makeText(context, "Using built-in Lipi camera scanner", Toast.LENGTH_SHORT).show()
                     }
-            } else {
-                currentMode = ScannerScreenMode.CAMERA
-            }
+                }
+                .addOnFailureListener { e ->
+                    Log.w("LipiScanner", "GmsDocumentScanner launch failed, falling back to Camera", e)
+                    currentMode = ScannerScreenMode.CAMERA
+                    Toast.makeText(context, "Using built-in Lipi camera scanner", Toast.LENGTH_SHORT).show()
+                }
         } catch (e: Throwable) {
             Log.e("LipiScanner", "GmsDocumentScanner launch failed, falling back to CameraX", e)
             currentMode = ScannerScreenMode.CAMERA
+            Toast.makeText(context, "Using built-in Lipi camera scanner", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -324,10 +334,26 @@ fun LipiDocumentScanner(
         onDismissRequest = { onDismiss() },
         properties = DialogProperties(
             usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false,
             dismissOnBackPress = true,
             dismissOnClickOutside = false
         )
     ) {
+        val currentView = LocalView.current
+        DisposableEffect(viewModel.isFullViewMode) {
+            val dialogWindow = (currentView.parent as? DialogWindowProvider)?.window
+            if (dialogWindow != null && viewModel.isFullViewMode) {
+                WindowCompat.setDecorFitsSystemWindows(dialogWindow, false)
+                val insetsController = WindowCompat.getInsetsController(dialogWindow, dialogWindow.decorView)
+                insetsController.hide(WindowInsetsCompat.Type.systemBars())
+                insetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            }
+            onDispose {
+                val activity = (context as? com.example.MainActivity)
+                activity?.updateSystemBarsVisibility(viewModel.isFullViewMode)
+            }
+        }
+
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -339,7 +365,9 @@ fun LipiDocumentScanner(
                     onGotIt = {
                         prefs.edit().putBoolean("show_first_use_intro", false).apply()
                         showFirstUseIntro = false
-                        launchGmsScanner()
+                        if (!hasCameraPermission) {
+                            permissionLauncher.launch(Manifest.permission.CAMERA)
+                        }
                     }
                 )
             } else if (!hasCameraPermission) {
@@ -688,8 +716,9 @@ data class DetectionResult(
 )
 
 /**
- * Computer-Vision Frame Analyzer for CameraX
- * Performs luminance variance, Sobel edge magnitude, and quadrilateral contour analysis.
+ * High-Precision Computer-Vision Frame Analyzer for CameraX
+ * Performs luminance variance, Sobel gradient edge analysis, Laplacian sharpness measurement,
+ * and quadrilateral contour vertex extraction with temporal smoothing.
  */
 private class DocumentImageAnalyzer(
     private val onResult: (DetectionResult) -> Unit
@@ -719,8 +748,9 @@ private class DocumentImageAnalyzer(
             val rowStride = planes[0].rowStride
             val pixelStride = planes[0].pixelStride
 
-            val sampleW = 120
-            val sampleH = 90
+            // High resolution grid for sharp edge sampling
+            val sampleW = 160
+            val sampleH = 120
             val scaleX = width.toFloat() / sampleW
             val scaleY = height.toFloat() / sampleH
 
@@ -751,18 +781,18 @@ private class DocumentImageAnalyzer(
             val stdDevLuminance = kotlin.math.sqrt(sumVariance / totalPixels)
 
             // False positive rejection rules:
-            // Walls, ceilings, featureless tables, beds, pitch dark rooms have low variance or extreme light
-            if (meanLuminance < 18f || meanLuminance > 242f || stdDevLuminance < 18.0) {
+            // Walls, ceilings, featureless tables, pitch dark rooms have low variance or extreme light
+            if (meanLuminance < 18f || meanLuminance > 242f || stdDevLuminance < 16.0) {
                 stableFrameCount = 0
                 previousCorners = null
                 onResult(
                     DetectionResult(
                         state = ScannerState.SEARCHING,
                         corners = listOf(
-                            Offset(0.15f, 0.20f),
-                            Offset(0.85f, 0.20f),
-                            Offset(0.85f, 0.80f),
-                            Offset(0.15f, 0.80f)
+                            Offset(0.12f, 0.15f),
+                            Offset(0.88f, 0.15f),
+                            Offset(0.88f, 0.85f),
+                            Offset(0.12f, 0.85f)
                         ),
                         confidence = 0f,
                         statusText = "Looking for a document..."
@@ -798,15 +828,15 @@ private class DocumentImageAnalyzer(
             }
 
             val avgEdgeMag = totalEdgeMag / totalPixels
+            val edgeThreshold = (avgEdgeMag * 1.6f).coerceAtLeast(32f)
 
-            // Bounding box around primary edge density
+            // Bounding box around primary document edge density
             var minX = sampleW
             var maxX = 0
             var minY = sampleH
             var maxY = 0
-            val edgeThreshold = (avgEdgeMag * 1.5f).coerceAtLeast(35f)
-
             var edgePointCount = 0
+
             for (y in 2 until sampleH - 2) {
                 for (x in 2 until sampleW - 2) {
                     if (edgeMag[y * sampleW + x] >= edgeThreshold) {
@@ -825,10 +855,10 @@ private class DocumentImageAnalyzer(
             val areaFraction = boxArea.toFloat() / totalPixels
             val aspectRatio = if (boxH > 0) boxW.toFloat() / boxH.toFloat() else 0f
 
-            // Document detection criteria check (supports books, A4 paper, worksheets, notebooks):
-            val isGenuineQuad = edgePointCount > (totalPixels * 0.04f) &&
-                    areaFraction in 0.14f..0.82f &&
-                    aspectRatio in 0.45f..2.3f
+            // Document detection criteria (supports books, A4 paper, worksheets, notebooks, cards):
+            val isGenuineQuad = edgePointCount > (totalPixels * 0.035f) &&
+                    areaFraction in 0.12f..0.88f &&
+                    aspectRatio in 0.45f..2.4f
 
             if (!isGenuineQuad) {
                 stableFrameCount = 0
@@ -837,16 +867,49 @@ private class DocumentImageAnalyzer(
                     DetectionResult(
                         state = ScannerState.SEARCHING,
                         corners = listOf(
-                            Offset(0.15f, 0.20f),
-                            Offset(0.85f, 0.20f),
-                            Offset(0.85f, 0.80f),
-                            Offset(0.15f, 0.80f)
+                            Offset(0.12f, 0.15f),
+                            Offset(0.88f, 0.15f),
+                            Offset(0.88f, 0.85f),
+                            Offset(0.12f, 0.85f)
                         ),
                         confidence = 0f,
                         statusText = "Looking for a document..."
                     )
                 )
             } else {
+                // Laplacian Variance Sharpness check inside detected document boundaries
+                var lapSum = 0L
+                var lapSqSum = 0.0
+                var lapCount = 0
+
+                val checkMinX = minX.coerceAtLeast(1)
+                val checkMaxX = maxX.coerceAtMost(sampleW - 2)
+                val checkMinY = minY.coerceAtLeast(1)
+                val checkMaxY = maxY.coerceAtMost(sampleH - 2)
+
+                for (y in checkMinY..checkMaxY step 2) {
+                    for (x in checkMinX..checkMaxX step 2) {
+                        val center = grid[y * sampleW + x]
+                        val up = grid[(y - 1) * sampleW + x]
+                        val down = grid[(y + 1) * sampleW + x]
+                        val left = grid[y * sampleW + (x - 1)]
+                        val right = grid[y * sampleW + (x + 1)]
+
+                        val lap = kotlin.math.abs(4 * center - up - down - left - right)
+                        lapSum += lap
+                        lapSqSum += lap * lap
+                        lapCount++
+                    }
+                }
+
+                val sharpnessVariance = if (lapCount > 0) {
+                    val meanLap = lapSum.toDouble() / lapCount
+                    (lapSqSum / lapCount) - (meanLap * meanLap)
+                } else 0.0
+
+                val isSharpFrame = sharpnessVariance >= 75.0
+
+                // Find candidate 4 corners (TL, TR, BR, BL) using boundary vertex projection
                 var bestTLX = minX
                 var bestTLY = minY
                 var minSum = Int.MAX_VALUE
@@ -897,42 +960,48 @@ private class DocumentImageAnalyzer(
                 val normTR = Offset((bestTRX.toFloat() / sampleW).coerceIn(0.02f, 0.98f), (bestTRY.toFloat() / sampleH).coerceIn(0.02f, 0.98f))
                 val normBR = Offset((bestBRX.toFloat() / sampleW).coerceIn(0.02f, 0.98f), (bestBRY.toFloat() / sampleH).coerceIn(0.02f, 0.98f))
                 val normBL = Offset((bestBLX.toFloat() / sampleW).coerceIn(0.02f, 0.98f), (bestBLY.toFloat() / sampleH).coerceIn(0.02f, 0.98f))
-                val currentCorners = listOf(normTL, normTR, normBR, normBL)
+                val rawCorners = listOf(normTL, normTR, normBR, normBL)
 
+                // Temporal smoothing with exponential moving average to prevent shaking/jumping
                 val prev = previousCorners
-                if (prev != null && prev.size == 4) {
-                    val maxShift = currentCorners.zip(prev).maxOf { (curr, pr) ->
+                val currentCorners = if (prev != null && prev.size == 4) {
+                    val maxShift = rawCorners.zip(prev).maxOf { (curr, pr) ->
                         kotlin.math.abs(curr.x - pr.x) + kotlin.math.abs(curr.y - pr.y)
                     }
 
-                    if (maxShift < 0.05f) {
-                        stableFrameCount++
+                    if (maxShift < 0.06f) {
+                        if (isSharpFrame) stableFrameCount++
+                        rawCorners.zip(prev).map { (curr, pr) ->
+                            Offset(pr.x * 0.65f + curr.x * 0.35f, pr.y * 0.65f + curr.y * 0.35f)
+                        }
                     } else {
                         stableFrameCount = 0
+                        rawCorners
                     }
                 } else {
                     stableFrameCount = 0
+                    rawCorners
                 }
                 previousCorners = currentCorners
 
                 val state = when {
-                    stableFrameCount >= 6 -> ScannerState.READY_TO_CAPTURE
+                    stableFrameCount >= 5 && isSharpFrame -> ScannerState.READY_TO_CAPTURE
                     stableFrameCount >= 2 -> ScannerState.STABILIZING
                     else -> ScannerState.DOCUMENT_DETECTED
                 }
 
-                val statusText = when (state) {
-                    ScannerState.READY_TO_CAPTURE -> "Ready"
-                    ScannerState.STABILIZING -> "Hold steady..."
-                    ScannerState.DOCUMENT_DETECTED -> "Document detected"
-                    else -> "Looking for a document..."
+                val statusText = when {
+                    state == ScannerState.READY_TO_CAPTURE -> "Ready"
+                    !isSharpFrame -> "Hold steady..."
+                    state == ScannerState.STABILIZING -> "Hold steady..."
+                    else -> "Document detected"
                 }
 
                 onResult(
                     DetectionResult(
                         state = state,
                         corners = currentCorners,
-                        confidence = (stableFrameCount / 6f).coerceIn(0.3f, 1f),
+                        confidence = (stableFrameCount / 5f).coerceIn(0.3f, 1f),
                         statusText = statusText
                     )
                 )
@@ -1089,6 +1158,7 @@ private fun CameraScannerScreen(
             factory = { ctx ->
                 val previewView = PreviewView(ctx).apply {
                     scaleType = PreviewView.ScaleType.FILL_CENTER
+                    implementationMode = PreviewView.ImplementationMode.COMPATIBLE
                 }
                 try {
                     val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
@@ -1103,9 +1173,10 @@ private fun CameraScannerScreen(
                                     it.setSurfaceProvider(previewView.surfaceProvider)
                                 }
 
+                                val targetRot = previewView.display?.rotation ?: android.view.Surface.ROTATION_0
                                 val capture = ImageCapture.Builder()
                                     .setFlashMode(flashMode)
-                                    .setTargetRotation(previewView.display.rotation)
+                                    .setTargetRotation(targetRot)
                                     .build()
                                 imageCapture = capture
 
@@ -1496,6 +1567,7 @@ private fun CameraScannerScreen(
 
 /**
  * CROP & FILTER ADJUSTMENT SCREEN
+ * Provides 4-corner perspective adjustment with draggable handles, rotation, and scan filters.
  */
 @Composable
 private fun CropFilterAdjustScreen(
@@ -1509,10 +1581,26 @@ private fun CropFilterAdjustScreen(
 ) {
     var selectedFilter by remember { mutableStateOf(scannedPage.filter) }
     var currentRotation by remember { mutableIntStateOf(scannedPage.rotationDegrees) }
+    var currentCorners by remember {
+        mutableStateOf(
+            if (scannedPage.corners.size == 4) scannedPage.corners else listOf(
+                Offset(0.05f, 0.05f),
+                Offset(0.95f, 0.05f),
+                Offset(0.95f, 0.95f),
+                Offset(0.05f, 0.95f)
+            )
+        )
+    }
+    var isCropMode by remember { mutableStateOf(false) }
 
-    // Display Bitmap
-    val displayBitmap = remember(selectedFilter, currentRotation) {
-        var bmp = PdfHelper.applyScanFilter(scannedPage.rawBitmap, selectedFilter)
+    // Perspective cropped and filtered bitmap
+    val displayBitmap = remember(selectedFilter, currentRotation, currentCorners) {
+        val cropped = if (currentCorners.size == 4) {
+            PdfHelper.cropBitmapPerspective(scannedPage.rawBitmap, currentCorners)
+        } else {
+            scannedPage.rawBitmap
+        }
+        var bmp = PdfHelper.applyScanFilter(cropped, selectedFilter)
         if (currentRotation != 0) {
             val matrix = Matrix().apply { postRotate(currentRotation.toFloat()) }
             bmp = Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, matrix, true)
@@ -1539,68 +1627,216 @@ private fun CropFilterAdjustScreen(
             }
 
             Text(
-                text = "Adjust Page $pageNumber of $totalPages",
+                text = if (isCropMode) "Adjust Corners ($pageNumber/$totalPages)" else "Page $pageNumber of $totalPages",
                 color = Color.White,
                 fontWeight = FontWeight.Bold,
                 fontSize = 16.sp
             )
 
-            IconButton(onClick = { currentRotation = (currentRotation + 90) % 360 }) {
-                Icon(Icons.Default.RotateRight, contentDescription = "Rotate", tint = Color.White)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = { isCropMode = !isCropMode }) {
+                    Icon(
+                        if (isCropMode) Icons.Default.Check else Icons.Default.Crop,
+                        contentDescription = "Adjust Corners",
+                        tint = if (isCropMode) Color(0xFF60A5FA) else Color.White
+                    )
+                }
+                IconButton(onClick = { currentRotation = (currentRotation + 90) % 360 }) {
+                    Icon(Icons.Default.RotateRight, contentDescription = "Rotate", tint = Color.White)
+                }
             }
         }
 
-        // Preview Area
+        // Preview Area or Corner Adjust Area
         Box(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(horizontal = 16.dp, vertical = 8.dp),
             contentAlignment = Alignment.Center
         ) {
-            Image(
-                bitmap = displayBitmap.asImageBitmap(),
-                contentDescription = "Page Preview",
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .clip(RoundedCornerShape(12.dp))
-                    .border(1.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
-            )
+            if (isCropMode) {
+                // Interactive 4-Corner Draggable Adjustment on Raw Full-Res Bitmap
+                BoxWithConstraints(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color(0xFF1E293B)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    val rawBmp = scannedPage.rawBitmap
+                    val imgAspect = rawBmp.width.toFloat() / rawBmp.height.toFloat()
+                    val containerAspect = maxWidth.value / maxHeight.value
+
+                    val (renderW, renderH) = if (imgAspect > containerAspect) {
+                        maxWidth to (maxWidth / imgAspect)
+                    } else {
+                        (maxHeight * imgAspect) to maxHeight
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .size(renderW, renderH)
+                    ) {
+                        Image(
+                            bitmap = rawBmp.asImageBitmap(),
+                            contentDescription = "Original Raw Image",
+                            modifier = Modifier.fillMaxSize()
+                        )
+
+                        // Polygon overlay & 4 corner handles
+                        Canvas(modifier = Modifier.fillMaxSize()) {
+                            val w = size.width
+                            val h = size.height
+
+                            val pTL = Offset(currentCorners[0].x * w, currentCorners[0].y * h)
+                            val pTR = Offset(currentCorners[1].x * w, currentCorners[1].y * h)
+                            val pBR = Offset(currentCorners[2].x * w, currentCorners[2].y * h)
+                            val pBL = Offset(currentCorners[3].x * w, currentCorners[3].y * h)
+
+                            val path = androidx.compose.ui.graphics.Path().apply {
+                                moveTo(pTL.x, pTL.y)
+                                lineTo(pTR.x, pTR.y)
+                                lineTo(pBR.x, pBR.y)
+                                lineTo(pBL.x, pBL.y)
+                                close()
+                            }
+
+                            drawPath(path, color = Color(0x333B82F6))
+                            drawPath(
+                                path,
+                                color = Color(0xFF60A5FA),
+                                style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3.dp.toPx())
+                            )
+                        }
+
+                        // Draggable 4 Corner Pin Handles
+                        val cornerLabels = listOf("TL", "TR", "BR", "BL")
+                        currentCorners.forEachIndexed { index, cornerNorm ->
+                            val handleSize = 44.dp
+                            val handleX = (cornerNorm.x * renderW.value).dp - (handleSize / 2)
+                            val handleY = (cornerNorm.y * renderH.value).dp - (handleSize / 2)
+
+                            Box(
+                                modifier = Modifier
+                                    .offset(x = handleX, y = handleY)
+                                    .size(handleSize)
+                                    .pointerInput(index) {
+                                        detectDragGestures { change, dragAmount ->
+                                            change.consume()
+                                            val newX = (currentCorners[index].x + dragAmount.x / (renderW.value * density)).coerceIn(0f, 1f)
+                                            val newY = (currentCorners[index].y + dragAmount.y / (renderH.value * density)).coerceIn(0f, 1f)
+                                            val updated = currentCorners.toMutableList()
+                                            updated[index] = Offset(newX, newY)
+                                            currentCorners = updated
+                                        }
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Surface(
+                                    shape = CircleShape,
+                                    color = Color(0xFF3B82F6),
+                                    border = BorderStroke(2.5.dp, Color.White),
+                                    shadowElevation = 6.dp,
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Text(
+                                            text = cornerLabels[index],
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Black,
+                                            color = Color.White
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                Image(
+                    bitmap = displayBitmap.asImageBitmap(),
+                    contentDescription = "Page Preview",
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .clip(RoundedCornerShape(12.dp))
+                        .border(1.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
+                )
+            }
         }
 
-        // Filters Selector Row
-        Text(
-            text = "SCAN FILTER",
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Bold,
-            color = Color.White.copy(alpha = 0.6f),
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
-        )
-
-        LazyRow(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            val filters = listOf("Auto", "Clean Shadow", "High Contrast B&W", "Grayscale", "Vibrant Color", "Original")
-            itemsIndexed(filters) { _, filter ->
-                val isSelected = filter == selectedFilter
-                Surface(
-                    shape = RoundedCornerShape(20.dp),
-                    color = if (isSelected) Color(0xFF5B6DFF) else Color(0xFF1E293B),
-                    border = BorderStroke(1.dp, if (isSelected) Color(0xFF5B6DFF) else Color.White.copy(alpha = 0.2f)),
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(20.dp))
-                        .clickable { selectedFilter = filter }
+        if (isCropMode) {
+            // Quick Corner Action Buttons
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                OutlinedButton(
+                    onClick = {
+                        currentCorners = listOf(
+                            Offset(0f, 0f),
+                            Offset(1f, 0f),
+                            Offset(1f, 1f),
+                            Offset(0f, 1f)
+                        )
+                    },
+                    modifier = Modifier.weight(1f).height(40.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.3f))
                 ) {
-                    Text(
-                        text = filter,
-                        color = Color.White,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                        fontSize = 12.sp,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                    )
+                    Icon(Icons.Default.CropFree, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Full Page", color = Color.White, fontSize = 12.sp)
+                }
+
+                Button(
+                    onClick = { isCropMode = false },
+                    modifier = Modifier.weight(1f).height(40.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3B82F6))
+                ) {
+                    Icon(Icons.Default.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Apply Crop", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        } else {
+            // Filters Selector Row
+            Text(
+                text = "SCAN FILTER",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White.copy(alpha = 0.6f),
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
+            )
+
+            LazyRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                val filters = listOf("Auto", "Clean Shadow", "High Contrast B&W", "Grayscale", "Vibrant Color", "Original")
+                itemsIndexed(filters) { _, filter ->
+                    val isSelected = filter == selectedFilter
+                    Surface(
+                        shape = RoundedCornerShape(20.dp),
+                        color = if (isSelected) Color(0xFF5B6DFF) else Color(0xFF1E293B),
+                        border = BorderStroke(1.dp, if (isSelected) Color(0xFF5B6DFF) else Color.White.copy(alpha = 0.2f)),
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(20.dp))
+                            .clickable { selectedFilter = filter }
+                    ) {
+                        Text(
+                            text = filter,
+                            color = Color.White,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                        )
+                    }
                 }
             }
         }
@@ -1610,7 +1846,7 @@ private fun CropFilterAdjustScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
-                .padding(horizontal = 16.dp, vertical = 16.dp),
+                .padding(horizontal = 16.dp, vertical = 14.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             // Option 1: Retake
@@ -1634,6 +1870,7 @@ private fun CropFilterAdjustScreen(
                     onKeepScan(
                         scannedPage.copy(
                             displayBitmap = displayBitmap,
+                            corners = currentCorners,
                             filter = selectedFilter,
                             rotationDegrees = currentRotation
                         )
@@ -1657,6 +1894,7 @@ private fun CropFilterAdjustScreen(
                     onDone(
                         scannedPage.copy(
                             displayBitmap = displayBitmap,
+                            corners = currentCorners,
                             filter = selectedFilter,
                             rotationDegrees = currentRotation
                         )

@@ -134,7 +134,9 @@ fun DrawingCanvas(
     onBlockUpdated: (com.example.data.LipiContentBlock) -> Unit = {},
     onBlockDeleted: (com.example.data.LipiContentBlock) -> Unit = {},
     onMoveBlock: (String, Float, Float) -> Unit = { _, _, _ -> },
-    onResizeBlock: (String, Float, Float) -> Unit = { _, _, _ -> },
+    onResizeBlock: (String, Float, Float, Float?, Float?) -> Unit = { _, _, _, _, _ -> },
+    onRotateBlock: (String, Float) -> Unit = { _, _ -> },
+    onToggleAspectRatioLock: (String) -> Unit = {},
     onDuplicateBlock: (String) -> Unit = {},
     onBlockTransformEnd: () -> Unit = {},
     onImageTransformFinished: () -> Unit = {},
@@ -595,6 +597,51 @@ fun DrawingCanvas(
                             lastFingerDragPoint = null
                         }
                         return@pointerInteropFilter true
+                    }
+
+                    // Content Blocks Touch Interception
+                    if (contentBlocks.isNotEmpty()) {
+                        val pivotX = widthPx / 2f
+                        val pivotY = heightPx / 2f
+                        val worldX = (x - pivotX - offset.x) / scale + pivotX
+                        val worldY = (y - pivotY - offset.y) / scale + pivotY
+
+                        var hitContentBlock = false
+                        if (selectedBlockId != null) {
+                            val selBlock = contentBlocks.find { it.id == selectedBlockId }
+                            if (selBlock != null) {
+                                val blockPage = selBlock.page.coerceIn(1, pdfPageCount)
+                                val bx = fromNormalizedX(selBlock.x, blockPage)
+                                val by = fromNormalizedY(selBlock.y, blockPage)
+                                val bw = (selBlock.width / 600f) * getPageWidth(blockPage)
+                                val bh = (selBlock.height / getNormH(blockPage)) * getPageHeight(blockPage)
+                                val margin = 60f / scale
+
+                                if (worldX >= bx - margin && worldX <= bx + bw + margin &&
+                                    worldY >= by - margin && worldY <= by + bh + margin) {
+                                    hitContentBlock = true
+                                }
+                            }
+                        }
+
+                        if (!hitContentBlock) {
+                            for (block in contentBlocks.reversed()) {
+                                val blockPage = block.page.coerceIn(1, pdfPageCount)
+                                val bx = fromNormalizedX(block.x, blockPage)
+                                val by = fromNormalizedY(block.y, blockPage)
+                                val bw = (block.width / 600f) * getPageWidth(blockPage)
+                                val bh = (block.height / getNormH(blockPage)) * getPageHeight(blockPage)
+
+                                if (worldX >= bx && worldX <= bx + bw && worldY >= by && worldY <= by + bh) {
+                                    hitContentBlock = true
+                                    break
+                                }
+                            }
+                        }
+
+                        if (hitContentBlock) {
+                            return@pointerInteropFilter false
+                        }
                     }
 
                     // Image Interaction (Select, Move, Resize via 4 Corner Handles)
@@ -2926,7 +2973,9 @@ fun DrawingCanvas(
                                     onBlockSelected(if (selectedBlockId == block.id) null else block.id)
                                 },
                                 onMoveBlock = { dx, dy -> onMoveBlock(block.id, dx, dy) },
-                                onResizeBlock = { w, h -> onResizeBlock(block.id, w, h) },
+                                onResizeBlock = { w, h, nx, ny -> onResizeBlock(block.id, w, h, nx, ny) },
+                                onRotateBlock = { rot -> onRotateBlock(block.id, rot) },
+                                onToggleAspectRatioLock = { onToggleAspectRatioLock(block.id) },
                                 onTransformEnd = onBlockTransformEnd,
                                 onDuplicateBlock = { onDuplicateBlock(block.id) },
                                 onNavigateToNotePage = onNavigateToNotePage,

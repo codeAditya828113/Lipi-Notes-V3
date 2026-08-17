@@ -29,8 +29,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.drawscope.Stroke as DrawStroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -50,6 +50,7 @@ import java.io.File
 
 /**
  * Interactive renderer for Lipi Content Blocks placed on the note canvas.
+ * Fully supports 8-handle precision resizing, aspect ratio lock, rotation, and stylus/touch manipulation.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -67,7 +68,9 @@ fun LipiContentBlockItem(
     normH: Float = 800f,
     onSelect: () -> Unit,
     onMoveBlock: (deltaX: Float, deltaY: Float) -> Unit = { _, _ -> },
-    onResizeBlock: (newWidth: Float, newHeight: Float) -> Unit = { _, _ -> },
+    onResizeBlock: (newWidth: Float, newHeight: Float, newX: Float?, newY: Float?) -> Unit = { _, _, _, _ -> },
+    onRotateBlock: (Float) -> Unit = {},
+    onToggleAspectRatioLock: () -> Unit = {},
     onTransformEnd: () -> Unit = {},
     onDuplicateBlock: (LipiContentBlock) -> Unit = {},
     onNavigateToNotePage: (noteId: Int, page: Int) -> Unit,
@@ -87,6 +90,8 @@ fun LipiContentBlockItem(
     val safeNH = if (normH > 0f) normH else 800f
     val safeScale = if (scale > 0.01f) scale else 1f
 
+    val aspect = if (block.height > 0f) block.width / block.height else 1f
+
     Box(
         modifier = modifier
             .offset { IntOffset(renderX.toInt(), renderY.toInt()) }
@@ -94,7 +99,8 @@ fun LipiContentBlockItem(
             .graphicsLayer {
                 scaleX = safeScale
                 scaleY = safeScale
-                transformOrigin = TransformOrigin(0f, 0f)
+                rotationZ = block.rotation
+                transformOrigin = TransformOrigin(0.5f, 0.5f)
             }
             .then(
                 if (isSelected) {
@@ -123,7 +129,6 @@ fun LipiContentBlockItem(
                     Modifier.pointerInput(block.id) {
                         detectTapGestures(
                             onTap = {
-                                // Single tap executes default interactive behavior without entering edit/move mode
                                 when (block) {
                                     is TextContentBlock -> onEditBlock(block)
                                     is WebLinkContentBlock -> {
@@ -165,10 +170,12 @@ fun LipiContentBlockItem(
                                             audioManager.playAudio(block.id, block.audioFilePath)
                                         }
                                     }
+                                    is ImageContentBlock -> {
+                                        onSelect()
+                                    }
                                 }
                             },
                             onLongPress = {
-                                // Long press is the ONLY trigger to enter move/resize mode and reveal options
                                 onSelect()
                             }
                         )
@@ -248,6 +255,12 @@ fun LipiContentBlockItem(
                     onDelete = { onDeleteBlock(block) }
                 )
             }
+            is ImageContentBlock -> {
+                ImageBlockView(
+                    block = block,
+                    onDelete = { onDeleteBlock(block) }
+                )
+            }
             is TextContentBlock -> {
                 TextBlockView(
                     block = block,
@@ -257,7 +270,7 @@ fun LipiContentBlockItem(
             }
         }
 
-        // Selection Corner Indicators & Resize Handles
+        // Selection Floating Action Bar & 8 Precision Resize Handles
         if (isSelected) {
             // Floating Action Bar above selected block
             Surface(
@@ -285,6 +298,27 @@ fun LipiContentBlockItem(
                         Text("Edit", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
 
+                    // Aspect Ratio Lock Toggle
+                    IconButton(
+                        onClick = { onToggleAspectRatioLock() },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (block.isAspectRatioLocked) Icons.Default.Lock else Icons.Default.LockOpen,
+                            contentDescription = if (block.isAspectRatioLocked) "Unlock Aspect Ratio" else "Lock Aspect Ratio",
+                            tint = if (block.isAspectRatioLocked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+
+                    // Rotate 90°
+                    IconButton(
+                        onClick = { onRotateBlock((block.rotation + 90f) % 360f) },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(Icons.Default.RotateRight, contentDescription = "Rotate 90 Degrees", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
+                    }
+
                     // Duplicate
                     IconButton(
                         onClick = { onDuplicateBlock(block) },
@@ -301,7 +335,7 @@ fun LipiContentBlockItem(
                         Icon(Icons.Default.Delete, contentDescription = "Delete Block", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
                     }
 
-                    // Close / Done
+                    // Done / Close Selection
                     IconButton(
                         onClick = { onSelect() },
                         modifier = Modifier.size(32.dp)
@@ -311,7 +345,7 @@ fun LipiContentBlockItem(
                 }
             }
 
-            // Bottom-Right Corner Easy Drag Resize Handle
+            // 1. Bottom-Right Handle
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
@@ -320,7 +354,7 @@ fun LipiContentBlockItem(
                     .background(MaterialTheme.colorScheme.primary, CircleShape)
                     .border(2.dp, Color.White, CircleShape)
                     .shadow(4.dp, CircleShape)
-                    .pointerInput(block.id, safeScale, safePW, safePH, safeNH) {
+                    .pointerInput(block.id, safeScale, safePW, safePH, safeNH, block.isAspectRatioLocked, aspect) {
                         detectDragGestures(
                             onDragEnd = { onTransformEnd() },
                             onDragCancel = { onTransformEnd() },
@@ -328,28 +362,31 @@ fun LipiContentBlockItem(
                                 change.consume()
                                 val dw = (dragAmount.x / safeScale) * (600f / safePW)
                                 val dh = (dragAmount.y / safeScale) * (safeNH / safePH)
-                                onResizeBlock(
-                                    (block.width + dw).coerceAtLeast(60f),
-                                    (block.height + dh).coerceAtLeast(30f)
-                                )
+                                val newW = (block.width + dw).coerceIn(block.minWidth, block.maxWidth)
+                                val newH = if (block.isAspectRatioLocked) {
+                                    (newW / aspect).coerceIn(block.minHeight, block.maxHeight)
+                                } else {
+                                    (block.height + dh).coerceIn(block.minHeight, block.maxHeight)
+                                }
+                                onResizeBlock(newW, newH, null, null)
                             }
                         )
                     },
                 contentAlignment = Alignment.Center
             ) {
-                Icon(Icons.Default.OpenInFull, contentDescription = "Resize Handle Bottom Right", tint = Color.White, modifier = Modifier.size(18.dp))
+                Icon(Icons.Default.OpenInFull, contentDescription = "Resize Bottom Right", tint = Color.White, modifier = Modifier.size(18.dp))
             }
 
-            // Bottom-Left Corner Easy Drag Resize Handle
+            // 2. Bottom-Left Handle
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomStart)
                     .offset(x = (-12).dp, y = 12.dp)
-                    .size(32.dp)
+                    .size(36.dp)
                     .background(MaterialTheme.colorScheme.primary, CircleShape)
                     .border(2.dp, Color.White, CircleShape)
                     .shadow(4.dp, CircleShape)
-                    .pointerInput(block.id, safeScale, safePW, safePH, safeNH) {
+                    .pointerInput(block.id, safeScale, safePW, safePH, safeNH, block.isAspectRatioLocked, aspect) {
                         detectDragGestures(
                             onDragEnd = { onTransformEnd() },
                             onDragCancel = { onTransformEnd() },
@@ -357,28 +394,32 @@ fun LipiContentBlockItem(
                                 change.consume()
                                 val dw = (-dragAmount.x / safeScale) * (600f / safePW)
                                 val dh = (dragAmount.y / safeScale) * (safeNH / safePH)
-                                onResizeBlock(
-                                    (block.width + dw).coerceAtLeast(60f),
-                                    (block.height + dh).coerceAtLeast(30f)
-                                )
+                                val newW = (block.width + dw).coerceIn(block.minWidth, block.maxWidth)
+                                val newH = if (block.isAspectRatioLocked) {
+                                    (newW / aspect).coerceIn(block.minHeight, block.maxHeight)
+                                } else {
+                                    (block.height + dh).coerceIn(block.minHeight, block.maxHeight)
+                                }
+                                val newX = block.x + (block.width - newW)
+                                onResizeBlock(newW, newH, newX, null)
                             }
                         )
                     },
                 contentAlignment = Alignment.Center
             ) {
-                Icon(Icons.Default.AspectRatio, contentDescription = "Resize Handle Bottom Left", tint = Color.White, modifier = Modifier.size(16.dp))
+                Icon(Icons.Default.AspectRatio, contentDescription = "Resize Bottom Left", tint = Color.White, modifier = Modifier.size(16.dp))
             }
 
-            // Top-Right Corner Resize Handle
+            // 3. Top-Right Handle
             Box(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .offset(x = 12.dp, y = (-12).dp)
-                    .size(32.dp)
+                    .size(36.dp)
                     .background(MaterialTheme.colorScheme.primary, CircleShape)
                     .border(2.dp, Color.White, CircleShape)
                     .shadow(4.dp, CircleShape)
-                    .pointerInput(block.id, safeScale, safePW, safePH, safeNH) {
+                    .pointerInput(block.id, safeScale, safePW, safePH, safeNH, block.isAspectRatioLocked, aspect) {
                         detectDragGestures(
                             onDragEnd = { onTransformEnd() },
                             onDragCancel = { onTransformEnd() },
@@ -386,19 +427,57 @@ fun LipiContentBlockItem(
                                 change.consume()
                                 val dw = (dragAmount.x / safeScale) * (600f / safePW)
                                 val dh = (-dragAmount.y / safeScale) * (safeNH / safePH)
-                                onResizeBlock(
-                                    (block.width + dw).coerceAtLeast(60f),
-                                    (block.height + dh).coerceAtLeast(30f)
-                                )
+                                val newW = (block.width + dw).coerceIn(block.minWidth, block.maxWidth)
+                                val newH = if (block.isAspectRatioLocked) {
+                                    (newW / aspect).coerceIn(block.minHeight, block.maxHeight)
+                                } else {
+                                    (block.height + dh).coerceIn(block.minHeight, block.maxHeight)
+                                }
+                                val newY = block.y + (block.height - newH)
+                                onResizeBlock(newW, newH, null, newY)
                             }
                         )
                     },
                 contentAlignment = Alignment.Center
             ) {
-                Icon(Icons.Default.OpenInFull, contentDescription = "Resize Handle Top Right", tint = Color.White, modifier = Modifier.size(16.dp))
+                Icon(Icons.Default.OpenInFull, contentDescription = "Resize Top Right", tint = Color.White, modifier = Modifier.size(16.dp))
             }
 
-            // Right Edge Center Resize Handle (Width adjust)
+            // 4. Top-Left Handle
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .offset(x = (-12).dp, y = (-12).dp)
+                    .size(36.dp)
+                    .background(MaterialTheme.colorScheme.primary, CircleShape)
+                    .border(2.dp, Color.White, CircleShape)
+                    .shadow(4.dp, CircleShape)
+                    .pointerInput(block.id, safeScale, safePW, safePH, safeNH, block.isAspectRatioLocked, aspect) {
+                        detectDragGestures(
+                            onDragEnd = { onTransformEnd() },
+                            onDragCancel = { onTransformEnd() },
+                            onDrag = { change, dragAmount ->
+                                change.consume()
+                                val dw = (-dragAmount.x / safeScale) * (600f / safePW)
+                                val dh = (-dragAmount.y / safeScale) * (safeNH / safePH)
+                                val newW = (block.width + dw).coerceIn(block.minWidth, block.maxWidth)
+                                val newH = if (block.isAspectRatioLocked) {
+                                    (newW / aspect).coerceIn(block.minHeight, block.maxHeight)
+                                } else {
+                                    (block.height + dh).coerceIn(block.minHeight, block.maxHeight)
+                                }
+                                val newX = block.x + (block.width - newW)
+                                val newY = block.y + (block.height - newH)
+                                onResizeBlock(newW, newH, newX, newY)
+                            }
+                        )
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Default.AspectRatio, contentDescription = "Resize Top Left", tint = Color.White, modifier = Modifier.size(16.dp))
+            }
+
+            // 5. Right Edge Handle
             Box(
                 modifier = Modifier
                     .align(Alignment.CenterEnd)
@@ -406,23 +485,111 @@ fun LipiContentBlockItem(
                     .size(width = 20.dp, height = 36.dp)
                     .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(10.dp))
                     .border(1.5.dp, Color.White, RoundedCornerShape(10.dp))
-                    .pointerInput(block.id, safeScale, safePW, safePH, safeNH) {
+                    .pointerInput(block.id, safeScale, safePW, safePH, safeNH, block.isAspectRatioLocked, aspect) {
                         detectDragGestures(
                             onDragEnd = { onTransformEnd() },
                             onDragCancel = { onTransformEnd() },
                             onDrag = { change, dragAmount ->
                                 change.consume()
                                 val dw = (dragAmount.x / safeScale) * (600f / safePW)
-                                onResizeBlock(
-                                    (block.width + dw).coerceAtLeast(60f),
-                                    block.height
-                                )
+                                val newW = (block.width + dw).coerceIn(block.minWidth, block.maxWidth)
+                                val newH = if (block.isAspectRatioLocked) (newW / aspect).coerceIn(block.minHeight, block.maxHeight) else block.height
+                                onResizeBlock(newW, newH, null, null)
                             }
                         )
                     },
                 contentAlignment = Alignment.Center
             ) {
                 Box(modifier = Modifier.width(3.dp).height(16.dp).background(Color.White, RoundedCornerShape(2.dp)))
+            }
+
+            // 6. Bottom Edge Handle
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .offset(y = 10.dp)
+                    .size(width = 36.dp, height = 20.dp)
+                    .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(10.dp))
+                    .border(1.5.dp, Color.White, RoundedCornerShape(10.dp))
+                    .pointerInput(block.id, safeScale, safePW, safePH, safeNH, block.isAspectRatioLocked, aspect) {
+                        detectDragGestures(
+                            onDragEnd = { onTransformEnd() },
+                            onDragCancel = { onTransformEnd() },
+                            onDrag = { change, dragAmount ->
+                                change.consume()
+                                val dh = (dragAmount.y / safeScale) * (safeNH / safePH)
+                                val newH = (block.height + dh).coerceIn(block.minHeight, block.maxHeight)
+                                val newW = if (block.isAspectRatioLocked) (newH * aspect).coerceIn(block.minWidth, block.maxWidth) else block.width
+                                onResizeBlock(newW, newH, null, null)
+                            }
+                        )
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Box(modifier = Modifier.height(3.dp).width(16.dp).background(Color.White, RoundedCornerShape(2.dp)))
+            }
+        }
+    }
+}
+
+/**
+ * Image Content Block View (Supports Scanned Docs and Photos)
+ */
+@Composable
+fun ImageBlockView(
+    block: ImageContentBlock,
+    onDelete: () -> Unit
+) {
+    val context = LocalContext.current
+    var bitmap by remember(block.imageUri) { mutableStateOf<Bitmap?>(null) }
+
+    LaunchedEffect(block.imageUri) {
+        withContext(Dispatchers.IO) {
+            try {
+                if (block.imageUri.isNotBlank()) {
+                    val file = File(block.imageUri)
+                    if (file.exists()) {
+                        bitmap = android.graphics.BitmapFactory.decodeFile(file.absolutePath)
+                    } else {
+                        val uri = Uri.parse(block.imageUri)
+                        context.contentResolver.openInputStream(uri)?.use { stream ->
+                            bitmap = android.graphics.BitmapFactory.decodeStream(stream)
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("ImageBlockView", "Failed to load image", e)
+            }
+        }
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        shape = RoundedCornerShape(8.dp),
+        color = Color.Transparent,
+        shadowElevation = 3.dp
+    ) {
+        if (bitmap != null && !bitmap!!.isRecycled) {
+            Image(
+                bitmap = bitmap!!.asImageBitmap(),
+                contentDescription = block.title,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(8.dp))
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color(0xFFE2E8F0), RoundedCornerShape(8.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(24.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.primary
+                )
             }
         }
     }
@@ -698,7 +865,7 @@ fun InternalLinkBlockView(
             .shadow(3.dp, RoundedCornerShape(12.dp)),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
-            containerColor = Color(0xFFFAF5FF), // Soft purple container
+            containerColor = Color(0xFFFAF5FF),
             contentColor = Color(0xFF581C87)
         ),
         border = BorderStroke(1.dp, Color(0xFFE9D5FF))
@@ -786,7 +953,7 @@ fun PdfAttachmentBlockView(
             .shadow(4.dp, RoundedCornerShape(12.dp)),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
-            containerColor = Color(0xFFFFF1F2), // Soft rose/red container
+            containerColor = Color(0xFFFFF1F2),
             contentColor = Color(0xFF881337)
         ),
         border = BorderStroke(1.dp, Color(0xFFFECDD3))

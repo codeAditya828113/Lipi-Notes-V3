@@ -21,6 +21,12 @@ sealed class LipiContentBlock(
     open val y: Float,          // Normalized Y (0..800+)
     open val width: Float,      // Normalized width
     open val height: Float,     // Normalized height
+    open val rotation: Float = 0f,
+    open val minWidth: Float = 60f,
+    open val minHeight: Float = 30f,
+    open val maxWidth: Float = 2000f,
+    open val maxHeight: Float = 3000f,
+    open val isAspectRatioLocked: Boolean = false,
     open val zIndex: Int = 0,
     open val createdAt: Long = System.currentTimeMillis()
 ) {
@@ -30,7 +36,10 @@ sealed class LipiContentBlock(
         y: Float = this.y,
         width: Float = this.width,
         height: Float = this.height,
-        page: Int = this.page
+        page: Int = this.page,
+        rotation: Float = this.rotation,
+        isAspectRatioLocked: Boolean = this.isAspectRatioLocked,
+        zIndex: Int = this.zIndex
     ): LipiContentBlock
 }
 
@@ -70,6 +79,12 @@ data class AudioContentBlock(
     override val y: Float = 50f,
     override val width: Float = 320f,
     override val height: Float = 110f,
+    override val rotation: Float = 0f,
+    override val minWidth: Float = 160f,
+    override val minHeight: Float = 60f,
+    override val maxWidth: Float = 1200f,
+    override val maxHeight: Float = 600f,
+    override val isAspectRatioLocked: Boolean = false,
     val audioFilePath: String = "",
     val originalFileName: String = "audio_recording.m4a",
     val title: String = "Voice Note",
@@ -86,10 +101,28 @@ data class AudioContentBlock(
     val waveformPoints: List<Float> = emptyList(),
     override val zIndex: Int = 1,
     override val createdAt: Long = System.currentTimeMillis()
-) : LipiContentBlock(id, page, x, y, width, height, zIndex, createdAt) {
+) : LipiContentBlock(id, page, x, y, width, height, rotation, minWidth, minHeight, maxWidth, maxHeight, isAspectRatioLocked, zIndex, createdAt) {
     override val blockType: String = "audio"
-    override fun copyWith(x: Float, y: Float, width: Float, height: Float, page: Int): LipiContentBlock {
-        return this.copy(x = x, y = y, width = width, height = height, page = page)
+    override fun copyWith(
+        x: Float,
+        y: Float,
+        width: Float,
+        height: Float,
+        page: Int,
+        rotation: Float,
+        isAspectRatioLocked: Boolean,
+        zIndex: Int
+    ): LipiContentBlock {
+        return this.copy(
+            x = x,
+            y = y,
+            width = width,
+            height = height,
+            page = page,
+            rotation = rotation,
+            isAspectRatioLocked = isAspectRatioLocked,
+            zIndex = zIndex
+        )
     }
 }
 
@@ -103,16 +136,40 @@ data class WebLinkContentBlock(
     override val y: Float = 50f,
     override val width: Float = 260f,
     override val height: Float = 70f,
+    override val rotation: Float = 0f,
+    override val minWidth: Float = 140f,
+    override val minHeight: Float = 50f,
+    override val maxWidth: Float = 1200f,
+    override val maxHeight: Float = 400f,
+    override val isAspectRatioLocked: Boolean = false,
     val url: String = "",
     val title: String = "",
     val description: String = "",
     val faviconUrl: String = "",
     override val zIndex: Int = 1,
     override val createdAt: Long = System.currentTimeMillis()
-) : LipiContentBlock(id, page, x, y, width, height, zIndex, createdAt) {
+) : LipiContentBlock(id, page, x, y, width, height, rotation, minWidth, minHeight, maxWidth, maxHeight, isAspectRatioLocked, zIndex, createdAt) {
     override val blockType: String = "web_link"
-    override fun copyWith(x: Float, y: Float, width: Float, height: Float, page: Int): LipiContentBlock {
-        return this.copy(x = x, y = y, width = width, height = height, page = page)
+    override fun copyWith(
+        x: Float,
+        y: Float,
+        width: Float,
+        height: Float,
+        page: Int,
+        rotation: Float,
+        isAspectRatioLocked: Boolean,
+        zIndex: Int
+    ): LipiContentBlock {
+        return this.copy(
+            x = x,
+            y = y,
+            width = width,
+            height = height,
+            page = page,
+            rotation = rotation,
+            isAspectRatioLocked = isAspectRatioLocked,
+            zIndex = zIndex
+        )
     }
 }
 
@@ -126,16 +183,40 @@ data class InternalLinkContentBlock(
     override val y: Float = 50f,
     override val width: Float = 240f,
     override val height: Float = 64f,
+    override val rotation: Float = 0f,
+    override val minWidth: Float = 140f,
+    override val minHeight: Float = 50f,
+    override val maxWidth: Float = 1200f,
+    override val maxHeight: Float = 400f,
+    override val isAspectRatioLocked: Boolean = false,
     val targetNoteId: Int = -1,
     val targetNoteTitle: String = "",
     val targetPage: Int = 1,
     val label: String = "",
     override val zIndex: Int = 1,
     override val createdAt: Long = System.currentTimeMillis()
-) : LipiContentBlock(id, page, x, y, width, height, zIndex, createdAt) {
+) : LipiContentBlock(id, page, x, y, width, height, rotation, minWidth, minHeight, maxWidth, maxHeight, isAspectRatioLocked, zIndex, createdAt) {
     override val blockType: String = "internal_link"
-    override fun copyWith(x: Float, y: Float, width: Float, height: Float, page: Int): LipiContentBlock {
-        return this.copy(x = x, y = y, width = width, height = height, page = page)
+    override fun copyWith(
+        x: Float,
+        y: Float,
+        width: Float,
+        height: Float,
+        page: Int,
+        rotation: Float,
+        isAspectRatioLocked: Boolean,
+        zIndex: Int
+    ): LipiContentBlock {
+        return this.copy(
+            x = x,
+            y = y,
+            width = width,
+            height = height,
+            page = page,
+            rotation = rotation,
+            isAspectRatioLocked = isAspectRatioLocked,
+            zIndex = zIndex
+        )
     }
 }
 
@@ -149,6 +230,12 @@ data class PdfAttachmentContentBlock(
     override val y: Float = 50f,
     override val width: Float = 260f,
     override val height: Float = 90f,
+    override val rotation: Float = 0f,
+    override val minWidth: Float = 160f,
+    override val minHeight: Float = 60f,
+    override val maxWidth: Float = 1200f,
+    override val maxHeight: Float = 600f,
+    override val isAspectRatioLocked: Boolean = false,
     val pdfFilePath: String = "",
     val originalFileName: String = "document.pdf",
     val pageCount: Int = 1,
@@ -156,10 +243,28 @@ data class PdfAttachmentContentBlock(
     val previewThumbnailPath: String = "",
     override val zIndex: Int = 1,
     override val createdAt: Long = System.currentTimeMillis()
-) : LipiContentBlock(id, page, x, y, width, height, zIndex, createdAt) {
+) : LipiContentBlock(id, page, x, y, width, height, rotation, minWidth, minHeight, maxWidth, maxHeight, isAspectRatioLocked, zIndex, createdAt) {
     override val blockType: String = "pdf_attachment"
-    override fun copyWith(x: Float, y: Float, width: Float, height: Float, page: Int): LipiContentBlock {
-        return this.copy(x = x, y = y, width = width, height = height, page = page)
+    override fun copyWith(
+        x: Float,
+        y: Float,
+        width: Float,
+        height: Float,
+        page: Int,
+        rotation: Float,
+        isAspectRatioLocked: Boolean,
+        zIndex: Int
+    ): LipiContentBlock {
+        return this.copy(
+            x = x,
+            y = y,
+            width = width,
+            height = height,
+            page = page,
+            rotation = rotation,
+            isAspectRatioLocked = isAspectRatioLocked,
+            zIndex = zIndex
+        )
     }
 }
 
@@ -173,16 +278,85 @@ data class PdfPageContentBlock(
     override val y: Float = 30f,
     override val width: Float = 540f,
     override val height: Float = 720f,
+    override val rotation: Float = 0f,
+    override val minWidth: Float = 100f,
+    override val minHeight: Float = 100f,
+    override val maxWidth: Float = 2000f,
+    override val maxHeight: Float = 3000f,
+    override val isAspectRatioLocked: Boolean = true,
     val pdfFilePath: String = "",
     val pdfPageIndex: Int = 0,     // 0-indexed in the PDF file
     val sourcePdfTitle: String = "Document",
-    val rotation: Float = 0f,
     override val zIndex: Int = 0,    // Renders below handwriting strokes
     override val createdAt: Long = System.currentTimeMillis()
-) : LipiContentBlock(id, page, x, y, width, height, zIndex, createdAt) {
+) : LipiContentBlock(id, page, x, y, width, height, rotation, minWidth, minHeight, maxWidth, maxHeight, isAspectRatioLocked, zIndex, createdAt) {
     override val blockType: String = "pdf_page"
-    override fun copyWith(x: Float, y: Float, width: Float, height: Float, page: Int): LipiContentBlock {
-        return this.copy(x = x, y = y, width = width, height = height, page = page)
+    override fun copyWith(
+        x: Float,
+        y: Float,
+        width: Float,
+        height: Float,
+        page: Int,
+        rotation: Float,
+        isAspectRatioLocked: Boolean,
+        zIndex: Int
+    ): LipiContentBlock {
+        return this.copy(
+            x = x,
+            y = y,
+            width = width,
+            height = height,
+            page = page,
+            rotation = rotation,
+            isAspectRatioLocked = isAspectRatioLocked,
+            zIndex = zIndex
+        )
+    }
+}
+
+/**
+ * Image or Scanned Document Content Block
+ */
+data class ImageContentBlock(
+    override val id: String = UUID.randomUUID().toString(),
+    override val page: Int = 1,
+    override val x: Float = 50f,
+    override val y: Float = 50f,
+    override val width: Float = 400f,
+    override val height: Float = 300f,
+    override val rotation: Float = 0f,
+    override val minWidth: Float = 60f,
+    override val minHeight: Float = 60f,
+    override val maxWidth: Float = 2000f,
+    override val maxHeight: Float = 3000f,
+    override val isAspectRatioLocked: Boolean = true,
+    val imageUri: String = "",
+    val title: String = "Image",
+    val isScannedDoc: Boolean = false,
+    override val zIndex: Int = 0,
+    override val createdAt: Long = System.currentTimeMillis()
+) : LipiContentBlock(id, page, x, y, width, height, rotation, minWidth, minHeight, maxWidth, maxHeight, isAspectRatioLocked, zIndex, createdAt) {
+    override val blockType: String = "image"
+    override fun copyWith(
+        x: Float,
+        y: Float,
+        width: Float,
+        height: Float,
+        page: Int,
+        rotation: Float,
+        isAspectRatioLocked: Boolean,
+        zIndex: Int
+    ): LipiContentBlock {
+        return this.copy(
+            x = x,
+            y = y,
+            width = width,
+            height = height,
+            page = page,
+            rotation = rotation,
+            isAspectRatioLocked = isAspectRatioLocked,
+            zIndex = zIndex
+        )
     }
 }
 
@@ -196,6 +370,12 @@ data class TextContentBlock(
     override val y: Float = 50f,
     override val width: Float = 220f,
     override val height: Float = 140f,
+    override val rotation: Float = 0f,
+    override val minWidth: Float = 80f,
+    override val minHeight: Float = 40f,
+    override val maxWidth: Float = 1200f,
+    override val maxHeight: Float = 1600f,
+    override val isAspectRatioLocked: Boolean = false,
     val text: String = "",
     val fontSizeSp: Float = 14f,
     val textColor: Long = 0xFF1E293BL,
@@ -203,10 +383,28 @@ data class TextContentBlock(
     val isStickyNote: Boolean = true,
     override val zIndex: Int = 1,
     override val createdAt: Long = System.currentTimeMillis()
-) : LipiContentBlock(id, page, x, y, width, height, zIndex, createdAt) {
+) : LipiContentBlock(id, page, x, y, width, height, rotation, minWidth, minHeight, maxWidth, maxHeight, isAspectRatioLocked, zIndex, createdAt) {
     override val blockType: String = "text"
-    override fun copyWith(x: Float, y: Float, width: Float, height: Float, page: Int): LipiContentBlock {
-        return this.copy(x = x, y = y, width = width, height = height, page = page)
+    override fun copyWith(
+        x: Float,
+        y: Float,
+        width: Float,
+        height: Float,
+        page: Int,
+        rotation: Float,
+        isAspectRatioLocked: Boolean,
+        zIndex: Int
+    ): LipiContentBlock {
+        return this.copy(
+            x = x,
+            y = y,
+            width = width,
+            height = height,
+            page = page,
+            rotation = rotation,
+            isAspectRatioLocked = isAspectRatioLocked,
+            zIndex = zIndex
+        )
     }
 }
 
@@ -228,6 +426,12 @@ object LipiContentBlockSerializer {
                 put("width", block.width.toDouble())
                 put("height", block.height.toDouble())
                 put("zIndex", block.zIndex)
+                put("rotation", block.rotation.toDouble())
+                put("minWidth", block.minWidth.toDouble())
+                put("minHeight", block.minHeight.toDouble())
+                put("maxWidth", block.maxWidth.toDouble())
+                put("maxHeight", block.maxHeight.toDouble())
+                put("isAspectRatioLocked", block.isAspectRatioLocked)
                 put("createdAt", block.createdAt)
 
                 when (block) {
@@ -288,7 +492,11 @@ object LipiContentBlockSerializer {
                         put("pdfFilePath", block.pdfFilePath)
                         put("pdfPageIndex", block.pdfPageIndex)
                         put("sourcePdfTitle", block.sourcePdfTitle)
-                        put("rotation", block.rotation.toDouble())
+                    }
+                    is ImageContentBlock -> {
+                        put("imageUri", block.imageUri)
+                        put("title", block.title)
+                        put("isScannedDoc", block.isScannedDoc)
                     }
                     is TextContentBlock -> {
                         put("text", block.text)
@@ -318,6 +526,12 @@ object LipiContentBlockSerializer {
                 val y = obj.optDouble("y", 50.0).toFloat()
                 val width = obj.optDouble("width", 200.0).toFloat()
                 val height = obj.optDouble("height", 80.0).toFloat()
+                val rotation = obj.optDouble("rotation", 0.0).toFloat()
+                val minWidth = obj.optDouble("minWidth", 60.0).toFloat()
+                val minHeight = obj.optDouble("minHeight", 30.0).toFloat()
+                val maxWidth = obj.optDouble("maxWidth", 2000.0).toFloat()
+                val maxHeight = obj.optDouble("maxHeight", 3000.0).toFloat()
+                val isAspectRatioLocked = obj.optBoolean("isAspectRatioLocked", type == "image" || type == "pdf_page")
                 val zIndex = obj.optInt("zIndex", 0)
                 val createdAt = obj.optLong("createdAt", System.currentTimeMillis())
 
@@ -358,6 +572,12 @@ object LipiContentBlockSerializer {
                                 y = y,
                                 width = width,
                                 height = height,
+                                rotation = rotation,
+                                minWidth = minWidth,
+                                minHeight = minHeight,
+                                maxWidth = maxWidth,
+                                maxHeight = maxHeight,
+                                isAspectRatioLocked = isAspectRatioLocked,
                                 audioFilePath = obj.optString("audioFilePath", ""),
                                 originalFileName = obj.optString("originalFileName", "audio.m4a"),
                                 title = obj.optString("title", "Voice Note"),
@@ -385,6 +605,12 @@ object LipiContentBlockSerializer {
                                 y = y,
                                 width = width,
                                 height = height,
+                                rotation = rotation,
+                                minWidth = minWidth,
+                                minHeight = minHeight,
+                                maxWidth = maxWidth,
+                                maxHeight = maxHeight,
+                                isAspectRatioLocked = isAspectRatioLocked,
                                 url = obj.optString("url", ""),
                                 title = obj.optString("title", ""),
                                 description = obj.optString("description", ""),
@@ -403,6 +629,12 @@ object LipiContentBlockSerializer {
                                 y = y,
                                 width = width,
                                 height = height,
+                                rotation = rotation,
+                                minWidth = minWidth,
+                                minHeight = minHeight,
+                                maxWidth = maxWidth,
+                                maxHeight = maxHeight,
+                                isAspectRatioLocked = isAspectRatioLocked,
                                 targetNoteId = obj.optInt("targetNoteId", -1),
                                 targetNoteTitle = obj.optString("targetNoteTitle", ""),
                                 targetPage = obj.optInt("targetPage", 1),
@@ -421,6 +653,12 @@ object LipiContentBlockSerializer {
                                 y = y,
                                 width = width,
                                 height = height,
+                                rotation = rotation,
+                                minWidth = minWidth,
+                                minHeight = minHeight,
+                                maxWidth = maxWidth,
+                                maxHeight = maxHeight,
+                                isAspectRatioLocked = isAspectRatioLocked,
                                 pdfFilePath = obj.optString("pdfFilePath", ""),
                                 originalFileName = obj.optString("originalFileName", "document.pdf"),
                                 pageCount = obj.optInt("pageCount", 1),
@@ -440,10 +678,38 @@ object LipiContentBlockSerializer {
                                 y = y,
                                 width = width,
                                 height = height,
+                                rotation = rotation,
+                                minWidth = minWidth,
+                                minHeight = minHeight,
+                                maxWidth = maxWidth,
+                                maxHeight = maxHeight,
+                                isAspectRatioLocked = isAspectRatioLocked,
                                 pdfFilePath = obj.optString("pdfFilePath", ""),
                                 pdfPageIndex = obj.optInt("pdfPageIndex", 0),
                                 sourcePdfTitle = obj.optString("sourcePdfTitle", "Document"),
-                                rotation = obj.optDouble("rotation", 0.0).toFloat(),
+                                zIndex = zIndex,
+                                createdAt = createdAt
+                            )
+                        )
+                    }
+                    "image" -> {
+                        list.add(
+                            ImageContentBlock(
+                                id = id,
+                                page = page,
+                                x = x,
+                                y = y,
+                                width = width,
+                                height = height,
+                                rotation = rotation,
+                                minWidth = minWidth,
+                                minHeight = minHeight,
+                                maxWidth = maxWidth,
+                                maxHeight = maxHeight,
+                                isAspectRatioLocked = isAspectRatioLocked,
+                                imageUri = obj.optString("imageUri", ""),
+                                title = obj.optString("title", "Image"),
+                                isScannedDoc = obj.optBoolean("isScannedDoc", false),
                                 zIndex = zIndex,
                                 createdAt = createdAt
                             )
@@ -458,6 +724,12 @@ object LipiContentBlockSerializer {
                                 y = y,
                                 width = width,
                                 height = height,
+                                rotation = rotation,
+                                minWidth = minWidth,
+                                minHeight = minHeight,
+                                maxWidth = maxWidth,
+                                maxHeight = maxHeight,
+                                isAspectRatioLocked = isAspectRatioLocked,
                                 text = obj.optString("text", ""),
                                 fontSizeSp = obj.optDouble("fontSizeSp", 14.0).toFloat(),
                                 textColor = obj.optLong("textColor", 0xFF1E293BL),

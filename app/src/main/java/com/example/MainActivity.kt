@@ -64,13 +64,20 @@ class MainActivity : FragmentActivity() {
   }
 
   fun updateSystemBarsVisibility(fullViewEnabled: Boolean) {
-    val windowInsetsController = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
-    if (fullViewEnabled && !isInMultiWindowMode) {
-      windowInsetsController.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
-      windowInsetsController.systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-    } else {
-      windowInsetsController.show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+    val applyVisibility = {
+      try {
+        val windowInsetsController = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
+        if (fullViewEnabled && !isInMultiWindowMode) {
+          windowInsetsController.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+          windowInsetsController.systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        } else {
+          windowInsetsController.show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+        }
+      } catch (_: Exception) {}
     }
+    applyVisibility()
+    window.decorView.post(applyVisibility)
+    window.decorView.postDelayed(applyVisibility, 150)
   }
 
   override fun onNewIntent(intent: android.content.Intent) {

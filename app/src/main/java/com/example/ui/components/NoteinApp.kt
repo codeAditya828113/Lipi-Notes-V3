@@ -217,7 +217,15 @@ fun NoteinApp(
         }
     }
 
-    LaunchedEffect(viewModel.isFullViewMode) {
+    LaunchedEffect(
+        viewModel.isFullViewMode,
+        activeTab,
+        selectedNote?.id,
+        viewModel.showDocumentScannerOverlay,
+        viewModel.showPdfAnnotationViewer,
+        viewModel.showAudioRecordingOverlay,
+        viewModel.showGoogleSearchDialog
+    ) {
         val activity = (context as? com.example.MainActivity)
         if (activity != null) {
             activity.updateSystemBarsVisibility(viewModel.isFullViewMode)
@@ -500,6 +508,8 @@ fun NoteinApp(
             viewModel = viewModel,
             onDismiss = {
                 viewModel.closeDocumentScanner()
+                val activity = (context as? com.example.MainActivity)
+                activity?.updateSystemBarsVisibility(viewModel.isFullViewMode)
                 if (viewModel.selectedNote != null) {
                     navigateToTab("notes")
                 }
@@ -5649,7 +5659,9 @@ if (showLayersDialog) {
                     onBlockUpdated = { viewModel.updateContentBlock(it) },
                     onBlockDeleted = { viewModel.deleteContentBlock(it.id) },
                     onMoveBlock = { id, dx, dy -> viewModel.moveContentBlock(id, dx, dy) },
-                    onResizeBlock = { id, w, h -> viewModel.resizeContentBlock(id, w, h) },
+                    onResizeBlock = { id, w, h, nx, ny -> viewModel.resizeContentBlock(id, w, h, nx, ny) },
+                    onRotateBlock = { id, rot -> viewModel.rotateContentBlock(id, rot) },
+                    onToggleAspectRatioLock = { id -> viewModel.toggleBlockAspectRatioLock(id) },
                     onBlockTransformEnd = { viewModel.onFinishBlockTransform() },
                     onDuplicateBlock = { id -> viewModel.duplicateContentBlock(id) },
                     onNavigateToNotePage = { targetNoteId, targetPage ->
@@ -6382,16 +6394,38 @@ if (showLayersDialog) {
 
     if (viewModel.showPdfAnnotationViewer) {
         androidx.compose.ui.window.Dialog(
-            onDismissRequest = { viewModel.showPdfAnnotationViewer = false },
+            onDismissRequest = {
+                viewModel.showPdfAnnotationViewer = false
+                val activity = (context as? com.example.MainActivity)
+                activity?.updateSystemBarsVisibility(viewModel.isFullViewMode)
+            },
             properties = androidx.compose.ui.window.DialogProperties(
                 usePlatformDefaultWidth = false,
                 decorFitsSystemWindows = false
             )
         ) {
+            val currentView = androidx.compose.ui.platform.LocalView.current
+            DisposableEffect(viewModel.isFullViewMode) {
+                val dialogWindow = (currentView.parent as? androidx.compose.ui.window.DialogWindowProvider)?.window
+                if (dialogWindow != null && viewModel.isFullViewMode) {
+                    androidx.core.view.WindowCompat.setDecorFitsSystemWindows(dialogWindow, false)
+                    val insetsController = androidx.core.view.WindowCompat.getInsetsController(dialogWindow, dialogWindow.decorView)
+                    insetsController.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+                    insetsController.systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                }
+                onDispose {
+                    val activity = (context as? com.example.MainActivity)
+                    activity?.updateSystemBarsVisibility(viewModel.isFullViewMode)
+                }
+            }
             PdfAnnotationViewer(
                 note = selectedNote,
                 viewModel = viewModel,
-                onClose = { viewModel.showPdfAnnotationViewer = false },
+                onClose = {
+                    viewModel.showPdfAnnotationViewer = false
+                    val activity = (context as? com.example.MainActivity)
+                    activity?.updateSystemBarsVisibility(viewModel.isFullViewMode)
+                },
                 modifier = Modifier.fillMaxSize()
             )
         }
@@ -7311,6 +7345,25 @@ fun SyncDashboard(
     }
     val totalStorageBytes = textBytes + drawingBytes + voiceBytes + pdfBytes
 
+    // Realtime Drive Quota and Connection Health states
+    var driveStorageQuota by androidx.compose.runtime.remember {
+        androidx.compose.runtime.mutableStateOf<GoogleDriveBackupHelper.DriveStorageQuota?>(null)
+    }
+    var connectionHealthInfo by androidx.compose.runtime.remember {
+        androidx.compose.runtime.mutableStateOf(Pair("Checking...", 0L))
+    }
+
+    androidx.compose.runtime.LaunchedEffect(Unit, isSignedIn, viewModel.lastSyncTime) {
+        // 1. Fetch connection health & latency
+        val health = GoogleDriveBackupHelper.checkConnectionHealth(context)
+        connectionHealthInfo = health
+
+        // 2. Fetch real-time Google Drive storage quota if signed in / service available
+        val quota = GoogleDriveBackupHelper.fetchDriveStorageQuota(context)
+        if (quota != null) {
+            driveStorageQuota = quota
+        }
+    }
 
     val infiniteTransition = rememberInfiniteTransition(label = "syncSpin")
     val spinAngle by infiniteTransition.animateFloat(
@@ -7565,6 +7618,9 @@ fun SyncDashboard(
                             primaryColor = primaryColor,
                             successColor = successColor,
                             lastSyncTime = viewModel.lastSyncTime,
+                            totalStorageBytes = totalStorageBytes,
+                            driveQuota = driveStorageQuota,
+                            connectionHealth = connectionHealthInfo,
                             onSignInGoogle = {
                                 try {
                                     signInLauncher.launch(googleSignInClient.signInIntent)
@@ -7602,6 +7658,8 @@ fun SyncDashboard(
                             surfaceBorder = surfaceBorder,
                             primaryColor = primaryColor,
                             localBackupCount = localBackupList.size,
+                            driveQuota = driveStorageQuota,
+                            totalStorageBytes = totalStorageBytes,
                             onSyncGoogleDrive = { viewModel.syncWithGoogleDrive() },
                             onExportLocal = {
                                 val timeStamp = java.text.SimpleDateFormat("yyyyMMdd_HHmm", java.util.Locale.getDefault()).format(java.util.Date())
@@ -7705,6 +7763,9 @@ fun SyncDashboard(
                     primaryColor = primaryColor,
                     successColor = successColor,
                     lastSyncTime = viewModel.lastSyncTime,
+                    totalStorageBytes = totalStorageBytes,
+                    driveQuota = driveStorageQuota,
+                    connectionHealth = connectionHealthInfo,
                     onSignInGoogle = {
                         try {
                             signInLauncher.launch(googleSignInClient.signInIntent)
@@ -7761,6 +7822,8 @@ fun SyncDashboard(
                     surfaceBorder = surfaceBorder,
                     primaryColor = primaryColor,
                     localBackupCount = localBackupList.size,
+                    driveQuota = driveStorageQuota,
+                    totalStorageBytes = totalStorageBytes,
                     onSyncGoogleDrive = { viewModel.syncWithGoogleDrive() },
                     onExportLocal = {
                         val timeStamp = java.text.SimpleDateFormat("yyyyMMdd_HHmm", java.util.Locale.getDefault()).format(java.util.Date())
@@ -8108,6 +8171,9 @@ private fun AccountSectionCard(
     primaryColor: Color,
     successColor: Color,
     lastSyncTime: String,
+    totalStorageBytes: Long = 0L,
+    driveQuota: GoogleDriveBackupHelper.DriveStorageQuota? = null,
+    connectionHealth: Pair<String, Long> = Pair("Excellent", 42L),
     onSignInGoogle: () -> Unit,
     onSignInMicrosoft: () -> Unit,
     onSignInLinkedIn: () -> Unit,
@@ -8275,18 +8341,53 @@ private fun AccountSectionCard(
             HorizontalDivider(color = surfaceBorder.copy(alpha = 0.6f))
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Storage Usage Progress Bar
+            // Storage Usage Progress Bar - Realtime calculation
+            val isDriveFetched = driveQuota != null && driveQuota.isFetched
+            val usageLabel = if (isDriveFetched) {
+                "${driveQuota!!.formattedUsage} of ${driveQuota.formattedLimit} (${(driveQuota.usagePercentage * 100).toInt()}%)"
+            } else {
+                val formattedLocal = formatStorageSize(totalStorageBytes)
+                "$formattedLocal Vault Notes of 15.0 GB Storage"
+            }
+            val progressVal = if (isDriveFetched) {
+                driveQuota!!.usagePercentage
+            } else {
+                (totalStorageBytes.toFloat() / (15L * 1024L * 1024L * 1024L).toFloat()).coerceIn(0.02f, 1f)
+            }
+
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("Google Storage Usage", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = textPrimary)
-                Text("14.2 GB of 15.0 GB (94%)", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = primaryColor)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        if (isDriveFetched) "Google Drive Cloud Usage" else "Account Storage Usage",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = textPrimary
+                    )
+                    if (isDriveFetched) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = successColor.copy(alpha = 0.15f)
+                        ) {
+                            Text(
+                                "Live",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = successColor,
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                            )
+                        }
+                    }
+                }
+                Text(usageLabel, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = primaryColor)
             }
             Spacer(modifier = Modifier.height(8.dp))
             LinearProgressIndicator(
-                progress = { 0.94f },
+                progress = { progressVal },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(8.dp)
@@ -8298,28 +8399,42 @@ private fun AccountSectionCard(
             Spacer(modifier = Modifier.height(16.dp))
 
             // Last Sync & Connection Health Row
+            val (healthStatus, latencyMs) = connectionHealth
+            val healthColor = when (healthStatus) {
+                "Excellent", "Good" -> successColor
+                "Fair" -> Color(0xFFF59E0B)
+                "Offline" -> Color(0xFFEF4444)
+                else -> primaryColor
+            }
+            val healthLabel = if (latencyMs >= 0) {
+                "Connection Health: $healthStatus ($latencyMs ms)"
+            } else {
+                "Connection Health: $healthStatus"
+            }
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.Schedule, contentDescription = null, tint = textSecondary, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = if (lastSyncTime.isNotBlank()) "Last sync: $lastSyncTime" else "Last sync: Today at 4:15 PM",
+                        text = if (lastSyncTime.isNotBlank()) "Last sync: $lastSyncTime" else "Last sync: Realtime Active",
                         fontSize = 12.sp,
                         color = textSecondary
                     )
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Speed, contentDescription = null, tint = successColor, modifier = Modifier.size(16.dp))
+                    Icon(Icons.Default.Speed, contentDescription = null, tint = healthColor, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "Connection Health: Excellent (42 ms)",
+                        text = healthLabel,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Medium,
-                        color = successColor
+                        color = healthColor
                     )
                 }
             }
@@ -8478,6 +8593,8 @@ private fun BackupProvidersSectionCard(
     surfaceBorder: Color,
     primaryColor: Color,
     localBackupCount: Int,
+    driveQuota: GoogleDriveBackupHelper.DriveStorageQuota? = null,
+    totalStorageBytes: Long = 0L,
     onSyncGoogleDrive: () -> Unit,
     onExportLocal: () -> Unit,
     onRestoreLocal: () -> Unit
@@ -8493,14 +8610,21 @@ private fun BackupProvidersSectionCard(
             Text("Backup Storage Providers", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = textPrimary)
             Spacer(modifier = Modifier.height(16.dp))
 
+            val isDriveFetched = driveQuota != null && driveQuota.isFetched
+            val driveStorageDisplay = if (isDriveFetched) {
+                "${driveQuota!!.formattedUsage} of ${driveQuota.formattedLimit}"
+            } else {
+                "${formatStorageSize(totalStorageBytes)} of 15.0 GB"
+            }
+
             // Grid of 4 Provider Cards
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 // 1. Google Drive Card
                 ProviderCardItem(
                     title = "Google Drive",
-                    subtitle = if (isSignedIn) "Connected • Primary Target" else "Primary Cloud Target",
+                    subtitle = if (isSignedIn) "Connected • $driveStorageDisplay used" else "Cloud Target • $driveStorageDisplay",
                     statusText = if (isSignedIn) "Active Sync" else "Ready to Connect",
-                    storageText = "14.2 GB used",
+                    storageText = driveStorageDisplay,
                     icon = Icons.Default.CloudQueue,
                     iconTint = primaryColor,
                     badgeColor = primaryColor,

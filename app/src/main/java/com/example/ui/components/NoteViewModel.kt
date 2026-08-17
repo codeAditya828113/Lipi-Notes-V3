@@ -646,12 +646,34 @@ class NoteViewModel(
         }
     }
 
-    fun resizeContentBlock(blockId: String, newWidth: Float, newHeight: Float) {
+    fun resizeContentBlock(blockId: String, newWidth: Float, newHeight: Float, newX: Float? = null, newY: Float? = null) {
         currentContentBlocks = currentContentBlocks.map {
             if (it.id == blockId) {
-                it.copyWith(width = newWidth.coerceAtLeast(60f), height = newHeight.coerceAtLeast(40f))
+                val clampedW = newWidth.coerceIn(it.minWidth, it.maxWidth)
+                val clampedH = newHeight.coerceIn(it.minHeight, it.maxHeight)
+                val clampedX = (newX ?: it.x).coerceIn(0f, 600f)
+                val clampedY = (newY ?: it.y).coerceIn(0f, 1500f)
+                it.copyWith(width = clampedW, height = clampedH, x = clampedX, y = clampedY)
             } else it
         }
+    }
+
+    fun rotateContentBlock(blockId: String, rotation: Float) {
+        currentContentBlocks = currentContentBlocks.map {
+            if (it.id == blockId) {
+                it.copyWith(rotation = (rotation % 360f + 360f) % 360f)
+            } else it
+        }
+    }
+
+    fun toggleBlockAspectRatioLock(blockId: String) {
+        saveToUndoStack()
+        currentContentBlocks = currentContentBlocks.map {
+            if (it.id == blockId) {
+                it.copyWith(isAspectRatioLocked = !it.isAspectRatioLocked)
+            } else it
+        }
+        saveActiveCanvasStrokes()
     }
 
     fun onFinishBlockTransform() {
@@ -669,6 +691,7 @@ class NoteViewModel(
             is com.example.data.InternalLinkContentBlock -> existing.copy(id = newId, x = existing.x + 20f, y = existing.y + 20f)
             is com.example.data.PdfAttachmentContentBlock -> existing.copy(id = newId, x = existing.x + 20f, y = existing.y + 20f)
             is com.example.data.PdfPageContentBlock -> existing.copy(id = newId, x = existing.x + 20f, y = existing.y + 20f)
+            is com.example.data.ImageContentBlock -> existing.copy(id = newId, x = existing.x + 20f, y = existing.y + 20f)
             is com.example.data.TextContentBlock -> existing.copy(id = newId, x = existing.x + 20f, y = existing.y + 20f)
         }
         currentContentBlocks = currentContentBlocks + copy
