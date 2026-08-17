@@ -158,7 +158,7 @@ fun NovaDashboard(
         NotebookStudioDialog(
             note = null,
             onDismiss = { showNotebookStudioModal = false },
-            onCreateNew = { title, templateType, coverType, pageColor, coverTitle, coverSubtitle, coverAuthor, coverExtra, folder ->
+            onCreateNew = { title, templateType, coverType, pageColor, coverTitle, coverSubtitle, coverAuthor, coverExtra, folder, isLocked, pinCode ->
                 viewModel.createNewNoteWithDesign(
                     title = title,
                     templateType = templateType,
@@ -168,7 +168,9 @@ fun NovaDashboard(
                     coverSubtitle = coverSubtitle,
                     coverAuthor = coverAuthor,
                     coverExtra = coverExtra,
-                    folder = folder
+                    folder = folder,
+                    isLocked = isLocked,
+                    pinCode = pinCode
                 )
                 showNotebookStudioModal = false
                 onNavigateToNotesWithFilter?.invoke(title) ?: onNavigateToNotes()
@@ -1998,8 +2000,15 @@ private fun ContinueWorkingSection(
                             .width(185.dp)
                             .height(245.dp)
                             .springCardPress {
-                                cover.noteEntity?.let { viewModel.selectNote(it) }
-                                onNoteClick()
+                                val entity = cover.noteEntity
+                                if (entity != null) {
+                                    if (entity.isLocked && entity.pinCode.isNotBlank()) {
+                                        viewModel.requestOpenNote(entity)
+                                    } else {
+                                        viewModel.selectNote(entity)
+                                        onNoteClick()
+                                    }
+                                }
                             },
                         shape = RoundedCornerShape(20.dp),
                         colors = CardDefaults.cardColors(containerColor = cardBg),
@@ -2029,6 +2038,14 @@ private fun ContinueWorkingSection(
                                         .padding(8.dp),
                                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                                 ) {
+                                    if (cover.noteEntity?.isLocked == true && cover.noteEntity.pinCode.isNotBlank()) {
+                                        Surface(
+                                            shape = CircleShape,
+                                            color = Color.Black.copy(alpha = 0.45f)
+                                        ) {
+                                            Icon(Icons.Default.Lock, contentDescription = "Locked", tint = Color.White, modifier = Modifier.size(16.dp).padding(3.dp))
+                                        }
+                                    }
                                     if (cover.isAi) {
                                         Surface(
                                             shape = CircleShape,

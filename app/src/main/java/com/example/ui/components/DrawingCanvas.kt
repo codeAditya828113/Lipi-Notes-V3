@@ -136,6 +136,8 @@ fun DrawingCanvas(
     onMoveBlock: (String, Float, Float) -> Unit = { _, _, _ -> },
     onResizeBlock: (String, Float, Float) -> Unit = { _, _, _ -> },
     onDuplicateBlock: (String) -> Unit = {},
+    onBlockTransformEnd: () -> Unit = {},
+    onImageTransformFinished: () -> Unit = {},
     onNavigateToNotePage: (Int, Int) -> Unit = {_,_->},
     onOpenPdfViewer: (String, Int) -> Unit = {_,_->}
 ) {
@@ -229,7 +231,7 @@ fun DrawingCanvas(
     val actualBgColor = if (isDarkTheme && canvasBgColor == Color(0xFFFFFFFF)) Color(0xFF1E293B) else canvasBgColor
     val isDarkPaperCanvas = isDarkTheme || (0.299f * actualBgColor.red + 0.587f * actualBgColor.green + 0.114f * actualBgColor.blue) < 0.45f
     val deskBgColor = if (isDarkTheme) Color(0xFF0F172A) else Color(0xFFE2E8F0)
-    BoxWithConstraints(modifier = modifier.background(deskBgColor)) {
+    BoxWithConstraints(modifier = modifier.clipToBounds().background(deskBgColor)) {
         val density = LocalDensity.current
         val widthPx = with(density) { maxWidth.toPx() }.toInt().coerceAtLeast(1)
         val heightPx = with(density) { maxHeight.toPx() }.toInt().coerceAtLeast(1)
@@ -738,6 +740,7 @@ fun DrawingCanvas(
                             activeImageInteraction = null
                             activeImageCorner = null
                             lastFingerDragPoint = null
+                            onImageTransformFinished()
                         }
                         return@pointerInteropFilter true
                     }
@@ -1111,6 +1114,9 @@ fun DrawingCanvas(
 
                     when (action) {
                         MotionEvent.ACTION_DOWN -> {
+                            if (selectedBlockId != null) {
+                                onBlockSelected(null)
+                            }
                             isWritingStartedOnPage = true
                             view.parent?.requestDisallowInterceptTouchEvent(true)
                             isZooming = false
@@ -1427,70 +1433,475 @@ fun DrawingCanvas(
                             }
                         } else {
                             withTransform({ translate(pageL, topOffset) }) {
-                                when (templateType) {
-                                    "grid" -> {
-                                        val gridSpacing = 30.dp.toPx()
-                                        val gridColor = if (isDarkTheme) Color.White.copy(alpha = 0.12f) else Color.LightGray.copy(alpha = 0.35f)
-                                        for (gx in 0..pageW.toInt() step gridSpacing.toInt()) {
-                                            drawLine(gridColor, start = Offset(gx.toFloat(), 0f), end = Offset(gx.toFloat(), pageH), strokeWidth = 1f)
-                                        }
-                                        for (gy in 0..pageH.toInt() step gridSpacing.toInt()) {
-                                            drawLine(gridColor, start = Offset(0f, gy.toFloat()), end = Offset(pageW, gy.toFloat()), strokeWidth = 1f)
-                                        }
+                                val normType = templateType.lowercase().trim()
+                                val gridLineColor = if (isDarkTheme) Color.White.copy(alpha = 0.16f) else Color(0xFFCBD5E1).copy(alpha = 0.65f)
+                                val marginLineColor = if (isDarkTheme) Color(0xFFEF4444).copy(alpha = 0.55f) else Color(0xFFF87171).copy(alpha = 0.75f)
+                                val primaryLineColor = if (isDarkTheme) Color(0xFF60A5FA).copy(alpha = 0.65f) else Color(0xFF3B82F6).copy(alpha = 0.65f)
+                                val accentLineColor = if (isDarkTheme) Color(0xFF34D399).copy(alpha = 0.65f) else Color(0xFF10B981).copy(alpha = 0.65f)
+                                val textColor = if (isDarkTheme) android.graphics.Color.LTGRAY else android.graphics.Color.DKGRAY
+                                val textMutedColor = if (isDarkTheme) android.graphics.Color.GRAY else android.graphics.Color.LTGRAY
+
+                                when {
+                                    normType == "blank" -> {
+                                        // Clean blank paper canvas
                                     }
-                                    "dotted" -> {
-                                        val dotSpacing = 24.dp.toPx()
-                                        val dotColor = if (isDarkTheme) Color.White.copy(alpha = 0.2f) else Color.Gray.copy(alpha = 0.45f)
-                                        val dotRadius = 1.5.dp.toPx()
-                                        for (gx in dotSpacing.toInt()..pageW.toInt() step dotSpacing.toInt()) {
-                                            for (gy in dotSpacing.toInt()..pageH.toInt() step dotSpacing.toInt()) {
-                                                drawCircle(color = dotColor, radius = dotRadius, center = Offset(gx.toFloat(), gy.toFloat()))
-                                            }
-                                        }
-                                    }
-                                    "ruled" -> {
-                                        val lineSpacing = 40.dp.toPx()
-                                        val ruledColor = if (isDarkTheme) Color(0xFF64748B).copy(alpha = 0.6f) else Color(0xFF94A3B8).copy(alpha = 0.75f)
-                                        for (ry in lineSpacing.toInt()..pageH.toInt() step lineSpacing.toInt()) {
-                                            drawLine(ruledColor, start = Offset(0f, ry.toFloat()), end = Offset(pageW, ry.toFloat()), strokeWidth = 1f)
-                                        }
-                                    }
-                                    "cornell" -> {
-                                        val splitX = pageW * 0.28f
-                                        val summaryY = pageH * 0.82f
-                                        val lineColor = if (isDarkTheme) Color(0xFF3B82F6).copy(alpha = 0.3f) else Color(0xFFBBDEFB).copy(alpha = 0.4f)
-                                        val divisionColor = if (isDarkTheme) Color(0xFF64748B) else Color(0xFF90A4AE)
-                                        val lineSpacing = 28.dp.toPx()
-                                        for (cy in lineSpacing.toInt()..summaryY.toInt() step lineSpacing.toInt()) {
-                                            drawLine(lineColor, start = Offset(splitX, cy.toFloat()), end = Offset(pageW, cy.toFloat()), strokeWidth = 1f)
-                                        }
-                                        drawLine(divisionColor, start = Offset(splitX, 0f), end = Offset(splitX, summaryY), strokeWidth = 3f)
-                                        drawLine(divisionColor, start = Offset(0f, summaryY), end = Offset(pageW, summaryY), strokeWidth = 3f)
+                                    normType == "ruled" -> {
+                                        val topMargin = 60.dp.toPx()
+                                        val lineSpacing = 36.dp.toPx()
+                                        val marginX = pageW * 0.16f
+
+                                        // Left vertical margin line
+                                        drawLine(marginLineColor, start = Offset(marginX, 0f), end = Offset(marginX, pageH), strokeWidth = 2f)
+                                        // Top header line
+                                        drawLine(primaryLineColor.copy(alpha = 0.5f), start = Offset(0f, topMargin), end = Offset(pageW, topMargin), strokeWidth = 2f)
+
                                         drawIntoCanvas { canvas ->
-                                            val paint = android.graphics.Paint().apply {
-                                                color = android.graphics.Color.GRAY
-                                                textSize = 36f
+                                            val headerPaint = android.graphics.Paint().apply {
+                                                color = textMutedColor
+                                                textSize = 28f
                                                 isAntiAlias = true
                                             }
-                                            canvas.nativeCanvas.drawText("Cue / Keywords", 30f, 60f, paint)
-                                            canvas.nativeCanvas.drawText("Notes Canvas", splitX + 30f, 60f, paint)
-                                            canvas.nativeCanvas.drawText("Summary block", 30f, summaryY + 50f, paint)
+                                            canvas.nativeCanvas.drawText("Date: ____________", pageW - 200.dp.toPx(), topMargin - 15f, headerPaint)
+                                            canvas.nativeCanvas.drawText("Page: ____", pageW - 80.dp.toPx(), topMargin - 15f, headerPaint)
+                                        }
+
+                                        var ry = topMargin + lineSpacing
+                                        while (ry < pageH - 20.dp.toPx()) {
+                                            drawLine(gridLineColor, start = Offset(0f, ry), end = Offset(pageW, ry), strokeWidth = 1f)
+                                            ry += lineSpacing
                                         }
                                     }
-                                    "meeting" -> {
-                                        val cardBg = Color.White
-                                        val borderColor = Color.LightGray.copy(alpha = 0.5f)
-                                        drawRoundRect(color = cardBg, topLeft = Offset(20.dp.toPx(), 20.dp.toPx()), size = Size(pageW * 0.45f - 30.dp.toPx(), pageH * 0.35f), cornerRadius = CornerRadius(8.dp.toPx()), style = androidx.compose.ui.graphics.drawscope.Fill)
-                                        drawRoundRect(color = borderColor, topLeft = Offset(20.dp.toPx(), 20.dp.toPx()), size = Size(pageW * 0.45f - 30.dp.toPx(), pageH * 0.35f), cornerRadius = CornerRadius(8.dp.toPx()), style = DrawStroke(width = 2f))
-                                        drawRoundRect(color = cardBg, topLeft = Offset(20.dp.toPx(), pageH * 0.35f + 40.dp.toPx()), size = Size(pageW * 0.45f - 30.dp.toPx(), pageH * 0.55f - 40.dp.toPx()), cornerRadius = CornerRadius(8.dp.toPx()), style = androidx.compose.ui.graphics.drawscope.Fill)
-                                        drawRoundRect(color = borderColor, topLeft = Offset(20.dp.toPx(), pageH * 0.35f + 40.dp.toPx()), size = Size(pageW * 0.45f - 30.dp.toPx(), pageH * 0.55f - 40.dp.toPx()), cornerRadius = CornerRadius(8.dp.toPx()), style = DrawStroke(width = 2f))
-                                        drawRoundRect(color = cardBg, topLeft = Offset(pageW * 0.45f + 10.dp.toPx(), 20.dp.toPx()), size = Size(pageW * 0.55f - 30.dp.toPx(), pageH - 40.dp.toPx()), cornerRadius = CornerRadius(8.dp.toPx()), style = androidx.compose.ui.graphics.drawscope.Fill)
-                                        drawRoundRect(color = borderColor, topLeft = Offset(pageW * 0.45f + 10.dp.toPx(), 20.dp.toPx()), size = Size(pageW * 0.55f - 30.dp.toPx(), pageH - 40.dp.toPx()), cornerRadius = CornerRadius(8.dp.toPx()), style = DrawStroke(width = 2f))
+                                    normType == "grid" || normType == "square" -> {
+                                        val gridSpacing = 28.dp.toPx()
+                                        var countX = 0
+                                        var gx = 0f
+                                        while (gx <= pageW) {
+                                            val isMajor = countX % 4 == 0
+                                            drawLine(
+                                                color = if (isMajor) primaryLineColor.copy(alpha = 0.45f) else gridLineColor,
+                                                start = Offset(gx, 0f),
+                                                end = Offset(gx, pageH),
+                                                strokeWidth = if (isMajor) 1.5f else 0.8f
+                                            )
+                                            gx += gridSpacing
+                                            countX++
+                                        }
+
+                                        var countY = 0
+                                        var gy = 0f
+                                        while (gy <= pageH) {
+                                            val isMajor = countY % 4 == 0
+                                            drawLine(
+                                                color = if (isMajor) primaryLineColor.copy(alpha = 0.45f) else gridLineColor,
+                                                start = Offset(0f, gy),
+                                                end = Offset(pageW, gy),
+                                                strokeWidth = if (isMajor) 1.5f else 0.8f
+                                            )
+                                            gy += gridSpacing
+                                            countY++
+                                        }
+                                    }
+                                    normType.contains("dot") || normType.contains("bullet") -> {
+                                        val dotSpacing = 24.dp.toPx()
+                                        val dotRadius = 1.6.dp.toPx()
+                                        val midX = pageW / 2f
+                                        val midY = pageH / 2f
+                                        var gx = dotSpacing
+                                        while (gx < pageW) {
+                                            var gy = dotSpacing
+                                            while (gy < pageH) {
+                                                val isCenter = Math.abs(gx - midX) < dotSpacing / 2f && Math.abs(gy - midY) < dotSpacing / 2f
+                                                drawCircle(
+                                                    color = if (isCenter) primaryLineColor else gridLineColor.copy(alpha = 0.8f),
+                                                    radius = if (isCenter) dotRadius * 1.6f else dotRadius,
+                                                    center = Offset(gx, gy)
+                                                )
+                                                gy += dotSpacing
+                                            }
+                                            gx += dotSpacing
+                                        }
+                                    }
+                                    normType == "cornell" -> {
+                                        val headerH = 55.dp.toPx()
+                                        val splitX = pageW * 0.28f
+                                        val summaryY = pageH * 0.82f
+                                        val lineSpacing = 32.dp.toPx()
+
+                                        drawLine(primaryLineColor, start = Offset(0f, headerH), end = Offset(pageW, headerH), strokeWidth = 2f)
+                                        drawLine(primaryLineColor, start = Offset(splitX, headerH), end = Offset(splitX, summaryY), strokeWidth = 2.5f)
+                                        drawLine(primaryLineColor, start = Offset(0f, summaryY), end = Offset(pageW, summaryY), strokeWidth = 2.5f)
+
+                                        var cy = headerH + lineSpacing
+                                        while (cy < summaryY) {
+                                            drawLine(gridLineColor, start = Offset(splitX, cy), end = Offset(pageW, cy), strokeWidth = 1f)
+                                            cy += lineSpacing
+                                        }
+
                                         drawIntoCanvas { canvas ->
-                                            val titlePaint = android.graphics.Paint().apply { color = android.graphics.Color.DKGRAY; textSize = 32f; isFakeBoldText = true; isAntiAlias = true }
-                                            canvas.nativeCanvas.drawText("Agenda", 20.dp.toPx() + 20f, 20.dp.toPx() + 40f, titlePaint)
-                                            canvas.nativeCanvas.drawText("Action Items", 20.dp.toPx() + 20f, pageH * 0.35f + 40.dp.toPx() + 40f, titlePaint)
-                                            canvas.nativeCanvas.drawText("Meeting Minutes", pageW * 0.45f + 10.dp.toPx() + 20f, 20.dp.toPx() + 40f, titlePaint)
+                                            val labelPaint = android.graphics.Paint().apply {
+                                                color = textColor
+                                                textSize = 30f
+                                                isFakeBoldText = true
+                                                isAntiAlias = true
+                                            }
+                                            val guidePaint = android.graphics.Paint().apply {
+                                                color = textMutedColor
+                                                textSize = 24f
+                                                isAntiAlias = true
+                                            }
+                                            canvas.nativeCanvas.drawText("CORNELL NOTES", 25.dp.toPx(), 36.dp.toPx(), labelPaint)
+                                            canvas.nativeCanvas.drawText("Date: ____________  Topic: ________________________", pageW * 0.35f, 36.dp.toPx(), guidePaint)
+                                            canvas.nativeCanvas.drawText("Cues / Keywords / Recall", 15.dp.toPx(), headerH + 30.dp.toPx(), labelPaint)
+                                            canvas.nativeCanvas.drawText("Main Lecture & Discussion Notes", splitX + 20.dp.toPx(), headerH + 30.dp.toPx(), labelPaint)
+                                            canvas.nativeCanvas.drawText("Summary & Key Takeaways", 25.dp.toPx(), summaryY + 32.dp.toPx(), labelPaint)
+                                        }
+                                    }
+                                    normType == "engineering" || normType == "graph" -> {
+                                        val minorSpacing = 10.dp.toPx()
+                                        val majorSpacing = 40.dp.toPx()
+                                        val engLineColor = if (isDarkTheme) Color(0xFF38BDF8).copy(alpha = 0.18f) else Color(0xFF0284C7).copy(alpha = 0.18f)
+                                        val engMajorColor = if (isDarkTheme) Color(0xFF38BDF8).copy(alpha = 0.55f) else Color(0xFF0284C7).copy(alpha = 0.55f)
+                                        val titleBlockH = 50.dp.toPx()
+                                        val gridBottom = pageH - titleBlockH
+
+                                        var gx = 0f
+                                        var countX = 0
+                                        while (gx <= pageW) {
+                                            val isMajor = countX % 4 == 0
+                                            drawLine(if (isMajor) engMajorColor else engLineColor, Offset(gx, 0f), Offset(gx, gridBottom), strokeWidth = if (isMajor) 1.5f else 0.7f)
+                                            gx += minorSpacing
+                                            countX++
+                                        }
+
+                                        var gy = 0f
+                                        var countY = 0
+                                        while (gy <= gridBottom) {
+                                            val isMajor = countY % 4 == 0
+                                            drawLine(if (isMajor) engMajorColor else engLineColor, Offset(0f, gy), Offset(pageW, gy), strokeWidth = if (isMajor) 1.5f else 0.7f)
+                                            gy += minorSpacing
+                                            countY++
+                                        }
+
+                                        // Title Block Border
+                                        drawLine(primaryLineColor, Offset(0f, gridBottom), Offset(pageW, gridBottom), strokeWidth = 2.5f)
+                                        val col1 = pageW * 0.45f
+                                        val col2 = pageW * 0.72f
+                                        drawLine(primaryLineColor, Offset(col1, gridBottom), Offset(col1, pageH), strokeWidth = 1.5f)
+                                        drawLine(primaryLineColor, Offset(col2, gridBottom), Offset(col2, pageH), strokeWidth = 1.5f)
+
+                                        drawIntoCanvas { canvas ->
+                                            val tagPaint = android.graphics.Paint().apply {
+                                                color = textColor
+                                                textSize = 24f
+                                                isFakeBoldText = true
+                                                isAntiAlias = true
+                                            }
+                                            canvas.nativeCanvas.drawText("PROJECT / TITLE: _____________________", 15.dp.toPx(), gridBottom + 32.dp.toPx(), tagPaint)
+                                            canvas.nativeCanvas.drawText("DATE: _________", col1 + 15.dp.toPx(), gridBottom + 32.dp.toPx(), tagPaint)
+                                            canvas.nativeCanvas.drawText("SCALE: 1:1  SHEET: 1/1", col2 + 15.dp.toPx(), gridBottom + 32.dp.toPx(), tagPaint)
+                                        }
+                                    }
+                                    normType == "lecture" -> {
+                                        val headerH = 75.dp.toPx()
+                                        val splitX = pageW * 0.28f
+                                        val bottomY = pageH * 0.84f
+
+                                        // Header card outline
+                                        drawRoundRect(
+                                            color = primaryLineColor.copy(alpha = 0.12f),
+                                            topLeft = Offset(12.dp.toPx(), 12.dp.toPx()),
+                                            size = Size(pageW - 24.dp.toPx(), headerH - 16.dp.toPx()),
+                                            cornerRadius = CornerRadius(8.dp.toPx())
+                                        )
+                                        drawLine(primaryLineColor, Offset(0f, headerH), Offset(pageW, headerH), strokeWidth = 2f)
+                                        drawLine(primaryLineColor, Offset(splitX, headerH), Offset(splitX, bottomY), strokeWidth = 2f)
+                                        drawLine(primaryLineColor, Offset(0f, bottomY), Offset(pageW, bottomY), strokeWidth = 2f)
+
+                                        val lineSpacing = 32.dp.toPx()
+                                        var ly = headerH + lineSpacing
+                                        while (ly < bottomY) {
+                                            drawLine(gridLineColor, Offset(splitX, ly), Offset(pageW, ly), strokeWidth = 1f)
+                                            ly += lineSpacing
+                                        }
+
+                                        drawIntoCanvas { canvas ->
+                                            val titlePaint = android.graphics.Paint().apply { color = textColor; textSize = 28f; isFakeBoldText = true; isAntiAlias = true }
+                                            val fieldPaint = android.graphics.Paint().apply { color = textMutedColor; textSize = 24f; isAntiAlias = true }
+                                            canvas.nativeCanvas.drawText("COURSE / CLASS: _______________", 20.dp.toPx(), 36.dp.toPx(), fieldPaint)
+                                            canvas.nativeCanvas.drawText("DATE: ________", pageW * 0.52f, 36.dp.toPx(), fieldPaint)
+                                            canvas.nativeCanvas.drawText("TOPIC / CHAPTER: _________________________________", 20.dp.toPx(), 62.dp.toPx(), fieldPaint)
+                                            canvas.nativeCanvas.drawText("Key Concepts & Vocab", 15.dp.toPx(), headerH + 28.dp.toPx(), titlePaint)
+                                            canvas.nativeCanvas.drawText("Lecture Notes", splitX + 15.dp.toPx(), headerH + 28.dp.toPx(), titlePaint)
+                                            canvas.nativeCanvas.drawText("Review / Action Items / Next Class Prep", 20.dp.toPx(), bottomY + 30.dp.toPx(), titlePaint)
+                                        }
+                                    }
+                                    normType == "research" -> {
+                                        val headerH = 65.dp.toPx()
+                                        val midX = pageW * 0.5f
+                                        val bottomY = pageH * 0.82f
+
+                                        drawLine(accentLineColor, Offset(0f, headerH), Offset(pageW, headerH), strokeWidth = 2f)
+                                        drawLine(accentLineColor, Offset(midX, headerH), Offset(midX, bottomY), strokeWidth = 2f)
+                                        drawLine(accentLineColor, Offset(0f, bottomY), Offset(pageW, bottomY), strokeWidth = 2f)
+
+                                        val lineSpacing = 30.dp.toPx()
+                                        var ry = headerH + lineSpacing
+                                        while (ry < bottomY) {
+                                            drawLine(gridLineColor.copy(alpha = 0.5f), Offset(0f, ry), Offset(midX - 10.dp.toPx(), ry), strokeWidth = 1f)
+                                            drawLine(gridLineColor.copy(alpha = 0.5f), Offset(midX + 10.dp.toPx(), ry), Offset(pageW, ry), strokeWidth = 1f)
+                                            ry += lineSpacing
+                                        }
+
+                                        drawIntoCanvas { canvas ->
+                                            val hPaint = android.graphics.Paint().apply { color = textColor; textSize = 28f; isFakeBoldText = true; isAntiAlias = true }
+                                            val subPaint = android.graphics.Paint().apply { color = textMutedColor; textSize = 24f; isAntiAlias = true }
+                                            canvas.nativeCanvas.drawText("RESEARCH QUESTION / HYPOTHESIS: ____________________", 15.dp.toPx(), 40.dp.toPx(), hPaint)
+                                            canvas.nativeCanvas.drawText("Methodology & Experiments", 15.dp.toPx(), headerH + 28.dp.toPx(), hPaint)
+                                            canvas.nativeCanvas.drawText("Observations & Evidence", midX + 15.dp.toPx(), headerH + 28.dp.toPx(), hPaint)
+                                            canvas.nativeCanvas.drawText("Conclusions & Citations", 15.dp.toPx(), bottomY + 30.dp.toPx(), hPaint)
+                                        }
+                                    }
+                                    normType == "planner" -> {
+                                        val headerH = 65.dp.toPx()
+                                        val splitX = pageW * 0.44f
+                                        drawLine(primaryLineColor, Offset(0f, headerH), Offset(pageW, headerH), strokeWidth = 2f)
+                                        drawLine(primaryLineColor, Offset(splitX, headerH), Offset(splitX, pageH), strokeWidth = 2f)
+
+                                        // Left Schedule hourly lines
+                                        val schedSlotH = (pageH - headerH) / 16f
+                                        val hours = listOf("06:00", "07:00", "08:00", "09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00", "20:00", "21:00")
+
+                                        drawIntoCanvas { canvas ->
+                                            val titlePaint = android.graphics.Paint().apply { color = textColor; textSize = 30f; isFakeBoldText = true; isAntiAlias = true }
+                                            val hourPaint = android.graphics.Paint().apply { color = textMutedColor; textSize = 22f; isAntiAlias = true }
+                                            val sectionPaint = android.graphics.Paint().apply { color = textColor; textSize = 26f; isFakeBoldText = true; isAntiAlias = true }
+
+                                            canvas.nativeCanvas.drawText("DAILY PLANNER", 20.dp.toPx(), 40.dp.toPx(), titlePaint)
+                                            canvas.nativeCanvas.drawText("[M] [T] [W] [T] [F] [S] [S]  Date: _______", pageW * 0.42f, 40.dp.toPx(), hourPaint)
+
+                                            for (i in hours.indices) {
+                                                val y = headerH + (i + 1) * schedSlotH
+                                                canvas.nativeCanvas.drawText(hours[i], 12.dp.toPx(), y - 10f, hourPaint)
+                                            }
+
+                                            // Right sections
+                                            canvas.nativeCanvas.drawText("Top 3 Priorities", splitX + 15.dp.toPx(), headerH + 28.dp.toPx(), sectionPaint)
+                                        }
+
+                                        for (i in 1..15) {
+                                            val y = headerH + i * schedSlotH
+                                            drawLine(gridLineColor, Offset(0f, y), Offset(splitX, y), strokeWidth = 1f)
+                                        }
+
+                                        // Right section dividers
+                                        val todoTop = headerH + (pageH - headerH) * 0.35f
+                                        val notesTop = headerH + (pageH - headerH) * 0.70f
+                                        drawLine(primaryLineColor, Offset(splitX, todoTop), Offset(pageW, todoTop), strokeWidth = 1.8f)
+                                        drawLine(primaryLineColor, Offset(splitX, notesTop), Offset(pageW, notesTop), strokeWidth = 1.8f)
+
+                                        drawIntoCanvas { canvas ->
+                                            val sectionPaint = android.graphics.Paint().apply { color = textColor; textSize = 26f; isFakeBoldText = true; isAntiAlias = true }
+                                            canvas.nativeCanvas.drawText("To-Do Checklist", splitX + 15.dp.toPx(), todoTop + 28.dp.toPx(), sectionPaint)
+                                            canvas.nativeCanvas.drawText("Water & Notes", splitX + 15.dp.toPx(), notesTop + 28.dp.toPx(), sectionPaint)
+                                        }
+
+                                        // Priority checkboxes
+                                        for (p in 1..3) {
+                                            val py = headerH + 35.dp.toPx() + p * 26.dp.toPx()
+                                            drawCircle(accentLineColor, radius = 5.dp.toPx(), center = Offset(splitX + 25.dp.toPx(), py), style = DrawStroke(1.5f))
+                                            drawLine(gridLineColor, Offset(splitX + 40.dp.toPx(), py + 4f), Offset(pageW - 15.dp.toPx(), py + 4f), strokeWidth = 1f)
+                                        }
+
+                                        // To-Do checkboxes
+                                        for (t in 1..5) {
+                                            val ty = todoTop + 35.dp.toPx() + t * 24.dp.toPx()
+                                            drawCircle(primaryLineColor, radius = 4.dp.toPx(), center = Offset(splitX + 25.dp.toPx(), ty), style = DrawStroke(1.5f))
+                                            drawLine(gridLineColor, Offset(splitX + 38.dp.toPx(), ty + 3f), Offset(pageW - 15.dp.toPx(), ty + 3f), strokeWidth = 1f)
+                                        }
+                                    }
+                                    normType == "journal" -> {
+                                        val headerH = 60.dp.toPx()
+                                        val morningH = pageH * 0.32f
+                                        val eveningH = pageH * 0.76f
+
+                                        drawLine(accentLineColor, Offset(0f, headerH), Offset(pageW, headerH), strokeWidth = 2f)
+                                        drawLine(accentLineColor, Offset(0f, morningH), Offset(pageW, morningH), strokeWidth = 1.8f)
+                                        drawLine(accentLineColor, Offset(0f, eveningH), Offset(pageW, eveningH), strokeWidth = 1.8f)
+
+                                        val lineSpacing = 34.dp.toPx()
+                                        var jy = morningH + 35.dp.toPx() + lineSpacing
+                                        while (jy < eveningH - 10.dp.toPx()) {
+                                            drawLine(gridLineColor, Offset(20.dp.toPx(), jy), Offset(pageW - 20.dp.toPx(), jy), strokeWidth = 1f)
+                                            jy += lineSpacing
+                                        }
+
+                                        drawIntoCanvas { canvas ->
+                                            val hPaint = android.graphics.Paint().apply { color = textColor; textSize = 30f; isFakeBoldText = true; isAntiAlias = true }
+                                            val subPaint = android.graphics.Paint().apply { color = textMutedColor; textSize = 24f; isAntiAlias = true }
+                                            canvas.nativeCanvas.drawText("DAILY MINDFULNESS JOURNAL", 20.dp.toPx(), 40.dp.toPx(), hPaint)
+                                            canvas.nativeCanvas.drawText("Date: _________  Mood: ☀️ ⛅ 🌧️ ❄️", pageW * 0.45f, 40.dp.toPx(), subPaint)
+                                            canvas.nativeCanvas.drawText("Morning Intentions & Gratitude (3 Things I'm Grateful For)", 20.dp.toPx(), headerH + 30.dp.toPx(), hPaint)
+                                            canvas.nativeCanvas.drawText("1. ____________________________________________________", 35.dp.toPx(), headerH + 60.dp.toPx(), subPaint)
+                                            canvas.nativeCanvas.drawText("2. ____________________________________________________", 35.dp.toPx(), headerH + 90.dp.toPx(), subPaint)
+                                            canvas.nativeCanvas.drawText("3. ____________________________________________________", 35.dp.toPx(), headerH + 120.dp.toPx(), subPaint)
+                                            canvas.nativeCanvas.drawText("Daily Thoughts, Stream of Consciousness & Reflections", 20.dp.toPx(), morningH + 30.dp.toPx(), hPaint)
+                                            canvas.nativeCanvas.drawText("Evening Wins, Lessons & Tomorrow's Vision", 20.dp.toPx(), eveningH + 30.dp.toPx(), hPaint)
+                                        }
+                                    }
+                                    normType == "meeting" -> {
+                                        val headerH = 65.dp.toPx()
+                                        val splitX = pageW * 0.52f
+                                        val actionsY = pageH * 0.55f
+
+                                        drawLine(primaryLineColor, Offset(0f, headerH), Offset(pageW, headerH), strokeWidth = 2f)
+                                        drawLine(primaryLineColor, Offset(splitX, headerH), Offset(splitX, pageH), strokeWidth = 2f)
+                                        drawLine(primaryLineColor, Offset(splitX, actionsY), Offset(pageW, actionsY), strokeWidth = 2f)
+
+                                        val lineSpacing = 32.dp.toPx()
+                                        var my = headerH + 35.dp.toPx() + lineSpacing
+                                        while (my < pageH - 20.dp.toPx()) {
+                                            drawLine(gridLineColor, Offset(15.dp.toPx(), my), Offset(splitX - 15.dp.toPx(), my), strokeWidth = 1f)
+                                            my += lineSpacing
+                                        }
+
+                                        drawIntoCanvas { canvas ->
+                                            val hPaint = android.graphics.Paint().apply { color = textColor; textSize = 28f; isFakeBoldText = true; isAntiAlias = true }
+                                            val subPaint = android.graphics.Paint().apply { color = textMutedColor; textSize = 24f; isAntiAlias = true }
+                                            canvas.nativeCanvas.drawText("MEETING: ______________________", 15.dp.toPx(), 40.dp.toPx(), hPaint)
+                                            canvas.nativeCanvas.drawText("Date: ________  Attendees: ____________", pageW * 0.45f, 40.dp.toPx(), subPaint)
+                                            canvas.nativeCanvas.drawText("Agenda & Discussion Points", 15.dp.toPx(), headerH + 30.dp.toPx(), hPaint)
+                                            canvas.nativeCanvas.drawText("Decisions & Alignments", splitX + 15.dp.toPx(), headerH + 30.dp.toPx(), hPaint)
+                                            canvas.nativeCanvas.drawText("Action Items & Ownership", splitX + 15.dp.toPx(), actionsY + 30.dp.toPx(), hPaint)
+                                        }
+
+                                        // Action items checkboxes on right
+                                        for (a in 1..5) {
+                                            val ay = actionsY + 35.dp.toPx() + a * 28.dp.toPx()
+                                            drawCircle(accentLineColor, radius = 5.dp.toPx(), center = Offset(splitX + 25.dp.toPx(), ay), style = DrawStroke(1.5f))
+                                            drawLine(gridLineColor, Offset(splitX + 38.dp.toPx(), ay + 4f), Offset(pageW - 15.dp.toPx(), ay + 4f), strokeWidth = 1f)
+                                        }
+                                    }
+                                    normType.contains("music") || normType.contains("staff") -> {
+                                        val stavesCount = 6
+                                        val topMargin = 55.dp.toPx()
+                                        val staffGap = (pageH - topMargin - 40.dp.toPx()) / stavesCount
+                                        val lineStep = 7.dp.toPx()
+
+                                        drawIntoCanvas { canvas ->
+                                            val titlePaint = android.graphics.Paint().apply { color = textColor; textSize = 28f; isFakeBoldText = true; isAntiAlias = true }
+                                            val fieldPaint = android.graphics.Paint().apply { color = textMutedColor; textSize = 24f; isAntiAlias = true }
+                                            canvas.nativeCanvas.drawText("TITLE: ___________________________", 20.dp.toPx(), 36.dp.toPx(), titlePaint)
+                                            canvas.nativeCanvas.drawText("COMPOSER: _________________", pageW - 250.dp.toPx(), 36.dp.toPx(), fieldPaint)
+                                        }
+
+                                        val staffColor = if (isDarkTheme) Color.White.copy(alpha = 0.65f) else Color(0xFF334155)
+                                        for (s in 0 until stavesCount) {
+                                            val staffTop = topMargin + s * staffGap + 10.dp.toPx()
+                                            for (line in 0..4) {
+                                                val y = staffTop + line * lineStep
+                                                drawLine(staffColor, Offset(25.dp.toPx(), y), Offset(pageW - 25.dp.toPx(), y), strokeWidth = 1.5f)
+                                            }
+                                            val staffBottom = staffTop + 4 * lineStep
+                                            // Left double bar
+                                            drawLine(staffColor, Offset(25.dp.toPx(), staffTop), Offset(25.dp.toPx(), staffBottom), strokeWidth = 2.5f)
+                                            // Measure dividers
+                                            drawLine(staffColor.copy(alpha = 0.6f), Offset(pageW * 0.35f, staffTop), Offset(pageW * 0.35f, staffBottom), strokeWidth = 1.5f)
+                                            drawLine(staffColor.copy(alpha = 0.6f), Offset(pageW * 0.65f, staffTop), Offset(pageW * 0.65f, staffBottom), strokeWidth = 1.5f)
+                                            // Right double bar
+                                            drawLine(staffColor, Offset(pageW - 25.dp.toPx(), staffTop), Offset(pageW - 25.dp.toPx(), staffBottom), strokeWidth = 2.5f)
+                                        }
+                                    }
+                                    normType == "storyboard" -> {
+                                        val frameW = (pageW - 60.dp.toPx()) / 2f
+                                        val frameH = frameW * (9f / 16f)
+                                        val rows = 3
+
+                                        drawIntoCanvas { canvas ->
+                                            val titlePaint = android.graphics.Paint().apply { color = textColor; textSize = 28f; isFakeBoldText = true; isAntiAlias = true }
+                                            val tagPaint = android.graphics.Paint().apply { color = textMutedColor; textSize = 20f; isAntiAlias = true }
+                                            canvas.nativeCanvas.drawText("STORYBOARD PRODUCTION SHEET", 20.dp.toPx(), 36.dp.toPx(), titlePaint)
+
+                                            for (r in 0 until rows) {
+                                                val rowTop = 50.dp.toPx() + r * (frameH + 65.dp.toPx())
+                                                val col1X = 20.dp.toPx()
+                                                val col2X = 35.dp.toPx() + frameW
+
+                                                // Frame 1
+                                                drawRoundRect(
+                                                    color = primaryLineColor,
+                                                    topLeft = Offset(col1X, rowTop),
+                                                    size = Size(frameW, frameH),
+                                                    cornerRadius = CornerRadius(6.dp.toPx()),
+                                                    style = DrawStroke(2f)
+                                                )
+                                                canvas.nativeCanvas.drawText("SCENE: ___  SHOT: ___", col1X + 5f, rowTop + frameH + 20f, tagPaint)
+                                                canvas.nativeCanvas.drawText("Action / Visual: ____________________", col1X + 5f, rowTop + frameH + 42f, tagPaint)
+                                                canvas.nativeCanvas.drawText("Audio / Dialogue: __________________", col1X + 5f, rowTop + frameH + 64f, tagPaint)
+
+                                                // Frame 2
+                                                drawRoundRect(
+                                                    color = primaryLineColor,
+                                                    topLeft = Offset(col2X, rowTop),
+                                                    size = Size(frameW, frameH),
+                                                    cornerRadius = CornerRadius(6.dp.toPx()),
+                                                    style = DrawStroke(2f)
+                                                )
+                                                canvas.nativeCanvas.drawText("SCENE: ___  SHOT: ___", col2X + 5f, rowTop + frameH + 20f, tagPaint)
+                                                canvas.nativeCanvas.drawText("Action / Visual: ____________________", col2X + 5f, rowTop + frameH + 42f, tagPaint)
+                                                canvas.nativeCanvas.drawText("Audio / Dialogue: __________________", col2X + 5f, rowTop + frameH + 64f, tagPaint)
+                                            }
+                                        }
+                                    }
+                                    normType.contains("2-col") || normType.contains("twocolumn") -> {
+                                        val midX = pageW * 0.5f
+                                        val topMargin = 55.dp.toPx()
+                                        val lineSpacing = 34.dp.toPx()
+
+                                        drawLine(primaryLineColor, Offset(0f, topMargin), Offset(pageW, topMargin), strokeWidth = 2f)
+                                        drawLine(marginLineColor, Offset(midX, 0f), Offset(midX, pageH), strokeWidth = 2.5f)
+
+                                        var cy = topMargin + lineSpacing
+                                        while (cy < pageH - 20.dp.toPx()) {
+                                            drawLine(gridLineColor, Offset(10.dp.toPx(), cy), Offset(midX - 10.dp.toPx(), cy), strokeWidth = 1f)
+                                            drawLine(gridLineColor, Offset(midX + 10.dp.toPx(), cy), Offset(pageW - 10.dp.toPx(), cy), strokeWidth = 1f)
+                                            cy += lineSpacing
+                                        }
+
+                                        drawIntoCanvas { canvas ->
+                                            val hPaint = android.graphics.Paint().apply { color = textColor; textSize = 26f; isFakeBoldText = true; isAntiAlias = true }
+                                            canvas.nativeCanvas.drawText("Column 1 (Terms / Concepts)", 15.dp.toPx(), topMargin - 15f, hPaint)
+                                            canvas.nativeCanvas.drawText("Column 2 (Definitions / Notes)", midX + 15.dp.toPx(), topMargin - 15f, hPaint)
+                                        }
+                                    }
+                                    normType.contains("legal") -> {
+                                        val topMargin = 70.dp.toPx()
+                                        val marginX = pageW * 0.22f
+                                        val marginX2 = marginX + 5.dp.toPx()
+                                        val lineSpacing = 30.dp.toPx()
+
+                                        // Double red margin line
+                                        drawLine(marginLineColor, Offset(marginX, 0f), Offset(marginX, pageH), strokeWidth = 2f)
+                                        drawLine(marginLineColor, Offset(marginX2, 0f), Offset(marginX2, pageH), strokeWidth = 1.2f)
+                                        // Header line
+                                        drawLine(primaryLineColor.copy(alpha = 0.5f), Offset(0f, topMargin), Offset(pageW, topMargin), strokeWidth = 2f)
+
+                                        var ly = topMargin + lineSpacing
+                                        while (ly < pageH - 20.dp.toPx()) {
+                                            drawLine(gridLineColor, Offset(marginX2, ly), Offset(pageW, ly), strokeWidth = 1f)
+                                            ly += lineSpacing
+                                        }
+
+                                        drawIntoCanvas { canvas ->
+                                            val legalPaint = android.graphics.Paint().apply { color = textMutedColor; textSize = 26f; isAntiAlias = true }
+                                            canvas.nativeCanvas.drawText("CASE / MATTER: ____________________", marginX2 + 15.dp.toPx(), topMargin - 15f, legalPaint)
+                                        }
+                                    }
+                                    else -> {
+                                        val lineSpacing = 36.dp.toPx()
+                                        var ry = lineSpacing
+                                        while (ry < pageH - 20.dp.toPx()) {
+                                            drawLine(gridLineColor, Offset(20.dp.toPx(), ry), Offset(pageW - 20.dp.toPx(), ry), strokeWidth = 1f)
+                                            ry += lineSpacing
                                         }
                                     }
                                 }
@@ -2506,13 +2917,17 @@ fun DrawingCanvas(
                                 scale = scale,
                                 renderX = screenX,
                                 renderY = screenY,
-                                renderWidth = screenW,
-                                renderHeight = screenH,
+                                renderWidth = worldW,
+                                renderHeight = worldH,
+                                pageWidth = getPageWidth(blockPage),
+                                pageHeight = getPageHeight(blockPage),
+                                normH = getNormH(blockPage),
                                 onSelect = {
                                     onBlockSelected(if (selectedBlockId == block.id) null else block.id)
                                 },
                                 onMoveBlock = { dx, dy -> onMoveBlock(block.id, dx, dy) },
                                 onResizeBlock = { w, h -> onResizeBlock(block.id, w, h) },
+                                onTransformEnd = onBlockTransformEnd,
                                 onDuplicateBlock = { onDuplicateBlock(block.id) },
                                 onNavigateToNotePage = onNavigateToNotePage,
                                 onOpenPdf = onOpenPdfViewer,

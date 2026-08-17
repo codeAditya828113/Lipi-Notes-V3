@@ -26,8 +26,11 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke as DrawStroke
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
@@ -38,6 +41,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.data.NoteEntity
+import com.example.ui.security.SetNotebookPasscodeDialog
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -53,11 +57,12 @@ fun PageTemplateCanvasPreview(
     pageColor: Long = 0xFFFFFFFF,
     modifier: Modifier = Modifier
 ) {
-    val isDarkTheme = pageColor == 0xFF1A1A1AL
+    val isDarkTheme = pageColor == 0xFF1A1A1AL || pageColor == 0xFF1E293BL
     val bgColor = Color(pageColor)
     val gridLineColor = if (isDarkTheme) Color.White.copy(alpha = 0.25f) else Color(0xFF94A3B8).copy(alpha = 0.55f)
-    val marginLineColor = if (isDarkTheme) Color(0xFFEF4444).copy(alpha = 0.65f) else Color(0xFFFF8A80)
-    val primaryLineColor = if (isDarkTheme) Color(0xFF60A5FA).copy(alpha = 0.75f) else Color(0xFF3B82F6).copy(alpha = 0.65f)
+    val marginLineColor = if (isDarkTheme) Color(0xFFEF4444).copy(alpha = 0.7f) else Color(0xFFFF6B6B)
+    val primaryLineColor = if (isDarkTheme) Color(0xFF60A5FA).copy(alpha = 0.8f) else Color(0xFF3B82F6).copy(alpha = 0.75f)
+    val accentLineColor = if (isDarkTheme) Color(0xFF34D399).copy(alpha = 0.8f) else Color(0xFF10B981).copy(alpha = 0.75f)
 
     Box(
         modifier = modifier
@@ -67,115 +72,227 @@ fun PageTemplateCanvasPreview(
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width
             val h = size.height
-            val type = templateType.lowercase()
+            val type = templateType.lowercase().trim()
 
             when {
-                type.contains("blank") -> {
-                    if (type.contains("2-col")) {
-                        drawLine(marginLineColor, Offset(w / 2f, 0f), Offset(w / 2f, h), strokeWidth = 1.5f)
-                    }
-                    if (type.contains("legal")) {
-                        drawLine(marginLineColor, Offset(w * 0.22f, 0f), Offset(w * 0.22f, h), strokeWidth = 1.5f)
-                    }
+                type == "blank" -> {
+                    // Clean blank sheet
                 }
-                type.contains("ruled") || type.contains("lecture") || type.contains("research") -> {
-                    val lineSpacing = h / 10f
-                    for (i in 1..9) {
-                        val y = i * lineSpacing
+                type == "ruled" -> {
+                    val topMargin = h * 0.14f
+                    val lineSpacing = (h - topMargin) / 8f
+                    drawLine(marginLineColor.copy(alpha = 0.5f), Offset(0f, topMargin), Offset(w, topMargin), strokeWidth = 1.8f)
+                    val marginX = w * 0.16f
+                    drawLine(marginLineColor, Offset(marginX, 0f), Offset(marginX, h), strokeWidth = 1.5f)
+                    for (i in 1..7) {
+                        val y = topMargin + i * lineSpacing
                         drawLine(gridLineColor, Offset(0f, y), Offset(w, y), strokeWidth = 1f)
                     }
-                    val marginX = if (type.contains("legal")) w * 0.24f else w * 0.16f
-                    drawLine(marginLineColor, Offset(marginX, 0f), Offset(marginX, h), strokeWidth = 1.5f)
-                    if (type.contains("2-col")) {
-                        drawLine(marginLineColor, Offset(w / 2f, 0f), Offset(w / 2f, h), strokeWidth = 1.5f)
-                    }
                 }
-                type.contains("grid") || type.contains("square") || type.contains("graph") || type.contains("engineering") -> {
-                    val cols = if (type.contains("engineering")) 12 else 8
-                    val rows = if (type.contains("engineering")) 16 else 10
-                    val stepX = w / cols
-                    val stepY = h / rows
-                    for (i in 1 until cols) {
-                        val isAccent = i % 4 == 0
-                        drawLine(
-                            color = if (isAccent) primaryLineColor.copy(alpha = 0.5f) else gridLineColor,
-                            start = Offset(i * stepX, 0f),
-                            end = Offset(i * stepX, h),
-                            strokeWidth = if (isAccent) 1.5f else 1f
-                        )
-                    }
-                    for (j in 1 until rows) {
-                        val isAccent = j % 4 == 0
-                        drawLine(
-                            color = if (isAccent) primaryLineColor.copy(alpha = 0.5f) else gridLineColor,
-                            start = Offset(0f, j * stepY),
-                            end = Offset(w, j * stepY),
-                            strokeWidth = if (isAccent) 1.5f else 1f
-                        )
-                    }
-                }
-                type.contains("dot") || type.contains("bullet") -> {
+                type == "grid" || type == "square" -> {
                     val cols = 8
                     val rows = 11
                     val stepX = w / cols
                     val stepY = h / rows
                     for (i in 1 until cols) {
+                        val isMajor = i % 4 == 0
+                        drawLine(
+                            color = if (isMajor) primaryLineColor.copy(alpha = 0.6f) else gridLineColor,
+                            start = Offset(i * stepX, 0f),
+                            end = Offset(i * stepX, h),
+                            strokeWidth = if (isMajor) 1.5f else 0.8f
+                        )
+                    }
+                    for (j in 1 until rows) {
+                        val isMajor = j % 4 == 0
+                        drawLine(
+                            color = if (isMajor) primaryLineColor.copy(alpha = 0.6f) else gridLineColor,
+                            start = Offset(0f, j * stepY),
+                            end = Offset(w, j * stepY),
+                            strokeWidth = if (isMajor) 1.5f else 0.8f
+                        )
+                    }
+                }
+                type.contains("dot") || type.contains("bullet") -> {
+                    val cols = 8
+                    val rows = 12
+                    val stepX = w / cols
+                    val stepY = h / rows
+                    for (i in 1 until cols) {
                         for (j in 1 until rows) {
-                            drawCircle(color = gridLineColor, radius = 2f, center = Offset(i * stepX, j * stepY))
+                            val isCenter = (i == cols / 2 && j == rows / 2)
+                            drawCircle(
+                                color = if (isCenter) primaryLineColor else gridLineColor,
+                                radius = if (isCenter) 2.5f else 1.5f,
+                                center = Offset(i * stepX, j * stepY)
+                            )
                         }
                     }
                 }
-                type.contains("cornell") -> {
-                    val splitX = w * 0.32f
+                type == "cornell" -> {
+                    val headerH = h * 0.12f
+                    val splitX = w * 0.30f
                     val summaryY = h * 0.78f
-                    val lineSpacing = summaryY / 7f
-                    for (i in 1..6) {
-                        val y = i * lineSpacing
+                    drawLine(primaryLineColor, Offset(0f, headerH), Offset(w, headerH), strokeWidth = 1.5f)
+                    drawLine(primaryLineColor, Offset(splitX, headerH), Offset(splitX, summaryY), strokeWidth = 2f)
+                    drawLine(primaryLineColor, Offset(0f, summaryY), Offset(w, summaryY), strokeWidth = 2f)
+                    val lineSpacing = (summaryY - headerH) / 6f
+                    for (i in 1..5) {
+                        val y = headerH + i * lineSpacing
                         drawLine(gridLineColor, Offset(splitX, y), Offset(w, y), strokeWidth = 1f)
                     }
-                    drawLine(primaryLineColor, Offset(splitX, 0f), Offset(splitX, summaryY), strokeWidth = 2f)
-                    drawLine(primaryLineColor, Offset(0f, summaryY), Offset(w, summaryY), strokeWidth = 2f)
                 }
-                type.contains("meeting") -> {
-                    val headerH = h * 0.2f
-                    val agendaH = h * 0.6f
-                    drawLine(primaryLineColor, Offset(0f, headerH), Offset(w, headerH), strokeWidth = 2f)
-                    drawLine(primaryLineColor, Offset(0f, agendaH), Offset(w, agendaH), strokeWidth = 2f)
-                    val lineSpacing = (agendaH - headerH) / 5f
+                type == "engineering" || type == "graph" -> {
+                    val cols = 14
+                    val rows = 18
+                    val stepX = w / cols
+                    val stepY = h / rows
+                    val engLineColor = if (isDarkTheme) Color(0xFF38BDF8).copy(alpha = 0.3f) else Color(0xFF0284C7).copy(alpha = 0.25f)
+                    val engMajorColor = if (isDarkTheme) Color(0xFF38BDF8).copy(alpha = 0.7f) else Color(0xFF0284C7).copy(alpha = 0.65f)
+                    for (i in 1 until cols) {
+                        val isMajor = i % 5 == 0
+                        drawLine(if (isMajor) engMajorColor else engLineColor, Offset(i * stepX, 0f), Offset(i * stepX, h * 0.88f), strokeWidth = if (isMajor) 1.5f else 0.6f)
+                    }
+                    for (j in 1 until rows) {
+                        val isMajor = j % 5 == 0
+                        drawLine(if (isMajor) engMajorColor else engLineColor, Offset(0f, j * stepY), Offset(w, j * stepY), strokeWidth = if (isMajor) 1.5f else 0.6f)
+                    }
+                    // Bottom Title Block
+                    drawLine(primaryLineColor, Offset(0f, h * 0.88f), Offset(w, h * 0.88f), strokeWidth = 2f)
+                    drawLine(primaryLineColor, Offset(w * 0.55f, h * 0.88f), Offset(w * 0.55f, h), strokeWidth = 1.5f)
+                }
+                type == "lecture" -> {
+                    val headerH = h * 0.16f
+                    val splitX = w * 0.28f
+                    val bottomY = h * 0.84f
+                    drawRect(primaryLineColor.copy(alpha = 0.12f), Offset(0f, 0f), Size(w, headerH))
+                    drawLine(primaryLineColor, Offset(0f, headerH), Offset(w, headerH), strokeWidth = 1.8f)
+                    drawLine(primaryLineColor, Offset(splitX, headerH), Offset(splitX, bottomY), strokeWidth = 1.5f)
+                    drawLine(primaryLineColor, Offset(0f, bottomY), Offset(w, bottomY), strokeWidth = 1.8f)
+                    val lineSpacing = (bottomY - headerH) / 6f
+                    for (i in 1..5) {
+                        val y = headerH + i * lineSpacing
+                        drawLine(gridLineColor, Offset(splitX, y), Offset(w, y), strokeWidth = 1f)
+                    }
+                }
+                type == "research" -> {
+                    val headerH = h * 0.14f
+                    val midX = w * 0.5f
+                    val bottomY = h * 0.82f
+                    drawLine(accentLineColor, Offset(0f, headerH), Offset(w, headerH), strokeWidth = 1.8f)
+                    drawLine(accentLineColor, Offset(midX, headerH), Offset(midX, bottomY), strokeWidth = 1.5f)
+                    drawLine(accentLineColor, Offset(0f, bottomY), Offset(w, bottomY), strokeWidth = 1.8f)
+                    val lineSpacing = (bottomY - headerH) / 5f
                     for (i in 1..4) {
                         val y = headerH + i * lineSpacing
-                        drawLine(gridLineColor, Offset(w * 0.05f, y), Offset(w * 0.95f, y), strokeWidth = 1f)
+                        drawLine(gridLineColor, Offset(0f, y), Offset(w, y), strokeWidth = 0.8f)
+                    }
+                }
+                type == "planner" -> {
+                    val headerH = h * 0.12f
+                    val splitX = w * 0.44f
+                    drawLine(primaryLineColor, Offset(0f, headerH), Offset(w, headerH), strokeWidth = 1.8f)
+                    drawLine(primaryLineColor, Offset(splitX, headerH), Offset(splitX, h), strokeWidth = 1.5f)
+                    // Schedule slots on left
+                    val schedLines = 7
+                    val schedSpacing = (h - headerH) / schedLines
+                    for (i in 1 until schedLines) {
+                        val y = headerH + i * schedSpacing
+                        drawLine(gridLineColor, Offset(0f, y), Offset(splitX, y), strokeWidth = 1f)
+                    }
+                    // Checklist on right
+                    val todoY = headerH + (h - headerH) * 0.45f
+                    drawLine(primaryLineColor, Offset(splitX, todoY), Offset(w, todoY), strokeWidth = 1.2f)
+                    for (i in 1..3) {
+                        val y = headerH + i * ((todoY - headerH) / 4f)
+                        drawCircle(accentLineColor, radius = 3f, center = Offset(splitX + 12f, y))
+                        drawLine(gridLineColor, Offset(splitX + 22f, y), Offset(w - 10f, y), strokeWidth = 1f)
+                    }
+                }
+                type == "journal" -> {
+                    val headerH = h * 0.14f
+                    val morningH = h * 0.35f
+                    val eveningH = h * 0.78f
+                    drawLine(accentLineColor, Offset(0f, headerH), Offset(w, headerH), strokeWidth = 1.8f)
+                    drawLine(accentLineColor, Offset(0f, morningH), Offset(w, morningH), strokeWidth = 1.2f)
+                    drawLine(accentLineColor, Offset(0f, eveningH), Offset(w, eveningH), strokeWidth = 1.2f)
+                    val lineSpacing = (eveningH - morningH) / 5f
+                    for (i in 1..4) {
+                        val y = morningH + i * lineSpacing
+                        drawLine(gridLineColor, Offset(w * 0.08f, y), Offset(w * 0.92f, y), strokeWidth = 1f)
+                    }
+                }
+                type == "meeting" -> {
+                    val headerH = h * 0.15f
+                    val splitX = w * 0.52f
+                    val actionsY = h * 0.55f
+                    drawLine(primaryLineColor, Offset(0f, headerH), Offset(w, headerH), strokeWidth = 1.8f)
+                    drawLine(primaryLineColor, Offset(splitX, headerH), Offset(splitX, h), strokeWidth = 1.5f)
+                    drawLine(primaryLineColor, Offset(splitX, actionsY), Offset(w, actionsY), strokeWidth = 1.5f)
+                    val lineSpacing = (h - headerH) / 6f
+                    for (i in 1..5) {
+                        val y = headerH + i * lineSpacing
+                        drawLine(gridLineColor, Offset(w * 0.05f, y), Offset(splitX - 6f, y), strokeWidth = 1f)
                     }
                 }
                 type.contains("music") || type.contains("staff") -> {
-                    val staves = 3
-                    val staffH = h / (staves + 1)
+                    val staves = 4
+                    val staffSpacing = h / (staves + 1)
                     for (s in 1..staves) {
-                        val startY = s * staffH - 15f
+                        val startY = s * staffSpacing - 12f
                         for (line in 0..4) {
-                            val y = startY + line * 8f
-                            drawLine(gridLineColor, Offset(w * 0.1f, y), Offset(w * 0.9f, y), strokeWidth = 1.2f)
+                            val y = startY + line * 6f
+                            drawLine(if (isDarkTheme) Color.White.copy(alpha = 0.6f) else Color(0xFF334155), Offset(w * 0.08f, y), Offset(w * 0.92f, y), strokeWidth = 1.2f)
                         }
+                        // Left & measure vertical barlines
+                        drawLine(if (isDarkTheme) Color.White.copy(alpha = 0.7f) else Color(0xFF334155), Offset(w * 0.08f, startY), Offset(w * 0.08f, startY + 24f), strokeWidth = 1.8f)
+                        drawLine(if (isDarkTheme) Color.White.copy(alpha = 0.4f) else Color(0xFF94A3B8), Offset(w * 0.5f, startY), Offset(w * 0.5f, startY + 24f), strokeWidth = 1.2f)
+                        drawLine(if (isDarkTheme) Color.White.copy(alpha = 0.7f) else Color(0xFF334155), Offset(w * 0.92f, startY), Offset(w * 0.92f, startY + 24f), strokeWidth = 1.8f)
                     }
                 }
-                type.contains("storyboard") -> {
-                    val frameW = w * 0.42f
-                    val frameH = h * 0.35f
-                    drawRect(primaryLineColor, Offset(w * 0.05f, h * 0.08f), Size(frameW, frameH), style = androidx.compose.ui.graphics.drawscope.Stroke(2f))
-                    drawRect(primaryLineColor, Offset(w * 0.53f, h * 0.08f), Size(frameW, frameH), style = androidx.compose.ui.graphics.drawscope.Stroke(2f))
-                    drawRect(primaryLineColor, Offset(w * 0.05f, h * 0.52f), Size(frameW, frameH), style = androidx.compose.ui.graphics.drawscope.Stroke(2f))
-                    drawRect(primaryLineColor, Offset(w * 0.53f, h * 0.52f), Size(frameW, frameH), style = androidx.compose.ui.graphics.drawscope.Stroke(2f))
+                type == "storyboard" -> {
+                    val fW = w * 0.42f
+                    val fH = h * 0.22f
+                    val marginX = w * 0.05f
+                    val gapX = w * 0.06f
+                    val top1 = h * 0.08f
+                    val top2 = h * 0.38f
+                    val top3 = h * 0.68f
+
+                    listOf(top1, top2, top3).forEach { rowTop ->
+                        // Left frame
+                        drawRoundRect(primaryLineColor, Offset(marginX, rowTop), Size(fW, fH), cornerRadius = CornerRadius(4f), style = DrawStroke(1.5f))
+                        drawLine(gridLineColor, Offset(marginX, rowTop + fH + 8f), Offset(marginX + fW, rowTop + fH + 8f), strokeWidth = 1f)
+                        drawLine(gridLineColor, Offset(marginX, rowTop + fH + 16f), Offset(marginX + fW, rowTop + fH + 16f), strokeWidth = 1f)
+
+                        // Right frame
+                        drawRoundRect(primaryLineColor, Offset(marginX + fW + gapX, rowTop), Size(fW, fH), cornerRadius = CornerRadius(4f), style = DrawStroke(1.5f))
+                        drawLine(gridLineColor, Offset(marginX + fW + gapX, rowTop + fH + 8f), Offset(marginX + fW * 2 + gapX, rowTop + fH + 8f), strokeWidth = 1f)
+                        drawLine(gridLineColor, Offset(marginX + fW + gapX, rowTop + fH + 16f), Offset(marginX + fW * 2 + gapX, rowTop + fH + 16f), strokeWidth = 1f)
+                    }
                 }
-                type.contains("planner") || type.contains("journal") -> {
-                    val headerH = h * 0.15f
-                    drawLine(primaryLineColor, Offset(0f, headerH), Offset(w, headerH), strokeWidth = 2f)
-                    val colW = w / 3f
-                    drawLine(gridLineColor, Offset(colW, headerH), Offset(colW, h), strokeWidth = 1.5f)
-                    drawLine(gridLineColor, Offset(colW * 2f, headerH), Offset(colW * 2f, h), strokeWidth = 1.5f)
-                    val lineSpacing = (h - headerH) / 7f
-                    for (i in 1..6) {
+                type.contains("2-col") || type.contains("twocolumn") -> {
+                    val midX = w * 0.5f
+                    val headerH = h * 0.12f
+                    drawLine(primaryLineColor, Offset(0f, headerH), Offset(w, headerH), strokeWidth = 1.5f)
+                    drawLine(marginLineColor, Offset(midX, 0f), Offset(midX, h), strokeWidth = 1.8f)
+                    val lineSpacing = (h - headerH) / 8f
+                    for (i in 1..7) {
                         val y = headerH + i * lineSpacing
-                        drawLine(gridLineColor, Offset(0f, y), Offset(w, y), strokeWidth = 1f)
+                        drawLine(gridLineColor, Offset(0f, y), Offset(midX - 4f, y), strokeWidth = 1f)
+                        drawLine(gridLineColor, Offset(midX + 4f, y), Offset(w, y), strokeWidth = 1f)
+                    }
+                }
+                type.contains("legal") -> {
+                    val topMargin = h * 0.14f
+                    val marginX = w * 0.22f
+                    val marginX2 = w * 0.22f + 4f
+                    drawLine(marginLineColor, Offset(marginX, 0f), Offset(marginX, h), strokeWidth = 1.5f)
+                    drawLine(marginLineColor, Offset(marginX2, 0f), Offset(marginX2, h), strokeWidth = 1.2f)
+                    val lineSpacing = (h - topMargin) / 9f
+                    for (i in 1..8) {
+                        val y = topMargin + i * lineSpacing
+                        drawLine(gridLineColor, Offset(marginX2, y), Offset(w, y), strokeWidth = 1f)
                     }
                 }
                 else -> {
@@ -199,7 +316,7 @@ fun NotebookStudioDialog(
     note: NoteEntity? = null,
     onDismiss: () -> Unit,
     onSave: ((templateType: String, coverType: String, pageColor: Long, coverTitle: String, coverSubtitle: String, coverAuthor: String, coverExtra: String) -> Unit)? = null,
-    onCreateNew: ((title: String, templateType: String, coverType: String, pageColor: Long, coverTitle: String, coverSubtitle: String, coverAuthor: String, coverExtra: String, folder: String) -> Unit)? = null
+    onCreateNew: ((title: String, templateType: String, coverType: String, pageColor: Long, coverTitle: String, coverSubtitle: String, coverAuthor: String, coverExtra: String, folder: String, isLocked: Boolean, pinCode: String) -> Unit)? = null
 ) {
     val coroutineScope = rememberCoroutineScope()
 
@@ -238,10 +355,12 @@ fun NotebookStudioDialog(
     var isPreviewFlipped by remember { mutableStateOf(false) } // false = cover, true = paper page
     var compactTabState by remember { mutableStateOf(0) } // 0 = Edit Settings, 1 = Live 3D Preview
 
-    // Step 4 Toggles
+    // Step 4 Toggles & Security
     var isFavorite by remember { mutableStateOf(false) }
     var autoBackup by remember { mutableStateOf(true) }
-    var passcodeLock by remember { mutableStateOf(false) }
+    var passcodeLock by remember { mutableStateOf(note?.isLocked ?: false) }
+    var configuredPin by remember { mutableStateOf(note?.pinCode ?: "") }
+    var showSetPinModal by remember { mutableStateOf(false) }
 
     // Update coverTitle when notebookName changes if coverTitle was synchronized
     LaunchedEffect(notebookName) {
@@ -257,6 +376,23 @@ fun NotebookStudioDialog(
         0xFFF5F5F5 to "Soft Gray",
         0xFFE3F2FD to "Sky Pastel"
     )
+
+    if (showSetPinModal) {
+        SetNotebookPasscodeDialog(
+            notebookTitle = notebookName,
+            onDismiss = {
+                if (configuredPin.isBlank()) {
+                    passcodeLock = false
+                }
+                showSetPinModal = false
+            },
+            onPasscodeSet = { pin, bio ->
+                configuredPin = pin
+                passcodeLock = true
+                showSetPinModal = false
+            }
+        )
+    }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -555,7 +691,18 @@ fun NotebookStudioDialog(
                                         autoBackup = autoBackup,
                                         onToggleAutoBackup = { autoBackup = !autoBackup },
                                         passcodeLock = passcodeLock,
-                                        onTogglePasscode = { passcodeLock = !passcodeLock }
+                                        configuredPin = configuredPin,
+                                        onTogglePasscode = {
+                                            if (!passcodeLock) {
+                                                showSetPinModal = true
+                                            } else {
+                                                passcodeLock = false
+                                                configuredPin = ""
+                                            }
+                                        },
+                                        onConfigurePin = {
+                                            showSetPinModal = true
+                                        }
                                     )
                                 }
                             }
@@ -873,7 +1020,9 @@ fun NotebookStudioDialog(
                                             coverSubtitle,
                                             coverAuthor,
                                             coverExtra,
-                                            folderName
+                                            folderName,
+                                            passcodeLock && configuredPin.isNotBlank(),
+                                            configuredPin
                                         )
                                     } else if (onSave != null) {
                                         onSave(
@@ -1650,7 +1799,9 @@ private fun Step4ReviewAndFinalize(
     autoBackup: Boolean,
     onToggleAutoBackup: () -> Unit,
     passcodeLock: Boolean,
-    onTogglePasscode: () -> Unit
+    configuredPin: String = "",
+    onTogglePasscode: () -> Unit,
+    onConfigurePin: () -> Unit = {}
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -1726,11 +1877,21 @@ private fun Step4ReviewAndFinalize(
                 )
 
                 OptionToggleCard(
-                    title = "Passcode Protection",
-                    subtitle = "Require PIN or biometric unlock for this notebook",
+                    title = "Passcode & Biometric Protection",
+                    subtitle = if (passcodeLock && configuredPin.isNotBlank()) "Protected with 4-digit PIN • Biometric enabled" else "Require PIN or biometric unlock for this notebook",
                     icon = Icons.Default.Lock,
                     isChecked = passcodeLock,
-                    onToggle = onTogglePasscode
+                    onToggle = onTogglePasscode,
+                    extraContent = if (passcodeLock && configuredPin.isNotBlank()) {
+                        {
+                            TextButton(
+                                onClick = onConfigurePin,
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                            ) {
+                                Text("Change PIN", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = LipiStudioPrimary)
+                            }
+                        }
+                    } else null
                 )
             }
         }
@@ -1743,7 +1904,8 @@ private fun OptionToggleCard(
     subtitle: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     isChecked: Boolean,
-    onToggle: () -> Unit
+    onToggle: () -> Unit,
+    extraContent: (@Composable () -> Unit)? = null
 ) {
     Card(
         modifier = Modifier
@@ -1760,7 +1922,11 @@ private fun OptionToggleCard(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.weight(1f)
+            ) {
                 Box(
                     modifier = Modifier
                         .size(36.dp)
@@ -1775,7 +1941,12 @@ private fun OptionToggleCard(
                 }
             }
 
-            Switch(checked = isChecked, onCheckedChange = { onToggle() })
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (extraContent != null) {
+                    extraContent()
+                }
+                Switch(checked = isChecked, onCheckedChange = { onToggle() })
+            }
         }
     }
 }
@@ -1788,7 +1959,7 @@ fun AdvancedTemplateDialog(
     note: NoteEntity? = null,
     onDismiss: () -> Unit,
     onSave: ((templateType: String, coverType: String, pageColor: Long, coverTitle: String, coverSubtitle: String, coverAuthor: String, coverExtra: String) -> Unit)? = null,
-    onCreateNew: ((title: String, templateType: String, coverType: String, pageColor: Long, coverTitle: String, coverSubtitle: String, coverAuthor: String, coverExtra: String, folder: String) -> Unit)? = null
+    onCreateNew: ((title: String, templateType: String, coverType: String, pageColor: Long, coverTitle: String, coverSubtitle: String, coverAuthor: String, coverExtra: String, folder: String, isLocked: Boolean, pinCode: String) -> Unit)? = null
 ) {
     NotebookStudioDialog(
         note = note,

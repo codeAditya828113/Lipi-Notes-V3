@@ -1,6 +1,9 @@
 package com.example.ui.components
 
 import androidx.compose.ui.platform.LocalContext
+import com.example.ui.security.SetNotebookPasscodeDialog
+import com.example.ui.security.UnlockNotebookDialog
+import com.example.ui.security.RemoveNotebookLockDialog
 
 
 import androidx.compose.animation.*
@@ -15,6 +18,8 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.composed
 import androidx.compose.ui.graphics.graphicsLayer
@@ -425,7 +430,7 @@ fun NoteinApp(
         NotebookStudioDialog(
             note = null,
             onDismiss = { showCreateDialog = false },
-            onCreateNew = { title, templateType, coverType, pageColor, coverTitle, coverSubtitle, coverAuthor, coverExtra, folder ->
+            onCreateNew = { title, templateType, coverType, pageColor, coverTitle, coverSubtitle, coverAuthor, coverExtra, folder, isLocked, pinCode ->
                 viewModel.createNewNoteWithDesign(
                     title = title,
                     templateType = templateType,
@@ -435,10 +440,51 @@ fun NoteinApp(
                     coverSubtitle = coverSubtitle,
                     coverAuthor = coverAuthor,
                     coverExtra = coverExtra,
-                    folder = folder
+                    folder = folder,
+                    isLocked = isLocked,
+                    pinCode = pinCode
                 )
                 showCreateDialog = false
                 navigateToTab("notes")
+            }
+        )
+    }
+
+    // Security Dialogs (PIN / Biometrics)
+    val unlockNote = viewModel.pendingUnlockNote
+    if (unlockNote != null) {
+        UnlockNotebookDialog(
+            note = unlockNote,
+            onDismiss = { viewModel.pendingUnlockNote = null },
+            onSuccess = {
+                val targetNote = unlockNote
+                viewModel.pendingUnlockNote = null
+                viewModel.selectNote(targetNote)
+                navigateToTab("notes")
+            }
+        )
+    }
+
+    val noteForLocking = viewModel.noteToLock
+    if (noteForLocking != null) {
+        SetNotebookPasscodeDialog(
+            notebookTitle = noteForLocking.title,
+            onDismiss = { viewModel.noteToLock = null },
+            onPasscodeSet = { pin, _ ->
+                viewModel.lockNoteWithPin(noteForLocking, pin)
+                viewModel.noteToLock = null
+            }
+        )
+    }
+
+    val noteForRemovingLock = viewModel.noteToRemoveLock
+    if (noteForRemovingLock != null) {
+        RemoveNotebookLockDialog(
+            note = noteForRemovingLock,
+            onDismiss = { viewModel.noteToRemoveLock = null },
+            onUnlocked = {
+                viewModel.removeNoteLock(noteForRemovingLock)
+                viewModel.noteToRemoveLock = null
             }
         )
     }
@@ -5544,6 +5590,7 @@ if (showLayersDialog) {
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight()
+                    .clipToBounds()
             ) {
                 // Drawing Canvas
                 DrawingCanvas(
@@ -5559,8 +5606,8 @@ if (showLayersDialog) {
                         val mutList = viewModel.currentImages.toMutableList()
                         if (idx in mutList.indices) { mutList[idx] = img }
                         viewModel.currentImages = mutList
-                        viewModel.saveActiveCanvasStrokes()
                     },
+                    onImageTransformFinished = { viewModel.saveActiveCanvasStrokes() },
                     templateType = selectedNote.templateType,
                     pdfPage = viewModel.pdfPage,
                     noteId = selectedNote.id,
@@ -5603,6 +5650,7 @@ if (showLayersDialog) {
                     onBlockDeleted = { viewModel.deleteContentBlock(it.id) },
                     onMoveBlock = { id, dx, dy -> viewModel.moveContentBlock(id, dx, dy) },
                     onResizeBlock = { id, w, h -> viewModel.resizeContentBlock(id, w, h) },
+                    onBlockTransformEnd = { viewModel.onFinishBlockTransform() },
                     onDuplicateBlock = { id -> viewModel.duplicateContentBlock(id) },
                     onNavigateToNotePage = { targetNoteId, targetPage ->
                         val targetNote = viewModel.allNotes.value.firstOrNull { it.id == targetNoteId }
@@ -5957,6 +6005,7 @@ if (showLayersDialog) {
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
+                            .zIndex(15f)
                             .padding(top = 16.dp, start = 64.dp, end = 64.dp),
                         contentAlignment = Alignment.TopCenter
                     ) {

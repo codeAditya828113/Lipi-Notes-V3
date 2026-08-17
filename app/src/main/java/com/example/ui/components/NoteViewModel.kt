@@ -623,7 +623,6 @@ class NoteViewModel(
     }
 
     fun moveContentBlock(blockId: String, deltaX: Float, deltaY: Float) {
-        saveToUndoStack()
         val totalPages = pdfPageCount.coerceAtLeast(1)
         currentContentBlocks = currentContentBlocks.map { block ->
             if (block.id == blockId) {
@@ -645,16 +644,18 @@ class NoteViewModel(
                 block.copyWith(x = newX, y = newY, page = newPage)
             } else block
         }
-        saveActiveCanvasStrokes()
     }
 
     fun resizeContentBlock(blockId: String, newWidth: Float, newHeight: Float) {
-        saveToUndoStack()
         currentContentBlocks = currentContentBlocks.map {
             if (it.id == blockId) {
                 it.copyWith(width = newWidth.coerceAtLeast(60f), height = newHeight.coerceAtLeast(40f))
             } else it
         }
+    }
+
+    fun onFinishBlockTransform() {
+        saveToUndoStack()
         saveActiveCanvasStrokes()
     }
 
@@ -1775,6 +1776,18 @@ class NoteViewModel(
         return false
     }
 
+    var pendingUnlockNote by mutableStateOf<NoteEntity?>(null)
+    var noteToLock by mutableStateOf<NoteEntity?>(null)
+    var noteToRemoveLock by mutableStateOf<NoteEntity?>(null)
+
+    fun requestOpenNote(note: NoteEntity) {
+        if (note.isLocked && note.pinCode.isNotBlank()) {
+            pendingUnlockNote = note
+        } else {
+            selectNote(note)
+        }
+    }
+
     fun lockNoteWithPin(note: NoteEntity, pin: String) {
         viewModelScope.launch {
             val updated = note.copy(isLocked = true, pinCode = pin, lastModifiedTime = System.currentTimeMillis())
@@ -1782,7 +1795,18 @@ class NoteViewModel(
             if (selectedNote?.id == note.id) {
                 selectedNote = updated
             }
-            logSyncEvent("Locked note ID: ${note.id}")
+            logSyncEvent("Locked notebook '${note.title}' (ID: ${note.id})")
+        }
+    }
+
+    fun removeNoteLock(note: NoteEntity) {
+        viewModelScope.launch {
+            val updated = note.copy(isLocked = false, pinCode = "", lastModifiedTime = System.currentTimeMillis())
+            repository.insertNote(updated)
+            if (selectedNote?.id == note.id) {
+                selectedNote = updated
+            }
+            logSyncEvent("Removed lock from notebook '${note.title}' (ID: ${note.id})")
         }
     }
 
@@ -3143,7 +3167,9 @@ Here is your complete guide to all features and capabilities available in the ap
         coverSubtitle: String = "",
         coverAuthor: String = "",
         coverExtra: String = "",
-        folder: String = "General"
+        folder: String = "General",
+        isLocked: Boolean = false,
+        pinCode: String = ""
     ) {
         viewModelScope.launch {
             val folderTag = if (folder.isNotBlank()) "dir:$folder, $folder" else ""
@@ -3157,6 +3183,8 @@ Here is your complete guide to all features and capabilities available in the ap
                 coverAuthor = coverAuthor,
                 coverExtra = coverExtra,
                 tags = folderTag,
+                isLocked = isLocked,
+                pinCode = pinCode,
                 pdfTitle = if (templateType == "pdf") "Study_Lecture_Notes.pdf" else null,
                 lastModifiedTime = System.currentTimeMillis()
             )
@@ -3169,7 +3197,7 @@ Here is your complete guide to all features and capabilities available in the ap
             }
             
             selectNote(insertedNote)
-            logSyncEvent("Created Notebook '${insertedNote.title}' with template [$templateType] and cover [$coverType].")
+            logSyncEvent("Created Notebook '${insertedNote.title}' with template [$templateType] and cover [$coverType] (Protected: $isLocked).")
 
             if (autoBackupEnabled) {
                 syncWithGoogleDrive()

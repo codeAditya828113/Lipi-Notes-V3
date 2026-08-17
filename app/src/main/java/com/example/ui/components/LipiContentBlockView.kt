@@ -9,6 +9,7 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -25,7 +26,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.Stroke as DrawStroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -59,9 +62,13 @@ fun LipiContentBlockItem(
     renderY: Float,
     renderWidth: Float,
     renderHeight: Float,
+    pageWidth: Float = 600f,
+    pageHeight: Float = 800f,
+    normH: Float = 800f,
     onSelect: () -> Unit,
     onMoveBlock: (deltaX: Float, deltaY: Float) -> Unit = { _, _ -> },
     onResizeBlock: (newWidth: Float, newHeight: Float) -> Unit = { _, _ -> },
+    onTransformEnd: () -> Unit = {},
     onDuplicateBlock: (LipiContentBlock) -> Unit = {},
     onNavigateToNotePage: (noteId: Int, page: Int) -> Unit,
     onOpenPdf: (filePath: String, page: Int) -> Unit,
@@ -75,10 +82,20 @@ fun LipiContentBlockItem(
     val widthDp = with(density) { renderWidth.toDp() }
     val heightDp = with(density) { renderHeight.toDp() }
 
+    val safePW = if (pageWidth > 0f) pageWidth else 600f
+    val safePH = if (pageHeight > 0f) pageHeight else 800f
+    val safeNH = if (normH > 0f) normH else 800f
+    val safeScale = if (scale > 0.01f) scale else 1f
+
     Box(
         modifier = modifier
             .offset { IntOffset(renderX.toInt(), renderY.toInt()) }
             .size(widthDp, heightDp)
+            .graphicsLayer {
+                scaleX = safeScale
+                scaleY = safeScale
+                transformOrigin = TransformOrigin(0f, 0f)
+            }
             .then(
                 if (isSelected) {
                     Modifier.border(
@@ -90,70 +107,71 @@ fun LipiContentBlockItem(
             )
             .then(
                 if (isSelected) {
+                    Modifier.pointerInput(block.id, safeScale, safePW, safePH, safeNH) {
+                        detectDragGestures(
+                            onDragEnd = { onTransformEnd() },
+                            onDragCancel = { onTransformEnd() },
+                            onDrag = { change, dragAmount ->
+                                change.consume()
+                                val worldDeltaX = (dragAmount.x / safeScale) * (600f / safePW)
+                                val worldDeltaY = (dragAmount.y / safeScale) * (safeNH / safePH)
+                                onMoveBlock(worldDeltaX, worldDeltaY)
+                            }
+                        )
+                    }
+                } else {
                     Modifier.pointerInput(block.id) {
-                        detectDragGestures { change, dragAmount ->
-                            change.consume()
-                            val worldDeltaX = (dragAmount.x / (600f * scale)) * 600f
-                            val worldDeltaY = (dragAmount.y / (800f * scale)) * 800f
-                            onMoveBlock(worldDeltaX, worldDeltaY)
-                        }
-                    }
-                } else Modifier
-            )
-            .combinedClickable(
-                onClick = {
-                    if (isSelected) {
-                        onEditBlock(block)
-                    } else {
-                        // Single click performs natural action without entering move/selected state
-                        when (block) {
-                            is TextContentBlock -> onEditBlock(block)
-                            is WebLinkContentBlock -> {
-                                try {
-                                    var targetUrl = block.url.trim()
-                                    if (!targetUrl.startsWith("http://") && !targetUrl.startsWith("https://")) {
-                                        targetUrl = "https://$targetUrl"
+                        detectTapGestures(
+                            onTap = {
+                                // Single tap executes default interactive behavior without entering edit/move mode
+                                when (block) {
+                                    is TextContentBlock -> onEditBlock(block)
+                                    is WebLinkContentBlock -> {
+                                        try {
+                                            var targetUrl = block.url.trim()
+                                            if (!targetUrl.startsWith("http://") && !targetUrl.startsWith("https://")) {
+                                                targetUrl = "https://$targetUrl"
+                                            }
+                                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(targetUrl))
+                                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                            context.startActivity(intent)
+                                        } catch (e: Exception) {
+                                            Toast.makeText(context, "Could not open URL: ${e.message}", Toast.LENGTH_SHORT).show()
+                                        }
                                     }
-                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(targetUrl))
-                                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                    context.startActivity(intent)
-                                } catch (e: Exception) {
-                                    Toast.makeText(context, "Could not open URL: ${e.message}", Toast.LENGTH_SHORT).show()
+                                    is InternalLinkContentBlock -> {
+                                        if (block.targetNoteId != -1) {
+                                            onNavigateToNotePage(block.targetNoteId, block.targetPage)
+                                        } else {
+                                            Toast.makeText(context, "Link destination not set", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                    is PdfAttachmentContentBlock -> {
+                                        if (block.pdfFilePath.isNotBlank()) {
+                                            onOpenPdf(block.pdfFilePath, 1)
+                                        } else {
+                                            Toast.makeText(context, "PDF file missing", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                    is PdfPageContentBlock -> {
+                                        if (block.pdfFilePath.isNotBlank()) {
+                                            onOpenPdf(block.pdfFilePath, block.pdfPageIndex + 1)
+                                        }
+                                    }
+                                    is AudioContentBlock -> {
+                                        if (audioManager.currentPlayingBlockId == block.id && audioManager.isPlaying) {
+                                            audioManager.pausePlayback()
+                                        } else {
+                                            audioManager.playAudio(block.id, block.audioFilePath)
+                                        }
+                                    }
                                 }
+                            },
+                            onLongPress = {
+                                // Long press is the ONLY trigger to enter move/resize mode and reveal options
+                                onSelect()
                             }
-                            is InternalLinkContentBlock -> {
-                                if (block.targetNoteId != -1) {
-                                    onNavigateToNotePage(block.targetNoteId, block.targetPage)
-                                } else {
-                                    Toast.makeText(context, "Link destination not set", Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                            is PdfAttachmentContentBlock -> {
-                                if (block.pdfFilePath.isNotBlank()) {
-                                    onOpenPdf(block.pdfFilePath, 1)
-                                } else {
-                                    Toast.makeText(context, "PDF file missing", Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                            is PdfPageContentBlock -> {
-                                if (block.pdfFilePath.isNotBlank()) {
-                                    onOpenPdf(block.pdfFilePath, block.pdfPageIndex + 1)
-                                }
-                            }
-                            is AudioContentBlock -> {
-                                if (audioManager.currentPlayingBlockId == block.id && audioManager.isPlaying) {
-                                    audioManager.pausePlayback()
-                                } else {
-                                    audioManager.playAudio(block.id, block.audioFilePath)
-                                }
-                            }
-                        }
-                    }
-                },
-                onLongClick = {
-                    // LONG PRESS is the exclusive trigger to enter move mode and reveal options
-                    if (!isSelected) {
-                        onSelect()
+                        )
                     }
                 }
             )
@@ -297,76 +315,115 @@ fun LipiContentBlockItem(
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .offset(x = 10.dp, y = 10.dp)
-                    .size(32.dp)
+                    .offset(x = 12.dp, y = 12.dp)
+                    .size(36.dp)
                     .background(MaterialTheme.colorScheme.primary, CircleShape)
                     .border(2.dp, Color.White, CircleShape)
-                    .pointerInput(block.id) {
-                        detectDragGestures { change, dragAmount ->
-                            change.consume()
-                            val dw = (dragAmount.x / scale).coerceIn(-30f, 60f)
-                            val dh = (dragAmount.y / scale).coerceIn(-30f, 60f)
-                            onResizeBlock(
-                                (block.width + dw).coerceAtLeast(80f),
-                                (block.height + dh).coerceAtLeast(40f)
-                            )
-                        }
+                    .shadow(4.dp, CircleShape)
+                    .pointerInput(block.id, safeScale, safePW, safePH, safeNH) {
+                        detectDragGestures(
+                            onDragEnd = { onTransformEnd() },
+                            onDragCancel = { onTransformEnd() },
+                            onDrag = { change, dragAmount ->
+                                change.consume()
+                                val dw = (dragAmount.x / safeScale) * (600f / safePW)
+                                val dh = (dragAmount.y / safeScale) * (safeNH / safePH)
+                                onResizeBlock(
+                                    (block.width + dw).coerceAtLeast(60f),
+                                    (block.height + dh).coerceAtLeast(30f)
+                                )
+                            }
+                        )
                     },
                 contentAlignment = Alignment.Center
             ) {
-                Icon(Icons.Default.OpenInFull, contentDescription = "Resize Handle", tint = Color.White, modifier = Modifier.size(16.dp))
+                Icon(Icons.Default.OpenInFull, contentDescription = "Resize Handle Bottom Right", tint = Color.White, modifier = Modifier.size(18.dp))
             }
 
             // Bottom-Left Corner Easy Drag Resize Handle
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomStart)
-                    .offset(x = (-10).dp, y = 10.dp)
-                    .size(28.dp)
+                    .offset(x = (-12).dp, y = 12.dp)
+                    .size(32.dp)
                     .background(MaterialTheme.colorScheme.primary, CircleShape)
                     .border(2.dp, Color.White, CircleShape)
-                    .pointerInput(block.id) {
-                        detectDragGestures { change, dragAmount ->
-                            change.consume()
-                            val dw = (-dragAmount.x / scale).coerceIn(-30f, 60f)
-                            val dh = (dragAmount.y / scale).coerceIn(-30f, 60f)
-                            onResizeBlock(
-                                (block.width + dw).coerceAtLeast(80f),
-                                (block.height + dh).coerceAtLeast(40f)
-                            )
-                        }
+                    .shadow(4.dp, CircleShape)
+                    .pointerInput(block.id, safeScale, safePW, safePH, safeNH) {
+                        detectDragGestures(
+                            onDragEnd = { onTransformEnd() },
+                            onDragCancel = { onTransformEnd() },
+                            onDrag = { change, dragAmount ->
+                                change.consume()
+                                val dw = (-dragAmount.x / safeScale) * (600f / safePW)
+                                val dh = (dragAmount.y / safeScale) * (safeNH / safePH)
+                                onResizeBlock(
+                                    (block.width + dw).coerceAtLeast(60f),
+                                    (block.height + dh).coerceAtLeast(30f)
+                                )
+                            }
+                        )
                     },
                 contentAlignment = Alignment.Center
             ) {
-                Icon(Icons.Default.AspectRatio, contentDescription = "Resize Handle Left", tint = Color.White, modifier = Modifier.size(14.dp))
+                Icon(Icons.Default.AspectRatio, contentDescription = "Resize Handle Bottom Left", tint = Color.White, modifier = Modifier.size(16.dp))
             }
 
-            // Top-Left Corner Handle
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .size(12.dp)
-                    .background(MaterialTheme.colorScheme.primary, CircleShape)
-                    .border(1.5.dp, Color.White, CircleShape)
-            )
-
-            // Top-Right Corner Handle
+            // Top-Right Corner Resize Handle
             Box(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .size(12.dp)
+                    .offset(x = 12.dp, y = (-12).dp)
+                    .size(32.dp)
                     .background(MaterialTheme.colorScheme.primary, CircleShape)
-                    .border(1.5.dp, Color.White, CircleShape)
-            )
+                    .border(2.dp, Color.White, CircleShape)
+                    .shadow(4.dp, CircleShape)
+                    .pointerInput(block.id, safeScale, safePW, safePH, safeNH) {
+                        detectDragGestures(
+                            onDragEnd = { onTransformEnd() },
+                            onDragCancel = { onTransformEnd() },
+                            onDrag = { change, dragAmount ->
+                                change.consume()
+                                val dw = (dragAmount.x / safeScale) * (600f / safePW)
+                                val dh = (-dragAmount.y / safeScale) * (safeNH / safePH)
+                                onResizeBlock(
+                                    (block.width + dw).coerceAtLeast(60f),
+                                    (block.height + dh).coerceAtLeast(30f)
+                                )
+                            }
+                        )
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Default.OpenInFull, contentDescription = "Resize Handle Top Right", tint = Color.White, modifier = Modifier.size(16.dp))
+            }
 
-            // Bottom-Left Corner Handle
+            // Right Edge Center Resize Handle (Width adjust)
             Box(
                 modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .size(12.dp)
-                    .background(MaterialTheme.colorScheme.primary, CircleShape)
-                    .border(1.5.dp, Color.White, CircleShape)
-            )
+                    .align(Alignment.CenterEnd)
+                    .offset(x = 10.dp)
+                    .size(width = 20.dp, height = 36.dp)
+                    .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(10.dp))
+                    .border(1.5.dp, Color.White, RoundedCornerShape(10.dp))
+                    .pointerInput(block.id, safeScale, safePW, safePH, safeNH) {
+                        detectDragGestures(
+                            onDragEnd = { onTransformEnd() },
+                            onDragCancel = { onTransformEnd() },
+                            onDrag = { change, dragAmount ->
+                                change.consume()
+                                val dw = (dragAmount.x / safeScale) * (600f / safePW)
+                                onResizeBlock(
+                                    (block.width + dw).coerceAtLeast(60f),
+                                    block.height
+                                )
+                            }
+                        )
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Box(modifier = Modifier.width(3.dp).height(16.dp).background(Color.White, RoundedCornerShape(2.dp)))
+            }
         }
     }
 }

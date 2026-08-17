@@ -463,7 +463,11 @@ fun RedesignedAllNotesView(
                                         if (viewModel.isSelectionMode) {
                                             viewModel.toggleNoteSelection(note.id)
                                         } else {
-                                            onSelectNote(note)
+                                            if (note.isLocked && note.pinCode.isNotBlank()) {
+                                                viewModel.requestOpenNote(note)
+                                            } else {
+                                                onSelectNote(note)
+                                            }
                                         }
                                     },
                                     onDeleteNote = { onDeleteNote(note) },
@@ -1667,6 +1671,28 @@ fun RedesignedNotebookCard(
                     }
                 }
 
+                // Locked Passcode Badge
+                if (note.isLocked && note.pinCode.isNotBlank()) {
+                    Surface(
+                        shape = CircleShape,
+                        color = Color(0xFF1E293B).copy(alpha = 0.88f),
+                        border = BorderStroke(1.dp, LipiAccent.copy(alpha = 0.5f)),
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(top = 10.dp, start = if (isStarred) 78.dp else 48.dp)
+                            .size(24.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.Lock,
+                                contentDescription = "Protected Notebook",
+                                tint = LipiAccent,
+                                modifier = Modifier.size(13.dp)
+                            )
+                        }
+                    }
+                }
+
                 // AI Indexed Badge
                 Surface(
                     shape = RoundedCornerShape(12.dp),
@@ -1740,15 +1766,28 @@ fun RedesignedNotebookCard(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text(
-                        text = note.title,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = LipiTextPrimary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f)
-                    )
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        if (note.isLocked && note.pinCode.isNotBlank()) {
+                            Icon(
+                                imageVector = Icons.Default.Lock,
+                                contentDescription = "Locked",
+                                tint = LipiAccent,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                        Text(
+                            text = note.title,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = LipiTextPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
 
                     // Three-dot Menu Action Button
                     Box {
@@ -1771,6 +1810,25 @@ fun RedesignedNotebookCard(
                                     onSelectNote()
                                 }
                             )
+                            if (note.isLocked && note.pinCode.isNotBlank()) {
+                                DropdownMenuItem(
+                                    text = { Text("Remove Passcode / Unlock") },
+                                    leadingIcon = { Icon(Icons.Default.LockOpen, contentDescription = null, tint = LipiAccent) },
+                                    onClick = {
+                                        showMenu = false
+                                        viewModel.noteToRemoveLock = note
+                                    }
+                                )
+                            } else {
+                                DropdownMenuItem(
+                                    text = { Text("Lock Notebook") },
+                                    leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, tint = LipiPrimary) },
+                                    onClick = {
+                                        showMenu = false
+                                        viewModel.noteToLock = note
+                                    }
+                                )
+                            }
                             DropdownMenuItem(
                                 text = { Text("Move to Folder...") },
                                 leadingIcon = { Icon(Icons.Default.DriveFileMove, contentDescription = null, tint = LipiPrimary) },
