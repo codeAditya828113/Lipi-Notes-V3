@@ -943,6 +943,12 @@ class NoteViewModel(
     var pdfPageCount by mutableStateOf(1)
         private set
 
+    // Per-page Template and Bookmark overrides
+    var pageTemplatesMap by mutableStateOf<Map<Int, String>>(emptyMap())
+        private set
+    var bookmarkedPagesSet by mutableStateOf<Set<Int>>(emptySet())
+        private set
+
     // AI Indexing & OCR loading state
     var isIndexing by mutableStateOf(false)
         private set
@@ -2963,6 +2969,8 @@ Here is your complete guide to all features and capabilities available in the ap
             currentContentBlocks = com.example.data.LipiContentBlockSerializer.deserializeBlocks(note.contentBlocksData)
             pdfPage = 1 // reset pdf page
             transcriptionResult = note.audioTranscription
+            pageTemplatesMap = loadPageTemplatesFromPrefs(note.id)
+            bookmarkedPagesSet = loadPageBookmarksFromPrefs(note.id)
             
             val maxStrokePage = currentStrokes.maxOfOrNull { it.page } ?: 1
             val maxImagePage = currentImages.maxOfOrNull { it.page } ?: 1
@@ -2995,13 +3003,83 @@ Here is your complete guide to all features and capabilities available in the ap
             activeStroke = null
             transcriptionResult = null
             pdfPageCount = 1
+            pageTemplatesMap = emptyMap()
+            bookmarkedPagesSet = emptySet()
         }
     }
 
-    // Add an extra blank page to the current note
-    fun addPage(atIndex: Int? = null) {
+    private fun savePageTemplatesToPrefs(noteId: Int, map: Map<Int, String>) {
+        val json = org.json.JSONObject()
+        map.forEach { (k, v) -> json.put(k.toString(), v) }
+        sharedPrefs.edit().putString("note_page_templates_$noteId", json.toString()).apply()
+    }
+
+    private fun loadPageTemplatesFromPrefs(noteId: Int): Map<Int, String> {
+        val str = sharedPrefs.getString("note_page_templates_$noteId", null) ?: return emptyMap()
+        val result = mutableMapOf<Int, String>()
+        try {
+            val json = org.json.JSONObject(str)
+            json.keys().forEach { key ->
+                val p = key.toIntOrNull()
+                if (p != null) {
+                    result[p] = json.getString(key)
+                }
+            }
+        } catch (_: Exception) {}
+        return result
+    }
+
+    private fun savePageBookmarksToPrefs(noteId: Int, set: Set<Int>) {
+        val array = org.json.JSONArray()
+        set.forEach { array.put(it) }
+        sharedPrefs.edit().putString("note_page_bookmarks_$noteId", array.toString()).apply()
+    }
+
+    private fun loadPageBookmarksFromPrefs(noteId: Int): Set<Int> {
+        val str = sharedPrefs.getString("note_page_bookmarks_$noteId", null) ?: return emptySet()
+        val result = mutableSetOf<Int>()
+        try {
+            val array = org.json.JSONArray(str)
+            for (i in 0 until array.length()) {
+                result.add(array.getInt(i))
+            }
+        } catch (_: Exception) {}
+        return result
+    }
+
+    fun getPageTemplate(page: Int): String {
+        return pageTemplatesMap[page] ?: selectedNote?.templateType ?: "blank"
+    }
+
+    fun setPageTemplate(page: Int, template: String) {
         val note = selectedNote ?: return
-        val insertionIndex = atIndex ?: (pdfPageCount + 1)
+        val updated = pageTemplatesMap.toMutableMap()
+        updated[page] = template
+        pageTemplatesMap = updated
+        savePageTemplatesToPrefs(note.id, updated)
+        hasUnsavedChanges = true
+    }
+
+    fun togglePageBookmark(page: Int) {
+        val note = selectedNote ?: return
+        val updated = bookmarkedPagesSet.toMutableSet()
+        if (updated.contains(page)) {
+            updated.remove(page)
+        } else {
+            updated.add(page)
+        }
+        bookmarkedPagesSet = updated
+        savePageBookmarksToPrefs(note.id, updated)
+    }
+
+    fun isPageBookmarked(page: Int): Boolean {
+        return bookmarkedPagesSet.contains(page)
+    }
+
+    // Add a new page to the current note with optional custom template and position
+    fun addPage(atIndex: Int? = null, template: String? = null) {
+        val note = selectedNote ?: return
+        val insertionIndex = (atIndex ?: (pdfPageCount + 1)).coerceIn(1, pdfPageCount + 1)
         pdfPageCount += 1
         sharedPrefs.edit().putInt("note_page_count_${note.id}", pdfPageCount).apply()
         
@@ -3028,11 +3106,153 @@ Here is your complete guide to all features and capabilities available in the ap
                     block
                 }
             }
+
+            // Shift page templates map
+            val newTemplatesMap = mutableMapOf<Int, String>()
+            pageTemplatesMap.forEach { (p, t) ->
+                if (p >= insertionIndex) {
+                    newTemplatesMap[p + 1] = t
+                } else {
+                    newTemplatesMap[p] = t
+                }
+            }
+            newTemplatesMap[insertionIndex] = template ?: note.templateType
+            pageTemplatesMap = newTemplatesMap
+            savePageTemplatesToPrefs(note.id, newTemplatesMap)
+
+            // Shift bookmarks
+            val newBookmarks = mutableSetOf<Int>()
+            bookmarkedPagesSet.forEach { p ->
+                if (p >= insertionIndex) {
+                    newBookmarks.add(p + 1)
+                } else {
+                    newBookmarks.add(p)
+                }
+            }
+            bookmarkedPagesSet = newBookmarks
+            savePageBookmarksToPrefs(note.id, newBookmarks)
+
             saveActiveCanvasStrokes()
         }
         
+        pdfPage = insertionIndex
         hasUnsavedChanges = true
-        Log.d("NoteViewModel", "Added a new page at index $insertionIndex. Total page count is now: $pdfPageCount")
+        Log.d("NoteViewModel", "Added page at index $insertionIndex (template: ${template ?: note.templateType}). Total page count: $pdfPageCount")
+    }
+
+    // Duplicate an existing page with all strokes, images, blocks, and template
+    fun duplicatePage(pageIndex: Int) {
+        val note = selectedNote ?: return
+        val newPageIndex = pageIndex + 1
+        val sourceTemplate = getPageTemplate(pageIndex)
+        addPage(atIndex = newPageIndex, template = sourceTemplate)
+
+        // Clone strokes on source page to new page
+        val strokesToDuplicate = currentStrokes.filter { it.page == pageIndex }.map { it.copy(page = newPageIndex) }
+        val imagesToDuplicate = currentImages.filter { it.page == pageIndex }.map { it.copy(page = newPageIndex) }
+        val blocksToDuplicate = currentContentBlocks.filter { it.page == pageIndex }.map { it.copyWith(page = newPageIndex) }
+
+        currentStrokes = currentStrokes + strokesToDuplicate
+        currentImages = currentImages + imagesToDuplicate
+        currentContentBlocks = currentContentBlocks + blocksToDuplicate
+        saveActiveCanvasStrokes()
+        pdfPage = newPageIndex
+    }
+
+    // Delete a page and shift remaining pages
+    fun deletePage(pageIndex: Int) {
+        val note = selectedNote ?: return
+        if (pdfPageCount <= 1) {
+            clearPageContent(pageIndex)
+            return
+        }
+
+        // Delete items on target page and decrement page index for subsequent items
+        currentStrokes = currentStrokes.filter { it.page != pageIndex }.map { stroke ->
+            if (stroke.page > pageIndex) stroke.copy(page = stroke.page - 1) else stroke
+        }
+        currentImages = currentImages.filter { it.page != pageIndex }.map { img ->
+            if (img.page > pageIndex) img.copy(page = img.page - 1) else img
+        }
+        currentContentBlocks = currentContentBlocks.filter { it.page != pageIndex }.map { block ->
+            if (block.page > pageIndex) block.copyWith(page = block.page - 1) else block
+        }
+
+        // Shift templates
+        val newTemplatesMap = mutableMapOf<Int, String>()
+        pageTemplatesMap.forEach { (p, t) ->
+            if (p < pageIndex) {
+                newTemplatesMap[p] = t
+            } else if (p > pageIndex) {
+                newTemplatesMap[p - 1] = t
+            }
+        }
+        pageTemplatesMap = newTemplatesMap
+        savePageTemplatesToPrefs(note.id, newTemplatesMap)
+
+        // Shift bookmarks
+        val newBookmarks = mutableSetOf<Int>()
+        bookmarkedPagesSet.forEach { p ->
+            if (p < pageIndex) {
+                newBookmarks.add(p)
+            } else if (p > pageIndex) {
+                newBookmarks.add(p - 1)
+            }
+        }
+        bookmarkedPagesSet = newBookmarks
+        savePageBookmarksToPrefs(note.id, newBookmarks)
+
+        pdfPageCount -= 1
+        sharedPrefs.edit().putInt("note_page_count_${note.id}", pdfPageCount).apply()
+        pdfPage = pdfPage.coerceIn(1, pdfPageCount)
+        saveActiveCanvasStrokes()
+        hasUnsavedChanges = true
+    }
+
+    // Clear strokes and attachments on a single page
+    fun clearPageContent(pageIndex: Int) {
+        currentStrokes = currentStrokes.filter { it.page != pageIndex }
+        currentImages = currentImages.filter { it.page != pageIndex }
+        currentContentBlocks = currentContentBlocks.filter { it.page != pageIndex }
+        saveActiveCanvasStrokes()
+        hasUnsavedChanges = true
+    }
+
+    // Reorder a page from one position to another
+    fun reorderPage(fromIndex: Int, toIndex: Int) {
+        if (fromIndex == toIndex || fromIndex !in 1..pdfPageCount || toIndex !in 1..pdfPageCount) return
+        val note = selectedNote ?: return
+
+        fun shiftPage(p: Int): Int {
+            return when {
+                p == fromIndex -> toIndex
+                fromIndex < toIndex && p in (fromIndex + 1)..toIndex -> p - 1
+                fromIndex > toIndex && p in toIndex until fromIndex -> p + 1
+                else -> p
+            }
+        }
+
+        currentStrokes = currentStrokes.map { it.copy(page = shiftPage(it.page)) }
+        currentImages = currentImages.map { it.copy(page = shiftPage(it.page)) }
+        currentContentBlocks = currentContentBlocks.map { it.copyWith(page = shiftPage(it.page)) }
+
+        val newTemplatesMap = mutableMapOf<Int, String>()
+        pageTemplatesMap.forEach { (p, t) ->
+            newTemplatesMap[shiftPage(p)] = t
+        }
+        pageTemplatesMap = newTemplatesMap
+        savePageTemplatesToPrefs(note.id, newTemplatesMap)
+
+        val newBookmarks = mutableSetOf<Int>()
+        bookmarkedPagesSet.forEach { p ->
+            newBookmarks.add(shiftPage(p))
+        }
+        bookmarkedPagesSet = newBookmarks
+        savePageBookmarksToPrefs(note.id, newBookmarks)
+
+        pdfPage = toIndex
+        saveActiveCanvasStrokes()
+        hasUnsavedChanges = true
     }
 
         fun updateCoverInfo(title: String, subtitle: String, author: String, extra: String) {
@@ -5248,6 +5468,247 @@ Here is your complete guide to all features and capabilities available in the ap
             } else emptyList()
         } catch (e: Exception) {
             emptyList()
+        }
+    }
+
+    // --- Page Screenshot Tool States & Functionality ---
+    var isScreenshotCapturing by mutableStateOf(false)
+    var showScreenshotPreviewDialog by mutableStateOf(false)
+    var lastCapturedScreenshotFile by mutableStateOf<File?>(null)
+    var lastCapturedScreenshotBitmap by mutableStateOf<android.graphics.Bitmap?>(null)
+    var lastCapturedScreenshotUri by mutableStateOf<android.net.Uri?>(null)
+    var screenshotFlashTrigger by mutableIntStateOf(0)
+
+    fun addImage(image: com.example.data.ImageElement) {
+        saveToUndoStack()
+        currentImages = currentImages + image
+        saveActiveCanvasStrokes()
+    }
+
+    fun capturePageScreenshot(context: Context, pageToCapture: Int? = null) {
+        val note = selectedNote ?: return
+        val page = pageToCapture ?: pdfPage
+        isScreenshotCapturing = true
+        screenshotFlashTrigger++
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val width = 1200
+                val height = 1600
+                val bitmap = android.graphics.Bitmap.createBitmap(width, height, android.graphics.Bitmap.Config.ARGB_8888)
+                val canvas = android.graphics.Canvas(bitmap)
+                val paint = android.graphics.Paint().apply {
+                    isAntiAlias = true
+                    isFilterBitmap = true
+                }
+
+                val template = getPageTemplate(page).lowercase().trim()
+                val isDark = isDarkTheme()
+                val paperBg = if (template == "pdf" || template == "scanned_doc" || template == "docx") {
+                    android.graphics.Color.WHITE
+                } else if (isDark) {
+                    android.graphics.Color.rgb(24, 28, 36)
+                } else {
+                    android.graphics.Color.rgb(250, 249, 246)
+                }
+                canvas.drawColor(paperBg)
+
+                // 1. Template / PDF background
+                if ((template == "pdf" || template == "scanned_doc" || template == "docx")) {
+                    val pdfFile = File(context.filesDir, "note_${note.id}.pdf")
+                    if (pdfFile.exists()) {
+                        val pdfBmp = PdfHelper.renderPdfPageToBitmap(pdfFile, page - 1, width, height)
+                        if (pdfBmp != null) {
+                            canvas.drawBitmap(pdfBmp, 0f, 0f, paint)
+                        }
+                    }
+                } else {
+                    val gridColor = if (isDark) android.graphics.Color.argb(45, 255, 255, 255) else android.graphics.Color.argb(160, 203, 213, 225)
+                    val marginColor = if (isDark) android.graphics.Color.argb(140, 239, 68, 68) else android.graphics.Color.argb(190, 248, 113, 113)
+                    val primaryLineColor = if (isDark) android.graphics.Color.argb(160, 96, 165, 250) else android.graphics.Color.argb(160, 59, 130, 246)
+                    val linePaint = android.graphics.Paint().apply {
+                        color = gridColor
+                        strokeWidth = 2f
+                        isAntiAlias = true
+                    }
+
+                    when {
+                        template == "ruled" -> {
+                            val topMargin = 120f
+                            val lineSpacing = 65f
+                            val marginX = width * 0.16f
+
+                            val mPaint = android.graphics.Paint().apply { color = marginColor; strokeWidth = 3f }
+                            canvas.drawLine(marginX, 0f, marginX, height.toFloat(), mPaint)
+
+                            val hPaint = android.graphics.Paint().apply { color = primaryLineColor; strokeWidth = 3f }
+                            canvas.drawLine(0f, topMargin, width.toFloat(), topMargin, hPaint)
+
+                            var y = topMargin + lineSpacing
+                            while (y < height - 40f) {
+                                canvas.drawLine(0f, y, width.toFloat(), y, linePaint)
+                                y += lineSpacing
+                            }
+                        }
+                        template == "grid" || template == "square" -> {
+                            val spacing = 50f
+                            var x = 0f
+                            while (x <= width) {
+                                canvas.drawLine(x, 0f, x, height.toFloat(), linePaint)
+                                x += spacing
+                            }
+                            var y = 0f
+                            while (y <= height) {
+                                canvas.drawLine(0f, y, width.toFloat(), y, linePaint)
+                                y += spacing
+                            }
+                        }
+                        template.contains("dot") || template.contains("bullet") -> {
+                            val spacing = 45f
+                            val dotPaint = android.graphics.Paint().apply {
+                                color = gridColor
+                                isAntiAlias = true
+                            }
+                            var x = spacing
+                            while (x < width) {
+                                var y = spacing
+                                while (y < height) {
+                                    canvas.drawCircle(x, y, 3f, dotPaint)
+                                    y += spacing
+                                }
+                                x += spacing
+                            }
+                        }
+                        template == "cornell" -> {
+                            val headerH = 110f
+                            val splitX = width * 0.28f
+                            val summaryY = height * 0.82f
+                            val lineSpacing = 60f
+
+                            val pPaint = android.graphics.Paint().apply { color = primaryLineColor; strokeWidth = 4f }
+                            canvas.drawLine(0f, headerH, width.toFloat(), headerH, pPaint)
+                            canvas.drawLine(splitX, headerH, splitX, summaryY, pPaint)
+                            canvas.drawLine(0f, summaryY, width.toFloat(), summaryY, pPaint)
+
+                            var cy = headerH + lineSpacing
+                            while (cy < summaryY) {
+                                canvas.drawLine(splitX, cy, width.toFloat(), cy, linePaint)
+                                cy += lineSpacing
+                            }
+                        }
+                    }
+                }
+
+                // 2. Render Images for this page
+                val pageImages = currentImages.filter { it.page == page && !it.isHidden }
+                val sx = width.toFloat() / 600f
+                val sy = height.toFloat() / 800f
+                for (img in pageImages) {
+                    try {
+                        val imgBmp = PdfHelper.loadSoftwareBitmap(context, img.uri)
+                        if (imgBmp != null) {
+                            val dstRect = android.graphics.RectF(
+                                img.x * sx,
+                                img.y * sy,
+                                (img.x + img.width) * sx,
+                                (img.y + img.height) * sy
+                            )
+                            canvas.drawBitmap(imgBmp, null, dstRect, paint)
+                        }
+                    } catch (e: Exception) {
+                        Log.e("NoteViewModel", "Error rendering image for screenshot", e)
+                    }
+                }
+
+                // 3. Render User Strokes for this page
+                val pageStrokes = currentStrokes.filter { it.page == page }
+                val strokePaint = android.graphics.Paint().apply {
+                    style = android.graphics.Paint.Style.STROKE
+                    strokeCap = android.graphics.Paint.Cap.ROUND
+                    strokeJoin = android.graphics.Paint.Join.ROUND
+                    isAntiAlias = true
+                }
+                val fillPaint = android.graphics.Paint().apply {
+                    style = android.graphics.Paint.Style.FILL
+                    isAntiAlias = true
+                }
+
+                for (stroke in pageStrokes) {
+                    if (stroke.points.size > 1 && stroke.toolType != "eraser") {
+                        strokePaint.color = stroke.color
+                        strokePaint.strokeWidth = (stroke.width * 0.25f) * sx
+
+                        val path = android.graphics.Path()
+                        stroke.points.forEachIndexed { idx, pt ->
+                            val px = pt.x * sx
+                            val py = pt.y * sy
+                            if (idx == 0) path.moveTo(px, py) else path.lineTo(px, py)
+                        }
+                        if (stroke.fillShape) {
+                            fillPaint.color = stroke.color
+                            fillPaint.alpha = ((stroke.fillOpacity.coerceIn(0.05f, 1f)) * 255).toInt()
+                            canvas.drawPath(path, fillPaint)
+                        }
+                        canvas.drawPath(path, strokePaint)
+                    }
+                }
+
+                // Save to cache directory
+                val screenshotsDir = File(context.cacheDir, "screenshots").apply { if (!exists()) mkdirs() }
+                val timeStamp = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.getDefault()).format(java.util.Date())
+                val cleanTitle = note.title.replace(Regex("[^a-zA-Z0-9_]"), "_").take(25)
+                val screenshotFile = File(screenshotsDir, "Screenshot_${cleanTitle}_p${page}_$timeStamp.png")
+
+                java.io.FileOutputStream(screenshotFile).use { out ->
+                    bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out)
+                    out.flush()
+                }
+
+                // Also try saving to MediaStore Pictures/LipiNotes
+                try {
+                    val values = android.content.ContentValues().apply {
+                        put(android.provider.MediaStore.Images.Media.DISPLAY_NAME, screenshotFile.name)
+                        put(android.provider.MediaStore.Images.Media.MIME_TYPE, "image/png")
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                            put(android.provider.MediaStore.Images.Media.RELATIVE_PATH, "Pictures/LipiNotes")
+                            put(android.provider.MediaStore.Images.Media.IS_PENDING, 1)
+                        }
+                    }
+                    val resolver = context.contentResolver
+                    val uri = resolver.insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+                    if (uri != null) {
+                        resolver.openOutputStream(uri)?.use { os ->
+                            bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, os)
+                            os.flush()
+                        }
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                            values.clear()
+                            values.put(android.provider.MediaStore.Images.Media.IS_PENDING, 0)
+                            resolver.update(uri, values, null, null)
+                        }
+                        withContext(Dispatchers.Main) {
+                            lastCapturedScreenshotUri = uri
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e("NoteViewModel", "Error saving to MediaStore", e)
+                }
+
+                withContext(Dispatchers.Main) {
+                    lastCapturedScreenshotFile = screenshotFile
+                    lastCapturedScreenshotBitmap = bitmap
+                    isScreenshotCapturing = false
+                    showScreenshotPreviewDialog = true
+                    logSyncEvent("Screenshot captured for Page $page: ${screenshotFile.name}")
+                    android.widget.Toast.makeText(context, "📸 Page $page Screenshot Captured & Saved!", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                Log.e("NoteViewModel", "Screenshot capture failed", e)
+                withContext(Dispatchers.Main) {
+                    isScreenshotCapturing = false
+                    android.widget.Toast.makeText(context, "Failed to capture screenshot: ${e.localizedMessage}", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            }
         }
     }
 }

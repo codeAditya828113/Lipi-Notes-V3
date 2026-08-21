@@ -4656,19 +4656,6 @@ if (showLayersDialog) {
                             modifier = Modifier.size(18.dp)
                         )
                     }
-                    
-                    // Grid / Thumbnails [ ▦ ]
-                    IconButton(
-                        onClick = onToggleNoteList,
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.GridView,
-                            contentDescription = "Grid Thumbnails",
-                            tint = Color(0xFF475569),
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
 
                     // Selected Pen Icon inside Circle
                     Box(
@@ -4772,19 +4759,6 @@ if (showLayersDialog) {
                         )
                     }
 
-                    // Add Image [ 🌄+ ]
-                    IconButton(
-                        onClick = { imagePickerLauncher.launch("image/*") },
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.AddPhotoAlternate,
-                            contentDescription = "Add Image",
-                            tint = Color(0xFF475569),
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-
                     // Scan Document [ 📷 Scanner ]
                     IconButton(
                         onClick = { viewModel.openDocumentScanner("notebook", viewModel.selectedNote) },
@@ -4800,44 +4774,23 @@ if (showLayersDialog) {
                         )
                     }
 
-                    // Smart Handwriting [ ✨ Smart Handwriting ]
-                    IconButton(
-                        onClick = { viewModel.openSmartHandwritingPanel() },
-                        modifier = Modifier
-                            .size(32.dp)
-                            .testTag("notebook_toolbar_smart_handwriting_button")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.AutoAwesome,
-                            contentDescription = "Smart Handwriting Studio",
-                            tint = Color(0xFF8B5CF6),
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-
-                    // Crop / Lasso selection
+                    // Screenshot Tool [ 📸 Capture Page Screenshot ]
+                    val hapticFeedback = androidx.compose.ui.platform.LocalHapticFeedback.current
                     IconButton(
                         onClick = { 
-                            if (viewModel.activeToolType == "lasso") {
-                                showToolSettings = if (showToolSettings == "lasso") null else "lasso"
-                            } else {
-                                viewModel.activeToolType = "lasso"
-                                showToolSettings = null
-                            }
+                            hapticFeedback.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                            viewModel.capturePageScreenshot(context)
                         },
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier
+                            .size(32.dp)
+                            .testTag("notebook_toolbar_screenshot_button")
                     ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(
-                                imageVector = Icons.Default.Crop,
-                                contentDescription = "Lasso selection",
-                                tint = if (viewModel.activeToolType == "lasso") Color(0xFF3B82F6) else Color(0xFF475569),
-                                modifier = Modifier.size(18.dp)
-                            )
-                            if (viewModel.activeToolType == "lasso") {
-                                Box(modifier = Modifier.width(14.dp).height(2.dp).background(Color(0xFF3B82F6)))
-                            }
-                        }
+                        Icon(
+                            imageVector = Icons.Default.Crop,
+                            contentDescription = "Take Screenshot of Current Page",
+                            tint = Color(0xFF3B82F6),
+                            modifier = Modifier.size(18.dp)
+                        )
                     }
 
                     // Ruler [ 📏 ]
@@ -4849,32 +4802,6 @@ if (showLayersDialog) {
                             imageVector = Icons.Default.Straighten,
                             contentDescription = "Ruler alignment",
                             tint = if (viewModel.isRulerActive) Color(0xFF3B82F6) else Color(0xFF475569),
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-
-                    // Comment bubble
-                    IconButton(
-                        onClick = { showAISidebar = !showAISidebar },
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.ChatBubbleOutline,
-                            contentDescription = "Comments",
-                            tint = Color(0xFF475569),
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-
-                    // Link icon
-                    IconButton(
-                        onClick = { showHyperlinkDialog = true },
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Link,
-                            contentDescription = "Add Hyperlink",
-                            tint = Color(0xFF475569),
                             modifier = Modifier.size(18.dp)
                         )
                     }
@@ -4918,19 +4845,6 @@ if (showLayersDialog) {
                             imageVector = Icons.Default.Headphones,
                             contentDescription = "Audio Player & Library",
                             tint = if (viewModel.showAudioPlayerLibraryDialog) Color(0xFF3B82F6) else Color(0xFF475569),
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-
-                    // AI Assistant Tab
-                    IconButton(
-                        onClick = { showAISidebar = !showAISidebar },
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.AutoAwesome,
-                            contentDescription = "AI Assistant Panel",
-                            tint = if (showAISidebar) Color(0xFF3B82F6) else Color(0xFF475569),
                             modifier = Modifier.size(18.dp)
                         )
                     }
@@ -6054,7 +5968,8 @@ if (showLayersDialog) {
                                 onChangeTemplateClick = { showTemplateSelectionModal = true },
                                 onAddPhotoClick = { imagePickerLauncher.launch("image/*") },
                                 onOpenTimerSettings = { showFullscreenTimerDialog = true },
-                                onCustomizeShadeClick = { showColorPickerDialogIndex = it }
+                                onCustomizeShadeClick = { showColorPickerDialogIndex = it },
+                                onInsertMenuClick = { viewModel.showInsertMenu = true }
                             )
                         }
                     }
@@ -6557,6 +6472,52 @@ if (showLayersDialog) {
             onCopyText = { },
             onInsertAsText = { viewModel.convertHandwritingToText() },
             onClose = { viewModel.toggleScribbleMode() }
+        )
+    }
+
+    // Camera Shutter Flash animation overlay
+    var isScreenshotFlashActive by remember { mutableStateOf(false) }
+    LaunchedEffect(viewModel.screenshotFlashTrigger) {
+        if (viewModel.screenshotFlashTrigger > 0) {
+            isScreenshotFlashActive = true
+            kotlinx.coroutines.delay(120)
+            isScreenshotFlashActive = false
+        }
+    }
+    if (isScreenshotFlashActive) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.White.copy(alpha = 0.82f))
+                .zIndex(999f)
+        )
+    }
+
+    // Page Screenshot Preview Dialog
+    if (viewModel.showScreenshotPreviewDialog && viewModel.lastCapturedScreenshotFile != null) {
+        ScreenshotPreviewDialog(
+            bitmap = viewModel.lastCapturedScreenshotBitmap,
+            file = viewModel.lastCapturedScreenshotFile,
+            page = viewModel.pdfPage,
+            noteTitle = viewModel.selectedNote?.title ?: "Note",
+            onDismiss = { viewModel.showScreenshotPreviewDialog = false },
+            onInsertAsImage = {
+                val file = viewModel.lastCapturedScreenshotFile
+                if (file != null) {
+                    val uri = Uri.fromFile(file).toString()
+                    viewModel.addImage(
+                        com.example.data.ImageElement(
+                            uri = uri,
+                            x = 100f,
+                            y = 150f,
+                            width = 300f,
+                            height = 400f,
+                            page = viewModel.pdfPage
+                        )
+                    )
+                    android.widget.Toast.makeText(context, "Screenshot inserted into notebook!", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            }
         )
     }
 
@@ -9139,6 +9100,7 @@ fun FloatingPenSection(
     onAddPhotoClick: () -> Unit = {},
     onOpenTimerSettings: () -> Unit = {},
     onCustomizeShadeClick: (Int) -> Unit = {},
+    onInsertMenuClick: () -> Unit = { viewModel.showInsertMenu = true },
     modifier: Modifier = Modifier
 ) {
     var offsetX by remember { mutableStateOf(0f) }
@@ -9474,6 +9436,39 @@ fun FloatingPenSection(
             // Vertical Divider
             Box(modifier = Modifier.width(1.dp).height(24.dp).background(dividerColor))
             
+            // Lipi Insertion Menu option (Full view mode)
+            IconButton(
+                onClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onInsertMenuClick()
+                },
+                modifier = Modifier.size(36.dp).testTag("floating_pen_insert_menu_button")
+            ) {
+                Icon(
+                    imageVector = Icons.Default.AddCircle,
+                    contentDescription = "Insert Media, Audio, Link, PDF & Blocks",
+                    tint = Color(0xFF6366F1),
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+
+            // Screenshot Tool option (Full view mode)
+            val currentContext = LocalContext.current
+            IconButton(
+                onClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    viewModel.capturePageScreenshot(currentContext)
+                },
+                modifier = Modifier.size(36.dp).testTag("floating_pen_screenshot_button")
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Crop,
+                    contentDescription = "Take Screenshot of Current Page",
+                    tint = Color(0xFF3B82F6),
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+
             // Photo option
             IconButton(
                 onClick = {
@@ -11048,3 +11043,163 @@ fun ShapeCustomizationPanel(viewModel: NoteViewModel) {
         }
     }
 }
+
+@Composable
+fun ScreenshotPreviewDialog(
+    bitmap: android.graphics.Bitmap?,
+    file: java.io.File?,
+    page: Int,
+    noteTitle: String,
+    onDismiss: () -> Unit,
+    onInsertAsImage: () -> Unit
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = onDismiss,
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth(0.92f)
+                .fillMaxHeight(0.85f)
+                .padding(16.dp),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 12.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Surface(
+                            shape = CircleShape,
+                            color = Color(0xFF3B82F6).copy(alpha = 0.12f),
+                            modifier = Modifier.size(38.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.Crop,
+                                    contentDescription = null,
+                                    tint = Color(0xFF3B82F6),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                text = "Page $page Screenshot",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 17.sp,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = noteTitle,
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    IconButton(onClick = onDismiss) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Close",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Image Preview Card
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f), RoundedCornerShape(16.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (bitmap != null) {
+                        androidx.compose.foundation.Image(
+                            bitmap = bitmap.asImageBitmap(),
+                            contentDescription = "Captured Page Screenshot",
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(8.dp)
+                                .clip(RoundedCornerShape(10.dp)),
+                            contentScale = androidx.compose.ui.layout.ContentScale.Fit
+                        )
+                    } else {
+                        CircularProgressIndicator(modifier = Modifier.size(36.dp))
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Bottom Action Buttons
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    // Share Button
+                    OutlinedButton(
+                        onClick = {
+                            if (file != null) {
+                                try {
+                                    val uri = androidx.core.content.FileProvider.getUriForFile(
+                                        context,
+                                        "${context.packageName}.fileprovider",
+                                        file
+                                    )
+                                    val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                        type = "image/png"
+                                        putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                                        addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                    }
+                                    context.startActivity(android.content.Intent.createChooser(shareIntent, "Share Screenshot"))
+                                } catch (e: Exception) {
+                                    android.widget.Toast.makeText(context, "Failed to share: ${e.localizedMessage}", android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(imageVector = Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Share", fontSize = 13.sp)
+                    }
+
+                    // Insert as Image onto current canvas
+                    Button(
+                        onClick = {
+                            onInsertAsImage()
+                            onDismiss()
+                        },
+                        modifier = Modifier.weight(1.3f),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6366F1))
+                    ) {
+                        Icon(imageVector = Icons.Default.AddPhotoAlternate, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Insert in Page", fontSize = 13.sp)
+                    }
+                }
+            }
+        }
+    }
+}
+

@@ -103,6 +103,7 @@ fun DrawingCanvas(
     onStrokeEnded: () -> Unit,
     onImageUpdated: (Int, com.example.data.ImageElement) -> Unit = {_,_->},
     templateType: String,
+    pageTemplates: Map<Int, String> = emptyMap(),
     pdfPage: Int, // 1..pdfPageCount
     noteId: Int? = null,
     modifier: Modifier = Modifier,
@@ -1459,28 +1460,26 @@ fun DrawingCanvas(
                         )
 
                         // PDF/DOCX or Template grid content
-                        if (templateType == "pdf" || templateType == "scanned_doc" || templateType == "docx") {
-                            val bitmap = pdfBitmaps[p]
-                            if (bitmap != null && !bitmap.isRecycled) {
-                                drawImage(
-                                    image = bitmap.asImageBitmap(),
-                                    dstOffset = androidx.compose.ui.unit.IntOffset(pageL.toInt(), topOffset.toInt()),
-                                    dstSize = androidx.compose.ui.unit.IntSize(pageW.toInt(), pageH.toInt()),
-                                    colorFilter = if (isDarkTheme) {
-                                        androidx.compose.ui.graphics.ColorFilter.colorMatrix(
-                                            androidx.compose.ui.graphics.ColorMatrix(floatArrayOf(
-                                                -1f, 0f, 0f, 0f, 255f,
-                                                0f, -1f, 0f, 0f, 255f,
-                                                0f, 0f, -1f, 0f, 255f,
-                                                0f, 0f, 0f, 1f, 0f
-                                            ))
-                                        )
-                                    } else null
-                                )
-                            }
+                        val pageBitmap = pdfBitmaps[p]
+                        if ((templateType == "pdf" || templateType == "scanned_doc" || templateType == "docx") && pageBitmap != null && !pageBitmap.isRecycled) {
+                            drawImage(
+                                image = pageBitmap.asImageBitmap(),
+                                dstOffset = androidx.compose.ui.unit.IntOffset(pageL.toInt(), topOffset.toInt()),
+                                dstSize = androidx.compose.ui.unit.IntSize(pageW.toInt(), pageH.toInt()),
+                                colorFilter = if (isDarkTheme) {
+                                    androidx.compose.ui.graphics.ColorFilter.colorMatrix(
+                                        androidx.compose.ui.graphics.ColorMatrix(floatArrayOf(
+                                            -1f, 0f, 0f, 0f, 255f,
+                                            0f, -1f, 0f, 0f, 255f,
+                                            0f, 0f, -1f, 0f, 255f,
+                                            0f, 0f, 0f, 1f, 0f
+                                        ))
+                                    )
+                                } else null
+                            )
                         } else {
                             withTransform({ translate(pageL, topOffset) }) {
-                                val normType = templateType.lowercase().trim()
+                                val normType = (pageTemplates[p] ?: templateType).lowercase().trim()
                                 val gridLineColor = if (isDarkTheme) Color.White.copy(alpha = 0.16f) else Color(0xFFCBD5E1).copy(alpha = 0.65f)
                                 val marginLineColor = if (isDarkTheme) Color(0xFFEF4444).copy(alpha = 0.55f) else Color(0xFFF87171).copy(alpha = 0.75f)
                                 val primaryLineColor = if (isDarkTheme) Color(0xFF60A5FA).copy(alpha = 0.65f) else Color(0xFF3B82F6).copy(alpha = 0.65f)
